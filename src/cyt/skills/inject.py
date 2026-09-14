@@ -29,6 +29,17 @@ def skills_inject_intro(*, full: bool = False) -> str:
     return _INTRO_FULL if full else _INTRO_SKINNY
 
 
+def format_agent_skills_empty(*, combined_text: str = "") -> str:
+    """Stable ``<agent-skills>`` wrapper with tier legend when no skills inject."""
+    from cyt.injection.header_pre_exposed import skill_tier_legend_pre_exposed
+    from cyt.injection.tier_legend import SKILL_TIER_LEGEND
+
+    inner: list[str] = []
+    if not skill_tier_legend_pre_exposed(combined_text, SKILL_TIER_LEGEND):
+        inner.append(SKILL_TIER_LEGEND)
+    return "\n".join(["<agent-skills>", *inner, "</agent-skills>"])
+
+
 def _parsed_frontmatter(markdown: str) -> dict[str, object]:
     text = markdown.strip()
     if not text.startswith("---"):
@@ -56,15 +67,28 @@ def _resolve_skill_command(match: MatchedSkill) -> str | None:
     return None
 
 
-def _skill_open_tag(path: str, name: str | None, *, command: str | None = None) -> str:
+def _skill_open_tag(
+    path: str,
+    name: str | None,
+    *,
+    command: str | None = None,
+    tier: str | None = None,
+) -> str:
+    tier_attr = ""
+    if tier:
+        tier_attr = f' tier="{tier}"'
     if command:
         attrs = []
         if name:
             attrs.append(f'name="{name}"')
         attrs.append(f"command='{command}'")
+        if tier:
+            attrs.append(f'tier="{tier}"')
         return f"<skill {' '.join(attrs)}>"
     if name:
-        return f'<skill name="{name}" path="{path}">'
+        return f'<skill name="{name}" path="{path}"{tier_attr}>'
+    if tier:
+        return f'<skill path="{path}" tier="{tier}">'
     return f'<skill path="{path}">'
 
 
@@ -95,9 +119,10 @@ def format_skill_item(match: MatchedSkill, *, full: bool = False) -> str:
     command = _resolve_skill_command(match)
     if command:
         command = _xml_single_quoted_attr(command)
+    tier = match.injection_tier.strip().lower() if match.injection_tier else None
     return "\n".join(
         [
-            _skill_open_tag(path, match.name, command=command),
+            _skill_open_tag(path, match.name, command=command, tier=tier),
             body,
             "</skill>",
         ],
@@ -134,13 +159,19 @@ def format_agent_skills(
         return ""
     from cyt.injection.pre_exposed import is_pre_exposed
 
+    from cyt.injection.header_pre_exposed import skill_tier_legend_pre_exposed
+    from cyt.injection.tier_legend import SKILL_TIER_LEGEND
+
     intro = skills_inject_intro(full=bool(emitted_full_flags) and all(emitted_full_flags))
     include_intro = not (combined_text.strip() and is_pre_exposed(intro, combined_text))
+    include_tier_legend = not skill_tier_legend_pre_exposed(combined_text, SKILL_TIER_LEGEND)
+    inner_lines: list[str] = []
+    if include_tier_legend:
+        inner_lines.append(SKILL_TIER_LEGEND)
+    inner_lines.extend(item_lines)
     if include_intro:
-        lines = [intro, "", "<agent-skills>", *item_lines, "</agent-skills>"]
-    else:
-        lines = ["<agent-skills>", *item_lines, "</agent-skills>"]
-    return "\n".join(lines)
+        return "\n".join([intro, "", "<agent-skills>", *inner_lines, "</agent-skills>"])
+    return "\n".join(["<agent-skills>", *inner_lines, "</agent-skills>"])
 
 
 def injection_token_count(matches: list[MatchedSkill] | str) -> int:

@@ -81,10 +81,12 @@ def ensure_agent_tools_starts_on_new_line(injection: str, *, after: str = "") ->
     return "\n" + stripped
 
 
-def _tool_open_tag(name: str, description: str) -> str:
+def _tool_open_tag(name: str, description: str, *, tier: str | None = None) -> str:
     attrs = [f"name='{_xml_single_quoted_attr(name)}'"]
     if description:
         attrs.append(f"description='{_xml_single_quoted_attr(description)}'")
+    if tier:
+        attrs.append(f"tier='{_xml_single_quoted_attr(tier)}'")
     return f"<tool {' '.join(attrs)}>"
 
 
@@ -108,7 +110,9 @@ def format_tool_item(
     if include_tool_description:
         description = str(tool.get("description", "") or "").strip()
     schema = _tool_input_schema(tool)
-    lines = [_tool_open_tag(name, description)]
+    tier = tool.get("cyt_injection_tier")
+    tier_attr = str(tier).strip().lower() if isinstance(tier, str) and tier.strip() else None
+    lines = [_tool_open_tag(name, description, tier=tier_attr)]
     if schema:
         lines.append(minimize_json_single_quotes({"input_schema": schema}))
     lines.append("</tool>")

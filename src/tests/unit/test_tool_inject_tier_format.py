@@ -54,6 +54,13 @@ def test_t2_prepared_tool_formats_required_properties_only() -> None:
     assert "'limit'" not in item
 
 
+def test_format_tool_item_includes_tier_attribute() -> None:
+    tool = _sample_tool(with_schema=True)
+    tool["cyt_injection_tier"] = "t2"
+    item = format_tool_item(tool)
+    assert "tier='t2'" in item
+
+
 def test_format_agent_tools_mixed_t1_and_t3_tools() -> None:
     t1 = prepare_tool_for_tier_pipeline(
         _sample_tool(name="cold_tool", with_schema=True),

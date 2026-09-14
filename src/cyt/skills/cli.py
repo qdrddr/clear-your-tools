@@ -58,7 +58,7 @@ from cyt.skills.hook_payload import (
     session_id,
 )
 from cyt.skills.hook_quiet import configure_hook_quiet, hook_quiet_stderr, hook_safe_stdout
-from cyt.skills.inject import format_agent_skills, injection_token_count
+from cyt.skills.inject import format_agent_skills, format_agent_skills_empty, injection_token_count
 from cyt.skills.search import (
     MatchedSkill,
     SkillsPipelineRun,
@@ -478,25 +478,26 @@ def _search_skills_for_user_prompt(
             )
         entries = append_executor_skill_entries(entries, config)
         entries = _append_mcpc_skill_resource_entries(entries, config)
+        from cyt.tiers.adapters.skills import resolve_tiered_skill_matches
+
+        matches = resolve_tiered_skill_matches(
+            query,
+            entries,
+            config=config,
+            max_tokens=max_tokens,
+            pruner_settings=pruner_settings,
+        )
+        pipeline_run = None
+        search_trace = None
         if plain_output:
-            matches, search_trace = search_skills_with_trace(
+            _, search_trace = search_skills_with_trace(
                 query,
                 entries,
                 config=config,
                 max_tokens=max_tokens,
                 pruner_settings=pruner_settings,
             )
-            pipeline_run = search_trace.pipeline_run
-        else:
-            matches = search_skills(
-                query,
-                entries,
-                config=config,
-                max_tokens=max_tokens,
-                pruner_settings=pruner_settings,
-            )
-            pipeline_run = None
-            search_trace = None
+            pipeline_run = search_trace.pipeline_run if search_trace else None
     if plain_output and pipeline_run is not None:
         _print_skills_pipeline_run(pipeline_run)
     if plain_output and search_trace is not None:
@@ -564,8 +565,13 @@ def _handle_user_prompt_skills(
         pruner_settings=pruner_settings,
     )
     if not matches:
+        ctx = PreExposureContext.for_hook_payload(
+            payload,
+            allow_file_read=allow_transcript_file_read,
+        )
+        empty_injection = format_agent_skills_empty(combined_text=ctx.combined_text)
         outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
-        return outcome, details, ""
+        return outcome, details, empty_injection
 
     ctx = PreExposureContext.for_hook_payload(
         payload,
@@ -585,14 +591,16 @@ def _handle_user_prompt_skills(
         combined_text=ctx.combined_text,
     )
     if not injected:
-        return (
-            "user_prompt_empty_injection",
-            {
-                "resolved_model": model,
-                "search_trace": search_trace,
-            },
-            "",
-        )
+        injected = format_agent_skills_empty(combined_text=ctx.combined_text)
+        if not injected:
+            return (
+                "user_prompt_empty_injection",
+                {
+                    "resolved_model": model,
+                    "search_trace": search_trace,
+                },
+                "",
+            )
 
     skills_in = injection_token_count(injected)
     if skills_in > 0:
@@ -663,6 +671,8 @@ def _append_coordinated_skills_injection(
         full_flags=skill_full_flags,
         combined_text=ctx.combined_text,
     )
+    if not injected_skills:
+        injected_skills = format_agent_skills_empty(combined_text=ctx.combined_text)
     injected_resources = format_agent_resources(
         gated_resources,
         full_flags=resource_full_flags,

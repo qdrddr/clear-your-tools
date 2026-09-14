@@ -29,6 +29,7 @@ class MatchedSkill:
     token_count: int
     command: str | None = None
     content_hash: str | None = None
+    injection_tier: str | None = None
 
 
 @dataclass(frozen=True)

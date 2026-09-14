@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from cyt.tiers.adapters.tools import apply_tool_tiers, merge_t4_tools, tool_entity_id
+from cyt.tiers.adapters.tools import (
+    apply_tool_tiers,
+    merge_t4_tools,
+    stamp_tool_injection_tiers,
+    tool_entity_id,
+)
 from cyt.tiers.config import tier_section_config
 from cyt.tiers.evaluator import epoch_boundary, evaluate_slow_clock
 from cyt.tiers.manager import TierManager
@@ -129,6 +134,16 @@ def test_merge_t4_tools_overrides_pruned() -> None:
     t4 = [{"name": "hot", "description": "full", "input_schema": {"type": "object"}}]
     merged = merge_t4_tools(pruned, t4)
     assert merged[0]["input_schema"]["type"] == "object"
+
+
+def test_stamp_tool_injection_tiers_marks_t4_and_t2() -> None:
+    tool = {"name": "demo", "cyt_catalog_source": "cyt_mcp", "description": "demo"}
+    entity_id = tool_entity_id(tool)
+    tier_map = {entity_id: Tier.ACTIVE}
+    stamped = stamp_tool_injection_tiers([tool], tier_map, t4_names={"other"})
+    assert stamped[0]["cyt_injection_tier"] == "t2"
+    stamped_t4 = stamp_tool_injection_tiers([tool], tier_map, t4_names={"demo"})
+    assert stamped_t4[0]["cyt_injection_tier"] == "t4"
 
 
 def test_tier_store_roundtrip(project_root: Path, tier_db: str) -> None:

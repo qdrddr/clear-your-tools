@@ -11,8 +11,10 @@ from cyt.skills.search import MatchedSkill
 from cyt.tiers.adapters.skills import (
     apply_skill_representation,
     partition_skill_entries,
+    resolve_tiered_skill_matches,
     skill_entity_id,
 )
+from cyt.tiers.models import SkillsTierPartition
 from cyt.tiers.models import Tier
 from cyt.tiers.skill_token_materialization import (
     clear_carried_token_memo,
@@ -177,3 +179,50 @@ def test_skill_token_counts_are_monotonic_across_tiers(
         resolved.append(count)
     assert resolved[0] <= resolved[1] <= resolved[2]
     assert resolved[2] == resolved[3]
+
+
+def test_resolve_tiered_skill_matches_merges_t4_direct(
+    fixture_pack: TierBehaviorFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = build_registry_from_pack(fixture_pack)
+    t4_entry = _entry_for_doc_id(fixture_pack, "create-hook")
+    entity_id = skill_entity_id(t4_entry)
+    tier_map = {entity_id: Tier.EXTRA_HOT}
+    representation = {entity_id: Tier.EXTRA_HOT}
+    search_entries = [entry for entry in entries if skill_fixture_key(entry) != "create-hook"]
+
+    class _FakeManager:
+        def partition_skills(self, _entries, _config):
+            return SkillsTierPartition(
+                search_entries=search_entries,
+                t4_direct=[t4_entry],
+                tier_by_skill=tier_map,
+                representation_by_skill=representation,
+            )
+
+        def record_skill_candidates(self, _entries, _config) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "cyt.tiers.manager.get_tier_manager",
+        lambda *_args, **_kwargs: _FakeManager(),
+    )
+    monkeypatch.setattr(
+        "cyt.skills.search.search_skills",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "cyt.tiers.config.tiers_apply",
+        lambda *_args, **_kwargs: True,
+    )
+
+    matches = resolve_tiered_skill_matches(
+        "create hook",
+        entries,
+        config={},
+        skip_frontmatter_gate=True,
+    )
+    assert len(matches) == 1
+    assert skill_fixture_key(matches[0]) == "create-hook"
+    assert matches[0].injection_tier == "t4"

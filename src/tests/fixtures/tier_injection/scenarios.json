@@ -1,0 +1,99 @@
+{
+  "tier_attr_cases": [
+    {"tier": "EXTRA_HOT", "expected_attr": "t4"},
+    {"tier": "HOT", "expected_attr": "t3"},
+    {"tier": "ACTIVE", "expected_attr": "t2"},
+    {"tier": "COLD", "expected_attr": "t1"},
+    {"tier": "DORMANT", "expected_attr": "t0"}
+  ],
+  "legend_snippets": {
+    "tool": [
+      "Tool tiers:",
+      "t4=full unfiltered inputSchema",
+      "t3=optional props pruned",
+      "t2=required props only",
+      "t1=description only",
+      "t0=dormant"
+    ],
+    "skill": [
+      "Skill tiers:",
+      "t4=full skill always included",
+      "t3=skill shell",
+      "t2=description + headers",
+      "t1=description only",
+      "t0=dormant"
+    ]
+  },
+  "sample_tools": [
+    {
+      "name": "demo_hot_tool",
+      "description": "Hot tier demo tool.",
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_injection_tier": "t3",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "limit": {"type": "integer"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "demo_t4_tool",
+      "description": "T4 direct inject demo tool.",
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_injection_tier": "t4",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"}
+        },
+        "required": ["repo"]
+      }
+    }
+  ],
+  "pre_exposure": [
+    {
+      "id": "t4_tool_fragment",
+      "tool_ref": "demo_t4_tool",
+      "expects_skipped": true
+    },
+    {
+      "id": "t3_tool_fragment",
+      "tool_ref": "demo_hot_tool",
+      "expects_skipped": true
+    }
+  ],
+  "integration": [
+    {
+      "id": "live_prune_stamps_t4_tier",
+      "behavior_scenario_id": "live_tools_and_skills_combined",
+      "expected_stamped_tools": {
+        "gitnexus_query": "t4",
+        "context-mode_ctx_search": "t2"
+      }
+    },
+    {
+      "id": "live_prune_stamps_cold_as_t1",
+      "behavior_scenario_id": "live_tools_all_cold_bm25_subsets",
+      "expected_stamped_tools": {
+        "gitnexus_query": "t1"
+      }
+    },
+    {
+      "id": "live_skills_t4_injection_tier",
+      "behavior_scenario_id": "live_skills_t4_direct_bypasses_search",
+      "expected_skill_tiers": {
+        "create-hook": "t4"
+      }
+    },
+    {
+      "id": "live_hook_cyt_mcp_legend_and_tier_attrs",
+      "behavior_scenario_id": "live_tools_all_cold_bm25_subsets",
+      "query": "gitnexus execution flow graph search",
+      "expects_tool_legend": true,
+      "expects_tier_attr_on_tools": ["gitnexus_query"]
+    }
+  ]
+}

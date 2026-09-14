@@ -62,6 +62,7 @@ def test_format_cyt_mcp_source_section_workspace_wins_on_name_collision() -> Non
 def test_format_cyt_mcp_source_section_empty_tools_emits_static_block() -> None:
     section = format_cyt_mcp_source_section([])
     assert "<cyt-mcp>" in section
+    assert "Tool tiers:" in section
     assert "Do not use `get-tool-definitions`" in section
     assert "<cyt-mcp-ws>" not in section
     assert "<cyt-mcp-usr>" not in section
@@ -69,6 +70,7 @@ def test_format_cyt_mcp_source_section_empty_tools_emits_static_block() -> None:
 
 def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
     section = format_cyt_mcp_source_section([_sample_tool("codebase-memory_query_graph")])
+    assert "Tool tiers:" in section
     assert "pre-filtered tool definitions" in section
     assert "Do not use `get-tool-definitions`" in section
     assert "pruning pipeline" in section
@@ -81,7 +83,18 @@ def test_format_cyt_mcp_source_section_omits_note_when_pre_exposed() -> None:
         session_text=prior,
     )
     assert "pre-filtered tool definitions" not in section
+    assert "Tool tiers:" not in section
     assert "<cyt-mcp-usr>" in section
+
+
+def test_format_cyt_mcp_source_section_all_pre_exposed_emits_empty_block() -> None:
+    section = format_cyt_mcp_source_section(
+        [],
+        force_empty_note=True,
+    )
+    assert "<cyt-mcp>" in section
+    assert "Tool tiers:" in section
+    assert "No relevant cyt-mcp tools matched" in section
 
 
 def test_multi_source_orders_cyt_mcp_first() -> None:

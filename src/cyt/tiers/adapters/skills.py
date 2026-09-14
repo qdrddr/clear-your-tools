@@ -604,6 +604,7 @@ def build_t4_skill_match(entry: SkillEntryRef) -> MatchedSkill:
         name=str(name) if name is not None else None,
         score=1.0,
         token_count=len(markdown.split()),
+        injection_tier="t4",
     )
 
 
@@ -621,7 +622,14 @@ def skill_description_only_markdown(entry: SkillEntryRef) -> str:
     return ""
 
 
+def _injection_tier_for_skill_tier(tier: Tier) -> str:
+    from cyt.injection.tier_legend import injection_tier_attr
+
+    return injection_tier_attr(tier) or "t2"
+
+
 def apply_skill_representation(match: MatchedSkill, tier: Tier) -> MatchedSkill:
+    tier_attr = _injection_tier_for_skill_tier(tier)
     if tier == Tier.COLD:
         body = skill_description_only_markdown_from_match(match)
         return MatchedSkill(
@@ -633,6 +641,7 @@ def apply_skill_representation(match: MatchedSkill, tier: Tier) -> MatchedSkill:
             token_count=len(body.split()),
             command=match.command,
             content_hash=match.content_hash,
+            injection_tier=tier_attr,
         )
     if tier == Tier.ACTIVE:
         body = _headers_only_markdown(match.markdown, min_headers=6)
@@ -645,8 +654,21 @@ def apply_skill_representation(match: MatchedSkill, tier: Tier) -> MatchedSkill:
             token_count=len(body.split()),
             command=match.command,
             content_hash=match.content_hash,
+            injection_tier=tier_attr,
         )
-    return match
+    if match.injection_tier:
+        return match
+    return MatchedSkill(
+        doc_id=match.doc_id,
+        file_path=match.file_path,
+        markdown=match.markdown,
+        name=match.name,
+        score=match.score,
+        token_count=match.token_count,
+        command=match.command,
+        content_hash=match.content_hash,
+        injection_tier=tier_attr,
+    )
 
 
 def skill_description_only_markdown_from_match(match: MatchedSkill) -> str:
@@ -684,7 +706,8 @@ def merge_skill_matches(
     by_path: dict[str, MatchedSkill] = {}
     order: list[str] = []
     for match in searched:
-        tier = representation_by_skill.get(match.file_path, Tier.HOT)
+        entity_id = skill_match_entity_id(match)
+        tier = representation_by_skill.get(entity_id, Tier.HOT)
         shaped = apply_skill_representation(match, tier) if apply_representation else match
         by_path[match.file_path] = shaped
         order.append(match.file_path)
@@ -693,3 +716,49 @@ def merge_skill_matches(
             order.append(match.file_path)
         by_path[match.file_path] = match
     return [by_path[path] for path in order if path in by_path]
+
+
+def resolve_tiered_skill_matches(
+    query: str,
+    entries: list[SkillEntryRef],
+    *,
+    config: dict[str, Any],
+    max_tokens: int | None = None,
+    pruner_settings: Any | None = None,
+    skip_frontmatter_gate: bool = False,
+) -> list[MatchedSkill]:
+    """Partition by tier, search eligible pool, and merge T4 direct inject matches."""
+    from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.skills.search import search_skills
+    from cyt.tiers.config import tiers_apply
+    from cyt.tiers.manager import get_tier_manager
+
+    resolved_entries = list(entries)
+    if not skip_frontmatter_gate and query.strip():
+        from cyt.skills.search import eligible_skills_after_gate
+
+        resolved_entries = eligible_skills_after_gate(query, resolved_entries, config=config)
+
+    manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
+    partition = manager.partition_skills(resolved_entries, config)
+    manager.record_skill_candidates(partition.search_entries, config)
+
+    search_pool = prepare_skill_entries_for_tier_search(
+        partition.search_entries,
+        partition.tier_by_skill,
+    )
+    searched = search_skills(
+        query,
+        search_pool,
+        config=config,
+        max_tokens=max_tokens,
+        pruner_settings=pruner_settings,
+        skip_frontmatter_gate=True,
+    )
+    t4_matches = [build_t4_skill_match(entry) for entry in partition.t4_direct]
+    return merge_skill_matches(
+        searched,
+        t4_matches,
+        representation_by_skill=partition.representation_by_skill,
+        apply_representation=tiers_apply(config, kind="skill"),
+    )

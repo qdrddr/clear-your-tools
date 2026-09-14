@@ -229,6 +229,9 @@ def _format_mcpc_tool_item(
     ]
     if include_description and description:
         attrs.append(f"description='{_xml_single_quoted_attr(description)}'")
+    tier = tool.get("cyt_injection_tier")
+    if isinstance(tier, str) and tier.strip():
+        attrs.append(f"tier='{_xml_single_quoted_attr(tier.strip().lower())}'")
     cli_line = _cli_example(session, tool_name, schema_body)
     return "\n".join(
         [

@@ -72,6 +72,7 @@ def materialize_tool_text(tool: dict[str, Any], tier_label: str) -> str:
         return ""
 
     tool_copy = _tool_for_tier(tool, tier)
+    tool_copy["cyt_injection_tier"] = tier.lower()
     include_description = True
 
     if _is_mcpc_tool(tool_copy):

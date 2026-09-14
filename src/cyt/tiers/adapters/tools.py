@@ -385,6 +385,32 @@ def merge_tool_policies(
     )
 
 
+def stamp_tool_injection_tiers(
+    tools: list[dict[str, Any]],
+    tier_by_tool: dict[str, Tier],
+    *,
+    t4_names: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Attach lowercase ``cyt_injection_tier`` (t0-t4) for XML injection formatting."""
+    from cyt.injection.tier_legend import injection_tier_attr
+
+    t4 = t4_names or set()
+    stamped: list[dict[str, Any]] = []
+    for tool in tools:
+        copy_tool = copy.deepcopy(tool)
+        name = str(copy_tool.get("name") or "")
+        if name in t4:
+            tier_attr = "t4"
+        else:
+            entity_id = tool_entity_id(copy_tool)
+            tier = tier_by_tool.get(entity_id, Tier.ACTIVE) if entity_id else Tier.ACTIVE
+            tier_attr = injection_tier_attr(_tier_label_for_pipeline(tier))
+        if tier_attr:
+            copy_tool["cyt_injection_tier"] = tier_attr
+        stamped.append(copy_tool)
+    return stamped
+
+
 def merge_t4_tools(
     pruned: list[dict[str, Any]],
     t4_direct: list[dict[str, Any]],

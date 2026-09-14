@@ -29,4 +29,3 @@ def test_react_to_permissions_changed_fan_out(tmp_path: Path) -> None:
     invalidate_catalog.assert_called_once_with("cursor", workspace)
     get_manager.assert_called_once()
     manager.purge_inactive_tool_sources.assert_called_once()
-

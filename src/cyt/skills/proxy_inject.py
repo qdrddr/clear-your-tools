@@ -178,44 +178,16 @@ def resolve_skills_for_query(
     resolved_entries = (
         entries if entries is not None else build_registry(config, upstream_kind=upstream_kind)
     )
-    if not skip_frontmatter_gate and query.strip():
-        from cyt.skills.search import eligible_skills_after_gate
+    from cyt.tiers.adapters.skills import resolve_tiered_skill_matches
 
-        resolved_entries = eligible_skills_after_gate(query, resolved_entries, config=config)
-
-    from cyt.hook.workspace_config import hook_workspace_from_config
-    from cyt.tiers.adapters.skills import build_t4_skill_match, merge_skill_matches
-    from cyt.tiers.config import tiers_apply
-    from cyt.tiers.manager import get_tier_manager
-
-    # Proxy process writes tier stats directly (daemon routing is a follow-up).
-    manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
-    partition = manager.partition_skills(resolved_entries, config)
-    # Candidacy exposure: tier-eligible search pool, not the full registry.
-    manager.record_skill_candidates(partition.search_entries, config)
-
-    from cyt.tiers.adapters.skills import prepare_skill_entries_for_tier_search
-
-    search_pool = prepare_skill_entries_for_tier_search(
-        partition.search_entries,
-        partition.tier_by_skill,
-    )
-    searched = search_skills(
+    return resolve_tiered_skill_matches(
         query,
-        search_pool,
+        resolved_entries,
         config=config,
         max_tokens=max_tokens,
         pruner_settings=pruner_settings,
-        skip_frontmatter_gate=True,
+        skip_frontmatter_gate=skip_frontmatter_gate,
     )
-    t4_matches = [build_t4_skill_match(entry) for entry in partition.t4_direct]
-    matches = merge_skill_matches(
-        searched,
-        t4_matches,
-        representation_by_skill=partition.representation_by_skill,
-        apply_representation=tiers_apply(config, kind="skill"),
-    )
-    return matches
 
 
 def inject_skills_for_proxy_request(

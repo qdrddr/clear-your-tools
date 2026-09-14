@@ -173,6 +173,14 @@ def _gate_and_build_source_sections(
     all_logs: list[dict[str, Any]] = []
     for source_id, tools in source_tools.items():
         if not tools:
+            if source_id == "cyt_mcp":
+                empty_section = format_cyt_mcp_source_section(
+                    [],
+                    workspace_paths=workspace_paths,
+                    session_text=format_session_text,
+                )
+                if empty_section:
+                    sections[source_id] = empty_section
             continue
         gated, logs, surviving_sessions = _gate_source_tools(
             tools,
@@ -184,6 +192,15 @@ def _gate_and_build_source_sections(
         )
         all_logs.extend(logs)
         if not gated:
+            if source_id == "cyt_mcp":
+                empty_section = format_cyt_mcp_source_section(
+                    [],
+                    workspace_paths=workspace_paths,
+                    session_text=format_session_text,
+                    force_empty_note=True,
+                )
+                if empty_section:
+                    sections[source_id] = empty_section
             continue
         section = _format_gated_source_section(
             source_id,

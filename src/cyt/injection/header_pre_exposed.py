@@ -11,6 +11,10 @@ _AGENT_TOOLS_BLOCK_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 _CYT_MCP_BLOCK_RE = re.compile(r"<cyt-mcp[^>]*>.*?</cyt-mcp>", re.DOTALL | re.IGNORECASE)
+_AGENT_SKILLS_BLOCK_RE = re.compile(
+    r"<agent-skills[^>]*>.*?</agent-skills>",
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 def _plain_or_escaped_attr_pre_exposed(session_text: str, attr_name: str, value: str) -> bool:
@@ -56,3 +60,17 @@ def cyt_mcp_note_pre_exposed(session_text: str, note: str) -> bool:
     if _text_in_xml_block(session_text, _CYT_MCP_BLOCK_RE, text):
         return True
     return _plain_or_escaped_attr_pre_exposed(session_text, "description", text)
+
+
+def tool_tier_legend_pre_exposed(session_text: str, legend: str) -> bool:
+    text = legend.strip()
+    if not text or not session_text.strip():
+        return False
+    return _text_in_xml_block(session_text, _CYT_MCP_BLOCK_RE, text)
+
+
+def skill_tier_legend_pre_exposed(session_text: str, legend: str) -> bool:
+    text = legend.strip()
+    if not text or not session_text.strip():
+        return False
+    return _text_in_xml_block(session_text, _AGENT_SKILLS_BLOCK_RE, text)

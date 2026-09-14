@@ -69,8 +69,11 @@ def filter_pre_exposed_skills(
         return list(matches)
     kept: list[MatchedSkill] = []
     for match in matches:
-        fragment = format_skill_item(match)
-        if fragment and is_pre_exposed(fragment, session_text):
+        fragments = [
+            format_skill_item(match, full=False),
+            format_skill_item(match, full=True),
+        ]
+        if any(fragment and is_pre_exposed(fragment, session_text) for fragment in fragments):
             continue
         if match.command and _skill_command_pre_exposed(match.command, session_text):
             continue

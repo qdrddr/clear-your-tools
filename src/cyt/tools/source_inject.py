@@ -7,7 +7,9 @@ from typing import Any
 from cyt.injection.header_pre_exposed import (
     agent_tools_intro_pre_exposed,
     cyt_mcp_note_pre_exposed,
+    tool_tier_legend_pre_exposed,
 )
+from cyt.injection.tier_legend import TOOL_TIER_LEGEND
 from cyt.tools.inject import (
     _AGENT_TOOLS_DESCRIPTION_BASE,
     _EXECUTOR_WORKSPACE_NOTE,
@@ -214,39 +216,66 @@ def format_definitions_source_section(
     return _join_section(prompt, "definitions", body)
 
 
+def _cyt_mcp_prompt_parts(
+    *,
+    session_text: str,
+    workspace_paths: list[str] | None,
+    include_workspace_note: bool,
+) -> list[str]:
+    parts: list[str] = []
+    if not tool_tier_legend_pre_exposed(session_text, TOOL_TIER_LEGEND):
+        parts.append(TOOL_TIER_LEGEND)
+    if include_workspace_note and not cyt_mcp_note_pre_exposed(session_text, _CYT_MCP_WORKSPACE_NOTE):
+        parts.append(_CYT_MCP_WORKSPACE_NOTE)
+    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
+    if len(paths) > 1:
+        roots = _format_workspace_roots_block(paths)
+        if roots:
+            parts.append(roots)
+    return parts
+
+
 def format_cyt_mcp_source_section(
     tools: list[dict[str, Any]],
     *,
     workspace_paths: list[str] | None = None,
     include_tool_description: bool = True,
     session_text: str = "",
+    force_empty_note: bool = False,
 ) -> str:
+    ws_block = ""
+    usr_block = ""
+    if tools:
+        workspace_tools, user_tools = _partition_cyt_mcp_tools_by_scope(tools)
+        ws_block = _format_scope_tool_block(
+            "cyt-mcp-ws",
+            workspace_tools,
+            include_tool_description=include_tool_description,
+        )
+        usr_block = _format_scope_tool_block(
+            "cyt-mcp-usr",
+            user_tools,
+            include_tool_description=include_tool_description,
+        )
+
+    include_workspace_note = bool(tools) or force_empty_note
     if not tools:
-        return f"<cyt-mcp>\n{_CYT_MCP_EMPTY_NOTE}\n</cyt-mcp>"
+        include_workspace_note = True
 
-    workspace_tools, user_tools = _partition_cyt_mcp_tools_by_scope(tools)
-    ws_block = _format_scope_tool_block(
-        "cyt-mcp-ws",
-        workspace_tools,
-        include_tool_description=include_tool_description,
+    prompt_parts = _cyt_mcp_prompt_parts(
+        session_text=session_text,
+        workspace_paths=workspace_paths,
+        include_workspace_note=include_workspace_note,
     )
-    usr_block = _format_scope_tool_block(
-        "cyt-mcp-usr",
-        user_tools,
-        include_tool_description=include_tool_description,
-    )
-    if not ws_block and not usr_block:
+    if not tools:
+        if _CYT_MCP_EMPTY_NOTE not in prompt_parts:
+            prompt_parts.append(_CYT_MCP_EMPTY_NOTE)
+    elif force_empty_note and not ws_block and not usr_block:
+        prompt_parts.append(_CYT_MCP_EMPTY_NOTE)
+
+    inner_parts = [part for part in (*prompt_parts, ws_block, usr_block) if part]
+    if not inner_parts:
         return ""
-
-    prompt = ""
-    if not cyt_mcp_note_pre_exposed(session_text, _CYT_MCP_WORKSPACE_NOTE):
-        prompt = _CYT_MCP_WORKSPACE_NOTE
-    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
-    roots = ""
-    if len(paths) > 1:
-        roots = _format_workspace_roots_block(paths)
-
-    inner_parts = [part for part in (prompt.strip(), roots, ws_block, usr_block) if part]
     inner = "\n".join(inner_parts)
     return f"<cyt-mcp>\n{inner}\n</cyt-mcp>"
 

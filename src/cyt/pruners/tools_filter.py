@@ -46,7 +46,7 @@ from cyt.pruners.policies import (
 from cyt.pruners.query import tools_pruning_query, tools_scoring_query
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
-from cyt.tiers.adapters.tools import merge_t4_tools
+from cyt.tiers.adapters.tools import merge_t4_tools, stamp_tool_injection_tiers
 from cyt.tiers.config import tiers_active
 from cyt.tiers.manager import NoOpTierManager, TierManager, get_tier_manager
 from cyt.tiers.models import ToolsTierApplyResult
@@ -1255,6 +1255,8 @@ def filter_tools_for_query(
     pruned_by_name = _pruned_tools_by_name(tools_for_prune, merged, to_api)
     pruned = merge_tools_preserving_order(tools_for_prune, pruned_by_name, stashed_by_name)
     pruned = merge_t4_tools(pruned, t4_direct)
+    t4_names = {str(tool.get("name") or "") for tool in t4_direct if str(tool.get("name") or "")}
+    pruned = stamp_tool_injection_tiers(pruned, tier_apply.tier_by_tool, t4_names=t4_names)
     try:
         from cyt.tool_examples.enrich import enrich_tools_with_examples
 

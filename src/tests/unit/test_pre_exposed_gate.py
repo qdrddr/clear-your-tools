@@ -11,6 +11,8 @@ from cyt.injection.pre_exposed import (
     filter_pre_exposed_tools,
     is_pre_exposed,
 )
+from cyt.injection.pre_exposure_context import PreExposureContext
+from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
 from cyt.injection.session_log import SessionLogIndex, combined_session_text
 from cyt.injection.session_text import (
     session_text_from_hook_payload,
@@ -63,6 +65,45 @@ def test_filter_pre_exposed_tools_drops_verbatim_fragment() -> None:
     assert "<agent-tools" in injected
     assert "mcp__a__keep" in injected
     assert "mcp__a__drop" not in injected
+
+
+def test_filter_pre_exposed_skills_drops_full_t4_fragment() -> None:
+    match = _skill_match(name="t4-skill", doc_id="t4-skill")
+    full_match = MatchedSkill(
+        doc_id=match.doc_id,
+        file_path=match.file_path,
+        markdown=match.markdown,
+        name=match.name,
+        score=match.score,
+        token_count=match.token_count,
+        injection_tier="t4",
+    )
+    session_text = format_skill_item(full_match, full=True)
+    filtered = filter_pre_exposed_skills([full_match], session_text)
+    assert filtered == []
+
+
+def test_filter_pre_exposed_tools_drops_t4_tier_fragment() -> None:
+    tool = _tool("mcp__a__t4")
+    tool["cyt_injection_tier"] = "t4"
+    session_text = format_tool_item(tool)
+    filtered = filter_pre_exposed_tools([tool], session_text)
+    assert filtered == []
+
+
+def test_gate_and_filter_tools_drops_pre_exposed_t4_tool() -> None:
+    tool = _tool("mcp__a__t4")
+    tool["cyt_injection_tier"] = "t4"
+    tool["cyt_catalog_source"] = "cyt_mcp"
+    fragment = format_tool_item(tool)
+    ctx = PreExposureContext.from_entries(payload_text=fragment, entries=())
+    gated, _logs, _ = gate_and_filter_tools(
+        [tool],
+        config={},
+        ctx=ctx,
+        source_id="cyt_mcp",
+    )
+    assert gated == []
 
 
 def test_filter_pre_exposed_skills_drops_verbatim_fragment() -> None:
