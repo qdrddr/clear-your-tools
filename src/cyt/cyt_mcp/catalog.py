@@ -59,6 +59,43 @@ def clear_cyt_mcp_catalog_cache() -> None:
     clear_catalog_registry()
 
 
+def invalidate_cyt_mcp_catalog_for_workspace(
+    agent: str,
+    workspace_root: str | Path,
+) -> None:
+    """Drop in-memory cyt-mcp catalog for one workspace and schedule refresh."""
+    normalized_agent = (agent or "cursor").strip().lower() or "cursor"
+    workspace = Path(workspace_root).expanduser()
+    try:
+        workspace_text = str(workspace.resolve())
+    except OSError:
+        workspace_text = str(workspace)
+
+    with _catalog_lock:
+        keys_to_drop = [
+            key
+            for key in _catalog_states
+            if key.agent == normalized_agent and key.workspace == workspace_text
+        ]
+        for key in keys_to_drop:
+            _catalog_states.pop(key, None)
+
+    from cyt.hook.workspace_config import set_hook_workspace_in_config
+    from cyt.permissions.merge import merged_hook_config
+
+    config = set_hook_workspace_in_config(
+        merged_hook_config(normalized_agent, workspace_root=workspace),
+        workspace,
+    )
+    if _runtime_active(config):
+        from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
+
+        schedule_cyt_mcp_catalog_refresh(config, force=True)
+    from cyt.tools.master_cache_scheduler import schedule_master_catalog_refresh
+
+    schedule_master_catalog_refresh(config)
+
+
 def _runtime_active(config: dict[str, Any]) -> bool:
     return uses_cyt_mcp_tool_catalog(config)
 

@@ -70,37 +70,6 @@ def record_tool_used_feedback(
             config=cfg,
             catalog=catalog,
         )
-        # #region agent log
-        if canonical_name != tool_name:
-            try:
-                import json
-                import time
-                from pathlib import Path
-
-                _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
-                _log_path.parent.mkdir(parents=True, exist_ok=True)
-                with _log_path.open("a", encoding="utf-8") as _f:
-                    _f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "ae2010",
-                                "runId": "post-fix",
-                                "hypothesisId": "D",
-                                "location": "tiers/feedback.py:record_tool_used_feedback",
-                                "message": "canonical tool name resolved",
-                                "data": {
-                                    "incoming": tool_name,
-                                    "canonical": canonical_name,
-                                    "catalog": catalog,
-                                },
-                                "timestamp": int(time.time() * 1000),
-                            },
-                        )
-                        + "\n",
-                    )
-            except OSError:
-                pass
-        # #endregion
         tool = stamp_tool_catalog_source(
             {
                 "name": canonical_name,

@@ -240,19 +240,8 @@ def _permissions_revision_from_response(response: dict[str, Any] | None) -> int:
         return 0
 
 
-async def _maybe_reload_permissions(
-    *,
-    key: str,
-    revision: int,
-    context: PushContext | None,
-) -> None:
-    last = _last_permissions_revision.get(key, 0)
-    if revision <= last:
-        return
-    _last_permissions_revision[key] = revision
-    if context is None:
-        return
-
+async def _refresh_permissions_catalog(context: PushContext, *, key: str) -> bool:
+    """Reload deny overlays and rebuild runtime cache. Returns True when clients should refresh."""
     old_hash = _catalog_hash(context.cache)
     deny_before = tuple(context.config_holder.mcp_deny)
     context.config_holder.reload_mcp_deny()
@@ -267,8 +256,35 @@ async def _maybe_reload_permissions(
     )
     new_hash = _catalog_hash(context.cache)
     _last_success_hash.pop(key, None)
-    deny_changed = deny_before != deny_after
-    if context.list_changed_middleware is not None and (new_hash != old_hash or deny_changed):
+    return new_hash != old_hash or deny_before != deny_after
+
+
+def _refresh_permissions_catalog_sync(context: PushContext, *, key: str) -> bool:
+    """Sync variant for background push threads without a running event loop."""
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_refresh_permissions_catalog(context, key=key))
+    raise RuntimeError("_refresh_permissions_catalog_sync requires no running event loop")
+
+
+async def _maybe_reload_permissions(
+    *,
+    key: str,
+    revision: int,
+    context: PushContext | None,
+) -> None:
+    last = _last_permissions_revision.get(key, 0)
+    if revision <= last:
+        return
+    _last_permissions_revision[key] = revision
+    if context is None:
+        return
+
+    should_notify = await _refresh_permissions_catalog(context, key=key)
+    if context.list_changed_middleware is not None and should_notify:
         await notify_all_sessions_list_changed(context.list_changed_middleware)
 
 
@@ -462,14 +478,21 @@ def _push_sync_with_retry(config: AggregatorConfig, cache: RuntimeToolCache) -> 
                 _last_permissions_revision[key] = revision
                 context = _push_contexts.get(key)
                 if context is not None:
-                    old_hash = _catalog_hash(context.cache)
-                    context.config_holder.reload_mcp_deny()
-                    _last_success_hash.pop(key, None)
-                    new_hash = _catalog_hash(context.cache)
-                    if new_hash != old_hash and context.list_changed_middleware is not None:
-                        logger.info(
-                            "cyt-mcp: permissions changed (sync push); restart session for list_changed",
-                        )
+                    should_notify = _refresh_permissions_catalog_sync(context, key=key)
+                    if should_notify and context.list_changed_middleware is not None:
+                        import asyncio
+
+                        try:
+                            asyncio.run(
+                                notify_all_sessions_list_changed(
+                                    context.list_changed_middleware,
+                                ),
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "cyt-mcp: sync permissions reload list_changed failed: %s",
+                                exc,
+                            )
         if success:
             return
         delay = _RETRY_DELAYS_SECONDS[min(delay_index, len(_RETRY_DELAYS_SECONDS) - 1)]

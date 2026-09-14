@@ -295,3 +295,68 @@ async def test_maybe_reload_permissions_notifies_when_deny_changes_without_hash_
 
     assert config_holder.reload_calls == 1
     middleware.notify_all_sessions.assert_awaited_once()
+
+
+def test_sync_push_notifies_on_deny_only_change(tmp_path: Path) -> None:
+    config = _config(workspace_root=tmp_path)
+    key = _instance_key(config)
+    _last_permissions_revision.clear()
+
+    cache = RuntimeToolCache()
+    cache.replace([{"name": "hedl_batch", "inputSchema": {"type": "object"}}])
+
+    class _FakeConfigHolder:
+        def __init__(self) -> None:
+            self.config = config
+            self._deny: tuple[str, ...] = ()
+            self.reload_calls = 0
+
+        @property
+        def mcp_deny(self) -> tuple[str, ...]:
+            return self._deny
+
+        def reload_mcp_deny(self) -> tuple[str, ...]:
+            self.reload_calls += 1
+            self._deny = ("hedl/hedl_batch",)
+            return self._deny
+
+    holder = _FakeConfigHolder()
+    middleware = MagicMock()
+    middleware.notify_all_sessions = AsyncMock()
+
+    context = PushContext(
+        config_holder=holder,
+        cache=cache,
+        server=MagicMock(),
+        list_changed_middleware=middleware,
+    )
+    from cyt_mcp import hook_daemon_push as push_mod
+
+    push_mod._push_contexts[key] = context
+    push_mod._last_permissions_revision[key] = 0
+
+    async def noop_refresh(
+        _server: object,
+        runtime_cache: RuntimeToolCache,
+        _config: object,
+        *,
+        skip_push: bool = False,
+    ) -> None:
+        del _server, runtime_cache, _config, skip_push
+
+    def fake_push_once(_config: AggregatorConfig, _cache: RuntimeToolCache) -> tuple[bool, int]:
+        return True, 1
+
+    with (
+        patch.object(push_mod, "_push_once", side_effect=fake_push_once),
+        patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=noop_refresh),
+        patch.object(
+            push_mod,
+            "notify_all_sessions_list_changed",
+            new=AsyncMock(),
+        ) as notify,
+    ):
+        push_mod._push_sync_with_retry(config, cache)
+
+    assert holder.reload_calls == 1
+    notify.assert_awaited_once_with(middleware)

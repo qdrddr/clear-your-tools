@@ -46,6 +46,11 @@ def filter_tools_for_tier_tracking(
     if not allowed:
         return []
     catalog_entity_ids = resolve_tracked_catalog_entity_ids(config)
+    from cyt.permissions.match import is_catalog_tool_denied
+    from cyt.permissions.runtime import resolve_effective_permissions
+
+    effective = resolve_effective_permissions(config=config)
+    deny_entries = effective.mcp.deny
     tracked: list[dict[str, Any]] = []
     for tool in tools:
         if not isinstance(tool, dict):
@@ -55,6 +60,9 @@ def filter_tools_for_tier_tracking(
             continue
         entity_id = tool_entity_id(stamped)
         if catalog_entity_ids is not None and entity_id not in catalog_entity_ids:
+            continue
+        catalog_name = str(stamped.get("name") or "").strip()
+        if catalog_name and is_catalog_tool_denied(catalog_name, deny_entries):
             continue
         tracked.append(stamped)
     return tracked

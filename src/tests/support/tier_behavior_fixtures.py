@@ -56,6 +56,23 @@ class SkillScenario:
 
 
 @dataclass(frozen=True)
+class PipelineToolExpectation:
+    entity_id: str
+    tier: Tier
+    pipeline_schema_property_keys: tuple[str, ...]
+    injection_omits_schema: bool
+
+
+@dataclass(frozen=True)
+class PipelineSkillExpectation:
+    doc_id: str
+    tier: Tier
+    search_markdown_includes: tuple[str, ...]
+    search_markdown_excludes: tuple[str, ...]
+    search_representation: str | None
+
+
+@dataclass(frozen=True)
 class IntegrationScenario:
     id: str
     query: str
@@ -65,6 +82,10 @@ class IntegrationScenario:
     expected_excluded_entity_ids: frozenset[str]
     expected_search_doc_ids: frozenset[str]
     expected_t4_doc_ids: frozenset[str]
+    expected_pruned_tool_names: frozenset[str]
+    expected_pruned_must_exclude: frozenset[str]
+    expected_injection_omits_schema_for: frozenset[str]
+    expected_skill_search_excludes_body: dict[str, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
@@ -134,6 +155,74 @@ def load_skill_scenarios(path: Path = SCENARIOS_PATH) -> tuple[SkillScenario, ..
     return tuple(scenarios)
 
 
+def load_pipeline_tool_expectations(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[PipelineToolExpectation, ...]:
+    payload = _load_payload(path).get("pipeline") or {}
+    rows = payload.get("tools") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return ()
+    expectations: list[PipelineToolExpectation] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        keys_raw = row.get("pipeline_schema_property_keys", [])
+        expectations.append(
+            PipelineToolExpectation(
+                entity_id=str(row["entity_id"]),
+                tier=_tier_value(row.get("tier")),
+                pipeline_schema_property_keys=tuple(str(key) for key in keys_raw),
+                injection_omits_schema=bool(row.get("injection_omits_schema")),
+            ),
+        )
+    return tuple(expectations)
+
+
+def load_pipeline_skill_expectations(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[PipelineSkillExpectation, ...]:
+    payload = _load_payload(path).get("pipeline") or {}
+    rows = payload.get("skills") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return ()
+    expectations: list[PipelineSkillExpectation] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        expectations.append(
+            PipelineSkillExpectation(
+                doc_id=str(row["doc_id"]),
+                tier=_tier_value(row.get("tier")),
+                search_markdown_includes=tuple(
+                    str(item) for item in row.get("search_markdown_includes", [])
+                ),
+                search_markdown_excludes=tuple(
+                    str(item) for item in row.get("search_markdown_excludes", [])
+                ),
+                search_representation=(
+                    str(row["search_representation"])
+                    if row.get("search_representation") is not None
+                    else None
+                ),
+            ),
+        )
+    return tuple(expectations)
+
+
+def iter_pipeline_tool_cases() -> list[tuple[str, str, PipelineToolExpectation]]:
+    cases: list[tuple[str, str, PipelineToolExpectation]] = []
+    for scenario in load_tool_scenarios():
+        for expectation in load_pipeline_tool_expectations():
+            if expectation.entity_id != scenario.entity_id:
+                continue
+            cases.append((scenario.entity_id, scenario.name, expectation))
+    return cases
+
+
+def iter_pipeline_skill_cases() -> list[tuple[str, PipelineSkillExpectation]]:
+    return [(item.doc_id, item) for item in load_pipeline_skill_expectations()]
+
+
 def load_integration_scenarios(path: Path = SCENARIOS_PATH) -> tuple[IntegrationScenario, ...]:
     scenarios: list[IntegrationScenario] = []
     for row in _load_payload(path).get("integration", []):
@@ -147,6 +236,12 @@ def load_integration_scenarios(path: Path = SCENARIOS_PATH) -> tuple[Integration
             str(doc_id): _tier_value(tier_name)
             for doc_id, tier_name in dict(row.get("skill_tiers") or {}).items()
         }
+        search_excludes_raw = row.get("expected_skill_search_excludes_body") or {}
+        search_excludes: dict[str, tuple[str, ...]] = {}
+        if isinstance(search_excludes_raw, dict):
+            for doc_id, fragments in search_excludes_raw.items():
+                if isinstance(fragments, list):
+                    search_excludes[str(doc_id)] = tuple(str(item) for item in fragments)
         scenarios.append(
             IntegrationScenario(
                 id=str(row["id"]),
@@ -165,6 +260,16 @@ def load_integration_scenarios(path: Path = SCENARIOS_PATH) -> tuple[Integration
                 expected_t4_doc_ids=frozenset(
                     str(doc_id) for doc_id in row.get("expected_t4_doc_ids", [])
                 ),
+                expected_pruned_tool_names=frozenset(
+                    str(name) for name in row.get("expected_pruned_tool_names", [])
+                ),
+                expected_pruned_must_exclude=frozenset(
+                    str(name) for name in row.get("expected_pruned_must_exclude", [])
+                ),
+                expected_injection_omits_schema_for=frozenset(
+                    str(name) for name in row.get("expected_injection_omits_schema_for", [])
+                ),
+                expected_skill_search_excludes_body=search_excludes,
             ),
         )
     return tuple(scenarios)
@@ -398,12 +503,18 @@ def write_cyt_mcp_disk_catalog_for_pack(
 
 __all__ = [
     "IntegrationScenario",
+    "PipelineSkillExpectation",
+    "PipelineToolExpectation",
     "TierBehaviorFixturePack",
     "build_registry_from_pack",
+    "iter_pipeline_skill_cases",
+    "iter_pipeline_tool_cases",
     "iter_skill_tier_cases",
     "iter_tool_tier_cases",
     "live_tier_config",
     "load_integration_scenarios",
+    "load_pipeline_skill_expectations",
+    "load_pipeline_tool_expectations",
     "load_skill_scenarios",
     "load_tool_scenarios",
     "materialize_fixture_pack",

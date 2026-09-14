@@ -248,3 +248,26 @@ async def test_hook_permissions_changed_clears_skills_registry_cache(
     )
     assert response.status_code == 200
     assert cleared == ["yes"]
+
+
+@pytest.mark.asyncio
+async def test_hook_permissions_changed_calls_react_fanout(
+    hook_client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[tuple[str, str]] = []
+
+    def _record_react(*, agent: str, workspace_root: str | Path) -> None:
+        called.append((agent, str(workspace_root)))
+
+    monkeypatch.setattr(
+        "cyt.hook.permissions_react.react_to_permissions_changed",
+        _record_react,
+    )
+    response = await hook_client.post(
+        "/hook/permissions/changed",
+        json={"workspace_root": str(tmp_path), "agent": "cursor"},
+    )
+    assert response.status_code == 200
+    assert called == [("cursor", str(tmp_path))]

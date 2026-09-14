@@ -249,6 +249,53 @@
       ]
     }
   ],
+  "pipeline": {
+    "tools": [
+      {
+        "entity_id": "cyt_mcp:context-mode_ctx_execute",
+        "tier": "COLD",
+        "pipeline_schema_property_keys": [],
+        "injection_omits_schema": true
+      },
+      {
+        "entity_id": "cyt_mcp:context-mode_ctx_execute",
+        "tier": "ACTIVE",
+        "pipeline_schema_property_keys": ["language", "code"],
+        "injection_omits_schema": false
+      },
+      {
+        "entity_id": "cyt_mcp:context-mode_ctx_execute",
+        "tier": "HOT",
+        "pipeline_schema_property_keys": ["language", "code"],
+        "injection_omits_schema": false
+      },
+      {
+        "entity_id": "cyt_mcp:gitnexus_query",
+        "tier": "COLD",
+        "pipeline_schema_property_keys": [],
+        "injection_omits_schema": true
+      }
+    ],
+    "skills": [
+      {
+        "doc_id": "create-hook",
+        "tier": "COLD",
+        "search_markdown_includes": ["description:"],
+        "search_markdown_excludes": ["## Usage", "Submit prompts"]
+      },
+      {
+        "doc_id": "create-hook",
+        "tier": "ACTIVE",
+        "search_markdown_includes": ["# Zebra Migration"],
+        "search_markdown_excludes": ["Submit prompts", "Database shard"]
+      },
+      {
+        "doc_id": "database-shards",
+        "tier": "HOT",
+        "search_representation": "unchanged"
+      }
+    ]
+  },
   "integration": [
     {
       "id": "live_tools_one_hot_one_dormant",
@@ -292,6 +339,42 @@
       "expected_excluded_entity_ids": ["cyt_mcp:context-mode_ctx_execute"],
       "expected_search_doc_ids": ["database-shards"],
       "expected_t4_doc_ids": ["create-hook"]
+    },
+    {
+      "id": "live_tools_all_cold_bm25_subsets",
+      "query": "gitnexus execution flow graph search",
+      "tool_tiers": {
+        "cyt_mcp:context-mode_ctx_execute": "COLD",
+        "cyt_mcp:context-mode_ctx_search": "COLD",
+        "cyt_mcp:gitnexus_query": "COLD"
+      },
+      "expected_eligible_tool_names": [
+        "context-mode_ctx_execute",
+        "context-mode_ctx_search",
+        "gitnexus_query"
+      ],
+      "expected_excluded_entity_ids": [],
+      "expected_pruned_tool_names": ["gitnexus_query"],
+      "expected_pruned_must_exclude": [
+        "context-mode_ctx_execute",
+        "context-mode_ctx_search"
+      ],
+      "expected_injection_omits_schema_for": ["gitnexus_query"]
+    },
+    {
+      "id": "live_skills_active_search_pool_headers_only",
+      "query": "zebra migration shard",
+      "skill_tiers": {
+        "create-hook": "ACTIVE",
+        "context7": "DORMANT",
+        "database-shards": "ACTIVE"
+      },
+      "expected_search_doc_ids": ["create-hook", "database-shards"],
+      "expected_t4_doc_ids": [],
+      "expected_skill_search_excludes_body": {
+        "create-hook": ["Submit prompts"],
+        "database-shards": ["Drain a shard"]
+      }
     }
   ]
 }

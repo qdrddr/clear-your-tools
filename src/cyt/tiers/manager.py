@@ -137,6 +137,10 @@ class NoOpTierManager:
     def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
         return
 
+    def purge_inactive_tool_sources(self, config: dict[str, Any]) -> None:
+        del config
+        return
+
     def status(
         self,
         config: dict[str, Any] | None = None,
@@ -437,32 +441,6 @@ class TierManager:
                 continue
             state.stats.candidates += 1.0
             state.stats.last_seen_ms = int(time.time() * 1000)
-        # #region agent log
-        if tracked:
-            try:
-                import json
-                from pathlib import Path
-
-                _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
-                _log_path.parent.mkdir(parents=True, exist_ok=True)
-                with _log_path.open("a", encoding="utf-8") as _f:
-                    _f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "ae2010",
-                                "runId": "candidacy-fix",
-                                "hypothesisId": "E",
-                                "location": "tiers/manager.py:record_tool_candidates",
-                                "message": "BM25 pool exposure recorded",
-                                "data": {"pool_size": len(tracked)},
-                                "timestamp": int(time.time() * 1000),
-                            },
-                        )
-                        + "\n",
-                    )
-            except OSError:
-                pass
-        # #endregion
         self._touch_request(config)
         self._flush_states(cfg)
 
@@ -521,39 +499,9 @@ class TierManager:
             state.stats.used_without_injection += 1.0
         if optional_used:
             state.stats.optional_used += 1.0
-            promotion = fast_promote_on_optional_use(state, cfg=cfg)
+            fast_promote_on_optional_use(state, cfg=cfg)
         else:
-            promotion = fast_promote_on_tool_use(state, cfg=cfg)
-        # #region agent log
-        if promotion is not None:
-            import json
-            import time
-            from pathlib import Path
-
-            _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
-            _log_path.parent.mkdir(parents=True, exist_ok=True)
-            with _log_path.open("a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "ae2010",
-                            "runId": "post-fix",
-                            "hypothesisId": "C",
-                            "location": "tiers/manager.py:record_tool_used",
-                            "message": "fast tool-use tier promotion",
-                            "data": {
-                                "entity_id": entity_id,
-                                "from_tier": int(promotion.from_tier),
-                                "to_tier": int(promotion.to_tier),
-                                "reason": promotion.reason,
-                                "optional_used": optional_used,
-                            },
-                            "timestamp": int(time.time() * 1000),
-                        },
-                    )
-                    + "\n",
-                )
-        # #endregion
+            fast_promote_on_tool_use(state, cfg=cfg)
         self._touch_request(config)
         self._flush_states(cfg)
 

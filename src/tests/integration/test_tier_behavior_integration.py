@@ -16,6 +16,7 @@ from cyt.skills.proxy_inject import resolve_skills_for_query
 from cyt.tiers.adapters.tools import tool_entity_id
 from cyt.tiers.manager import NoOpTierManager, TierManager, _managers
 from cyt.tiers.models import ToolsTierApplyResult
+from cyt.tools.inject import format_tool_item
 from cyt.tools.master_catalog import clear_master_catalog_cache
 from tests.support.tier_behavior_fixtures import (
     IntegrationScenario,
@@ -258,3 +259,138 @@ def test_combined_live_tiers_tools_and_skills(
     t4_ids = {skill_fixture_key(entry) for entry in skill_partition.t4_direct}
     assert search_ids == scenario.expected_search_doc_ids
     assert t4_ids == scenario.expected_t4_doc_ids
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        item
+        for item in load_integration_scenarios()
+        if item.id == "live_tools_all_cold_bm25_subsets"
+    ],
+    ids=["live_tools_all_cold_bm25_subsets"],
+)
+def test_all_cold_tools_bm25_subsets_without_forcing_injection(
+    disk_catalog_pack: TierBehaviorFixturePack,
+    scenario: IntegrationScenario,
+) -> None:
+    pack = disk_catalog_pack
+    seed_tool_tiers(pack, scenario.tool_tiers)
+    config = live_tier_config(pack, kind="tool")
+    manager = _manager_for_pack(pack)
+
+    pipeline_batches: list[list[dict[str, Any]]] = []
+    real_tier_prune = _tier_prune_context
+
+    def capture_pipeline(
+        original_tools: list[dict[str, Any]],
+        config: dict[str, Any],
+        *,
+        ctx: PolicyContext | None,
+        configured_pipeline: list[str],
+        for_hook: bool,
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        PolicyContext,
+        PolicyContext,
+        ToolsTierApplyResult,
+        TierManager | NoOpTierManager,
+    ]:
+        result = real_tier_prune(
+            original_tools,
+            config,
+            ctx=ctx,
+            configured_pipeline=configured_pipeline,
+            for_hook=for_hook,
+        )
+        pipeline_batches.append(list(result[0]))
+        return result
+
+    try:
+        with patch("cyt.pruners.tools_filter.get_tier_manager", return_value=manager):
+            with patch(
+                "cyt.pruners.tools_filter._tier_prune_context",
+                side_effect=capture_pipeline,
+            ):
+                result = filter_tools_for_query(
+                    pack.tools,
+                    scenario.query,
+                    ["bm25"],
+                    config=config,
+                    for_hook=True,
+                )
+    finally:
+        manager.close()
+
+    assert pipeline_batches
+    pipeline_tools = pipeline_batches[0]
+    assert {str(tool.get("name")) for tool in pipeline_tools} == scenario.expected_eligible_tool_names
+    for tool in pipeline_tools:
+        assert not (tool.get("input_schema") or tool.get("inputSchema"))
+
+    pruned_names = {str(tool.get("name")) for tool in result.tools or []}
+    assert scenario.expected_pruned_tool_names <= pruned_names
+    assert scenario.expected_pruned_must_exclude.isdisjoint(pruned_names)
+    assert len(pruned_names) < len(pipeline_tools)
+
+    for tool_name in scenario.expected_injection_omits_schema_for:
+        tool = next(item for item in result.tools or [] if item.get("name") == tool_name)
+        formatted = format_tool_item(tool)
+        assert "input_schema" not in formatted
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        item
+        for item in load_integration_scenarios()
+        if item.id == "live_skills_active_search_pool_headers_only"
+    ],
+    ids=["live_skills_active_search_pool_headers_only"],
+)
+def test_active_skills_search_pool_is_headers_only_before_bm25(
+    fixture_pack: TierBehaviorFixturePack,
+    scenario: IntegrationScenario,
+) -> None:
+    from dataclasses import replace
+    from pathlib import Path
+
+    from cyt.tiers.adapters.skills import prepare_skill_entries_for_tier_search
+
+    pack = fixture_pack
+    seed_skill_tiers_by_doc_id(pack, scenario.skill_tiers)
+    config = live_tier_config(pack, kind="skill")
+    entries = build_registry_from_pack(pack)
+    manager = _manager_for_pack(pack)
+    try:
+        partition = manager.partition_skills(entries, config)
+    finally:
+        manager.close()
+
+    hydrated: list[Any] = []
+    for entry in partition.search_entries:
+        markdown = str(entry.document.get("markdown") or entry.document.get("content") or "")
+        if not markdown.strip():
+            source = Path(entry.source_path)
+            if source.is_file():
+                markdown = source.read_text(encoding="utf-8")
+        document = dict(entry.document)
+        document["markdown"] = markdown
+        document["content"] = markdown
+        hydrated.append(replace(entry, document=document))
+
+    search_pool = prepare_skill_entries_for_tier_search(
+        hydrated,
+        partition.tier_by_skill,
+    )
+    searched_ids = {skill_fixture_key(entry) for entry in search_pool}
+    assert searched_ids == scenario.expected_search_doc_ids
+
+    for entry in search_pool:
+        doc_id = skill_fixture_key(entry)
+        markdown = str(entry.document.get("markdown") or entry.document.get("content") or "")
+        for fragment in scenario.expected_skill_search_excludes_body.get(doc_id, ()):
+            assert fragment not in markdown

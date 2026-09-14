@@ -45,7 +45,7 @@ def test_scenario_json_is_self_consistent() -> None:
 
     assert len(tool_scenarios) == 3
     assert len(skill_scenarios) == 3
-    assert len(integration) == 3
+    assert len(integration) == 5
     assert len(SKILL_FIXTURE_NAMES) == 3
 
     for tool_scenario in tool_scenarios:
@@ -53,8 +53,19 @@ def test_scenario_json_is_self_consistent() -> None:
     for skill_scenario in skill_scenarios:
         assert len(skill_scenario.tier_expectations) == 5
 
+    from tests.support.tier_behavior_fixtures import (
+        iter_pipeline_skill_cases,
+        iter_pipeline_tool_cases,
+        load_pipeline_skill_expectations,
+        load_pipeline_tool_expectations,
+    )
+
     assert len(iter_tool_tier_cases()) == 15
     assert len(iter_skill_tier_cases()) == 15
+    assert len(load_pipeline_tool_expectations()) >= 4
+    assert len(load_pipeline_skill_expectations()) >= 3
+    assert len(iter_pipeline_tool_cases()) == len(load_pipeline_tool_expectations())
+    assert len(iter_pipeline_skill_cases()) == len(load_pipeline_skill_expectations())
 
     skill_keys = {scenario.doc_id for scenario in skill_scenarios}
     assert skill_keys == {name.replace(".md", "") for name in SKILL_FIXTURE_NAMES}

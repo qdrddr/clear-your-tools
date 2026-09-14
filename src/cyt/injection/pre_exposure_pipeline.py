@@ -50,39 +50,6 @@ def gate_and_filter_tools(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str] | None]:
     """Session gate (b) plus verbatim filter on combined corpus."""
     refresh_rules = payload is not None and bypass_injection_pre_exposure(payload)
-    # #region agent log
-    if payload is not None:
-        try:
-            import json
-            import time
-            from pathlib import Path
-
-            _log_path = (
-                Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
-            )
-            _log_path.parent.mkdir(parents=True, exist_ok=True)
-            with _log_path.open("a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "ae2010",
-                            "runId": "post-fix",
-                            "hypothesisId": "B",
-                            "location": "injection/pre_exposure_pipeline.py:gate_and_filter_tools",
-                            "message": "pre-exposure gate",
-                            "data": {
-                                "source_id": source_id,
-                                "tools_in": len(tools),
-                                "refresh_rules": refresh_rules,
-                            },
-                            "timestamp": int(time.time() * 1000),
-                        },
-                    )
-                    + "\n",
-                )
-        except Exception:
-            pass
-    # #endregion
     index = SessionLogIndex(entries=()) if refresh_rules else ctx.index
     session_text = "" if refresh_rules else ctx.payload_text
     combined_text = "" if refresh_rules else ctx.combined_text
@@ -127,35 +94,6 @@ def gate_and_filter_tools(
 
     gated_keys = {tool_item_key(tool, catalog=catalog_kind) for tool in gated}
     filtered_logs = [entry for entry in log_entries if str(entry.get("key") or "") in gated_keys]
-    # #region agent log
-    try:
-        import json
-        import time
-        from pathlib import Path
-
-        _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
-        with _log_path.open("a", encoding="utf-8") as _f:
-            _f.write(
-                json.dumps(
-                    {
-                        "sessionId": "ae2010",
-                        "runId": "post-fix",
-                        "hypothesisId": "B",
-                        "location": "injection/pre_exposure_pipeline.py:gate_and_filter_tools:exit",
-                        "message": "pre-exposure gate result",
-                        "data": {
-                            "source_id": source_id,
-                            "tools_out": len(gated),
-                            "refresh_rules": refresh_rules,
-                        },
-                        "timestamp": int(time.time() * 1000),
-                    },
-                )
-                + "\n",
-            )
-    except Exception:
-        pass
-    # #endregion
     return gated, filtered_logs, surviving_instruction_sessions
 
 

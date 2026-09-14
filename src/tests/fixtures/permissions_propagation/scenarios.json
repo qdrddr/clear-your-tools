@@ -1,0 +1,34 @@
+{
+  "scenarios": [
+    {
+      "id": "disable_hedl_batch_via_agent_visible",
+      "disable_target": "hedl_hedl_batch",
+      "denied_catalog_name": "hedl_batch",
+      "enabled_catalog_names": [
+        "hedl_hedl_read",
+        "hedl_hedl_write",
+        "context-mode_ctx_search"
+      ]
+    },
+    {
+      "id": "disable_hedl_batch_via_mcp_wire",
+      "disable_target": "mcp__hedl__hedl_batch",
+      "denied_catalog_name": "hedl_batch",
+      "enabled_catalog_names": [
+        "hedl_hedl_read",
+        "hedl_hedl_write",
+        "context-mode_ctx_search"
+      ]
+    },
+    {
+      "id": "disable_hedl_batch_via_slash_path",
+      "disable_target": "hedl/batch",
+      "denied_catalog_name": "hedl_batch",
+      "enabled_catalog_names": [
+        "hedl_hedl_read",
+        "hedl_hedl_write",
+        "context-mode_ctx_search"
+      ]
+    }
+  ]
+}

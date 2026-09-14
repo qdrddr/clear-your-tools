@@ -362,15 +362,15 @@ async def hook_permissions_changed(request: Request) -> Response:
         return JSONResponse({"error": "invalid JSON body"}, status_code=400)
 
     from cyt.hook.catalog_registry import normalize_registry_workspace_path
+    from cyt.hook.permissions_react import react_to_permissions_changed
     from cyt.hook.permissions_revision import bump_permissions_revision
-    from cyt.skills.catalog import clear_registry_cache
 
     workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
     if workspace_root is None:
         return JSONResponse({"error": "invalid workspace_root"}, status_code=400)
     agent = str(payload.get("agent") or "cursor").strip().lower() or "cursor"
-    clear_registry_cache()
     revision = bump_permissions_revision(agent, workspace_root)
+    react_to_permissions_changed(agent=agent, workspace_root=workspace_root)
     return JSONResponse({"status": "ok", "permissions_revision": revision}, status_code=200)
 
 
