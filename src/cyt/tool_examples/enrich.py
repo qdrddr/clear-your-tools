@@ -118,21 +118,48 @@ def _enrich_single_tool(
         return out
     mcp_server, tool_name = resolve_mcp_server_and_tool(out)
     schema_hash = content_hash(schema)
+    wire_name = str(out.get("name") or "")
     captures = store.list_captures(
         project_id,
         mcp_server,
         tool_name,
-        schema_hash=schema_hash if not cfg.cross_schema_fallback else None,
+        schema_hash=None if cfg.cross_schema_fallback else schema_hash,
         limit=cfg.max_captures_per_tool,
     )
-    if not captures and cfg.cross_schema_fallback:
+    used_schema_fallback = False
+    if not captures and not cfg.cross_schema_fallback:
         captures = store.list_captures(
             project_id,
             mcp_server,
             tool_name,
             limit=cfg.max_captures_per_tool,
         )
+        used_schema_fallback = bool(captures)
     if not captures:
+        _debug_log(
+            "H1",
+            "enrich.py:_enrich_single_tool",
+            "no captures for tool",
+            {
+                "wire_name": wire_name,
+                "mcp_server": mcp_server,
+                "tool_name": tool_name,
+                "schema_hash": schema_hash[:12],
+            },
+        )
         return out
     _attach_call_examples(out, query=query, captures=captures, cfg=cfg, config=config)
+    _debug_log(
+        "H1",
+        "enrich.py:_enrich_single_tool",
+        "attached examples",
+        {
+            "wire_name": wire_name,
+            "mcp_server": mcp_server,
+            "tool_name": tool_name,
+            "schema_hash": schema_hash[:12],
+            "used_schema_fallback": used_schema_fallback,
+            "example_count": len(out.get("cyt_injection_examples") or []),
+        },
+    )
     return out

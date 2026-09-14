@@ -28,3 +28,10 @@ def test_resolve_from_wire_name() -> None:
 
 def test_resolve_empty_wire_name() -> None:
     assert resolve_mcp_server_and_tool_from_wire_name("") == ("unknown", "unknown")
+
+
+def test_resolve_hyphenated_server_wire_name() -> None:
+    assert resolve_mcp_server_and_tool_from_wire_name("codebase-memory_search_graph") == (
+        "codebase-memory",
+        "search_graph",
+    )

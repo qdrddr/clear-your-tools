@@ -27,7 +27,7 @@ def resolve_mcp_server_and_tool_from_wire_name(wire_name: str) -> tuple[str, str
     if not name:
         return "unknown", "unknown"
     if "_" in name:
-        head, _, tail = name.rpartition("_")
+        head, _, tail = name.partition("_")
         if head and tail:
             return head, tail
     return "unknown", name

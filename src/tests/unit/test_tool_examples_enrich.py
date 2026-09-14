@@ -33,6 +33,50 @@ def _config(db_path: Path, workspace: Path) -> dict:
     )
 
 
+def test_enrich_falls_back_when_pruned_schema_hash_differs(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    db = tmp_path / "tool_examples.db"
+    config = _config(db, root)
+    full_schema = {
+        "type": "object",
+        "properties": {
+            "search_query": {"type": "string"},
+            "repo": {"type": "string"},
+        },
+        "required": ["search_query"],
+    }
+    pruned_schema = {
+        "type": "object",
+        "properties": {"search_query": {"type": "string"}},
+        "required": ["search_query"],
+    }
+    store = ToolExamplesStore.open(str(db))
+    try:
+        project_id = store.get_or_create_project(str(root))
+        store.upsert_capture(
+            project_id,
+            "gitnexus",
+            "query",
+            full_schema,
+            {"search_query": "BM25 ranking", "repo": "clear-your-tools"},
+        )
+    finally:
+        store.close()
+
+    tool = {
+        "name": "gitnexus_query",
+        "server_key": "gitnexus",
+        "tool_name": "query",
+        "input_schema": pruned_schema,
+    }
+    enriched = enrich_tools_with_examples([tool], "BM25 ranking search", config)
+    examples = enriched[0]["cyt_injection_examples"]
+    assert len(examples) == 1
+    assert examples[0]["search_query"] == "BM25 ranking"
+
+
 def test_enrich_attaches_full_call_examples(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
