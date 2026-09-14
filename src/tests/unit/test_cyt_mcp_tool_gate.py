@@ -577,7 +577,7 @@ def test_validate_denies_grep_path_with_fixup_hint(
     )
     assert validation.allowed is False
     assert "unknown property 'path'" in validation.reason
-    assert "Use query (not path)" in validation.reason
+    assert "Use backend property names exactly" in validation.reason
 
 
 def test_validate_graphify_query_graph_uses_graphify_schema_not_codebase_memory(

@@ -12,6 +12,8 @@ from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 from cyt.tool_examples.ranking import rank_full_call_examples
 from cyt.tool_examples.store import ToolCapture, ToolExamplesStore
+from cyt.tiers.tool_token_materialization import input_schema_from_tool
+from cyt.tools.injection_schema import entangle_examples_with_schema
 
 
 def _schema_from_tool(tool: dict[str, Any]) -> dict[str, Any]:
@@ -99,7 +101,11 @@ def _attach_call_examples(
     )
     if not ranked_calls:
         return
-    out["cyt_injection_examples"] = ranked_calls
+    schema = input_schema_from_tool(out)
+    entangled = entangle_examples_with_schema(ranked_calls, schema) if schema else ranked_calls
+    if not entangled:
+        return
+    out["cyt_injection_examples"] = entangled
     out["cyt_injection_examples_max_chars"] = cfg.max_value_chars
 
 

@@ -604,26 +604,11 @@ def _schema_fixup_hint(
     schema: dict[str, Any],
     payload: dict[str, Any] | None,
 ) -> str:
-    """Actionable hint when raw args fail but a common rename/fill would succeed."""
+    """Actionable hint when required catalog properties are missing from raw args."""
     properties = schema.get("properties")
     if not isinstance(properties, dict):
         return ""
     hints: list[str] = []
-
-    if (
-        "path" in args
-        and "path" not in properties
-        and "query" in properties
-        and str(args.get("path") or "").strip()
-    ):
-        path = str(args["path"]).strip().rstrip("/") + "/"
-        term = str(args.get("pattern") or args.get("query") or "").strip()
-        merged = f"{path} {term}".strip() if term else path.rstrip("/")
-        hints.append(f"Use query (not path). Example: {merged!r}")
-
-    normalized = _normalize_property_aliases(dict(args), schema)
-    if normalized != args:
-        hints.append(f"Expected argument names: {sorted(normalized)}")
 
     required = schema.get("required")
     if isinstance(required, list) and payload is not None:
@@ -638,44 +623,19 @@ def _schema_fixup_hint(
             if missing:
                 hints.append("Missing required: " + ", ".join(missing))
 
+    unknown = [
+        key
+        for key in args
+        if key not in properties and schema.get("additionalProperties", False) is False
+    ]
+    if unknown:
+        allowed = sorted(properties)
+        hints.append(
+            "Use backend property names exactly as listed in input_schema "
+            f"(unknown: {unknown!r}; allowed: {allowed})",
+        )
+
     return "\n".join(hints)
-
-
-def _normalize_property_aliases(args: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
-    """Map common agent argument aliases onto catalog property names."""
-    normalized = dict(args)
-    properties = schema.get("properties")
-    if not isinstance(properties, dict):
-        return normalized
-    if (
-        "pattern" in normalized
-        and "pattern" not in properties
-        and "query" in properties
-        and "query" not in normalized
-    ):
-        normalized["query"] = normalized.pop("pattern")
-    if (
-        "query" in normalized
-        and "query" not in properties
-        and "pattern" in properties
-        and "pattern" not in normalized
-    ):
-        normalized["pattern"] = normalized.pop("query")
-    if (
-        "query" in normalized
-        and "query" not in properties
-        and "search_query" in properties
-        and "search_query" not in normalized
-    ):
-        normalized["search_query"] = normalized.pop("query")
-    if (
-        "limit" in normalized
-        and "limit" not in properties
-        and "top_k" in properties
-        and "top_k" not in normalized
-    ):
-        normalized["top_k"] = normalized.pop("limit")
-    return normalized
 
 
 def _find_tool_in_catalog(

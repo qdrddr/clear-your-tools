@@ -323,7 +323,7 @@ def test_format_tool_item_renders_examples_block(tmp_path: Path) -> None:
     item = format_tool_item(enriched)
     assert "<examples>" in item
     assert "</examples>" in item
-    assert "- {'path':'/path/to/large-spec.md','source':'openapi-v2-spec'}" in item
+    assert "- {'source':'openapi-v2-spec'}" in item
     assert "Examples:" not in item
 
 

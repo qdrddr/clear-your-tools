@@ -558,9 +558,11 @@ def _build_parser() -> argparse.ArgumentParser:
     from cyt.migrations.cli import add_config_parser
     from cyt.permissions.cli import add_permissions_parser
     from cyt.tiers.cli import add_tiers_parser
+    from cyt.tools.inject_cli import add_inject_parser
 
     add_permissions_parser(subparsers)
     add_tiers_parser(subparsers)
+    add_inject_parser(subparsers)
     add_config_parser(subparsers)
 
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
@@ -940,6 +942,14 @@ def _dispatch_cli_command(args: argparse.Namespace) -> bool:
 
         run_client()
         return True
+
+    if args.command == "inject":
+        from cyt.tools.inject_cli import run_inject_preview
+
+        handler = getattr(args, "inject_handler", None)
+        if handler is None:
+            raise SystemExit("usage: cyt inject preview QUERY [--json] [--definitions]")
+        raise SystemExit(int(handler(args)))
 
     handler_command = _HANDLER_COMMANDS.get(args.command or "")
     if handler_command is not None:

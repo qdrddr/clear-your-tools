@@ -88,12 +88,12 @@ def test_format_tool_item_renders_examples_block() -> None:
 
 
 def test_format_tool_item_zero_max_chars_disables_example_truncation() -> None:
-    long_repo = "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools"
+    long_query = "BM25 ranking score " + ("x" * 120)
     tool = _sample_tool(with_schema=True)
-    tool["cyt_injection_examples"] = [{"query": "BM25 ranking score", "repo": long_repo}]
+    tool["cyt_injection_examples"] = [{"query": long_query}]
     tool["cyt_injection_examples_max_chars"] = 0
     item = format_tool_item(tool)
-    assert long_repo in item
+    assert long_query in item
     assert "..." not in item
 
 

@@ -6,10 +6,11 @@ from cyt.tiers.models import Tier
 
 TOOL_TIER_LEGEND = (
     "Tool tiers: t4=full unfiltered inputSchema; "
-    "t3=optional props pruned by prompt similarity (some may survive); "
-    "t2=required props only, full schema via get-tool-definitions(tool-name); "
-    "t1=description only, full schema via get-tool-definitions(tool-name); "
-    "t0=dormant."
+    "t3=optional props pruned by prompt similarity (required props always listed; some optionals may survive); "
+    "t2=required props only (call get-tool-definitions(tool-name) for full optional schema); "
+    "t1=description only, no input_schema (call get-tool-definitions(tool-name) before use); "
+    "t0=dormant. Never guess argument property names — use listed input_schema keys or "
+    "get-tool-definitions(tool-name)."
 )
 
 SKILL_TIER_LEGEND = (

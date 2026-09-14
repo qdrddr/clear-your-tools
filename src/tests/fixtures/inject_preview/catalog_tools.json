@@ -1,0 +1,52 @@
+{
+  "catalog_tool_names": [
+    "semble_search",
+    "gitnexus_query",
+    "fff_grep"
+  ],
+  "tools": [
+    {
+      "name": "semble_search",
+      "description": "Search once with BM25-ranked snippets. Pass repo path and query.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "repo": {"type": "string"}
+        },
+        "required": ["query", "repo"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "server_key": "semble",
+      "tool_name": "search"
+    },
+    {
+      "name": "gitnexus_query",
+      "description": "Query the code knowledge graph; hybrid BM25 keyword + semantic search.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "search_query": {"type": "string"}
+        },
+        "required": ["search_query"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "server_key": "gitnexus",
+      "tool_name": "query"
+    },
+    {
+      "name": "fff_grep",
+      "description": "Search file contents with grep; useful for locating BM25 implementation symbols.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "server_key": "fff",
+      "tool_name": "grep"
+    }
+  ]
+}

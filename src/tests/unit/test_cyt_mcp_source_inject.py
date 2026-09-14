@@ -63,7 +63,8 @@ def test_format_cyt_mcp_source_section_empty_tools_emits_static_block() -> None:
     section = format_cyt_mcp_source_section([])
     assert "<cyt-mcp>" in section
     assert "Tool tiers:" in section
-    assert "Do not use `get-tool-definitions`" in section
+    assert "get-tool-definitions" in section
+    assert "Do not guess or invent argument property names" in section
     assert "<cyt-mcp-ws>" not in section
     assert "<cyt-mcp-usr>" not in section
 
@@ -72,7 +73,8 @@ def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
     section = format_cyt_mcp_source_section([_sample_tool("codebase-memory_query_graph")])
     assert "Tool tiers:" in section
     assert "pre-filtered tool definitions" in section
-    assert "Do not use `get-tool-definitions`" in section
+    assert "get-tool-definitions" in section
+    assert "Do not guess or invent argument property names" in section
     assert "pruning pipeline" in section
 
 

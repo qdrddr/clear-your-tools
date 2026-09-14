@@ -1,0 +1,20 @@
+{
+  "scenarios": [
+    {
+      "id": "workspace_scoped_disk_catalog",
+      "description": "cyt inject preview must attach hook workspace so workspace-slug disk cache loads",
+      "query": "Locate primary code implementing BM25, use semble, gitnexus, fff",
+      "expected_catalog_tool_count": 3,
+      "expected_pruned_tool_names": [
+        "semble_search",
+        "gitnexus_query",
+        "fff_grep"
+      ],
+      "expected_injection_markers": [
+        "<agent-tools path=",
+        "<cyt-mcp>",
+        "<tool name="
+      ]
+    }
+  ]
+}

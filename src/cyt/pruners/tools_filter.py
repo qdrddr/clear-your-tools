@@ -117,6 +117,24 @@ def _original_tools_by_name(tools: list[dict[str, Any]]) -> dict[str, dict[str, 
     return {str(t.get("name", "")): t for t in tools if isinstance(t, dict) and t.get("name")}
 
 
+def _ensure_injection_schemas_for_tiers(
+    pruned: list[dict[str, Any]],
+    original_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep required backend schema fields on T2–T4 injection payloads."""
+    from cyt.tools.injection_schema import ensure_tool_injection_schema
+
+    originals = _original_tools_by_name(original_tools)
+    return [
+        ensure_tool_injection_schema(
+            tool,
+            full_tool=originals.get(str(tool.get("name") or "")),
+        )
+        for tool in pruned
+        if isinstance(tool, dict)
+    ]
+
+
 def _pruned_tools_by_name(
     original_tools: list[dict[str, Any]],
     merged: list[dict[str, Any]],
@@ -1257,6 +1275,7 @@ def filter_tools_for_query(
     pruned = merge_t4_tools(pruned, t4_direct)
     t4_names = {str(tool.get("name") or "") for tool in t4_direct if str(tool.get("name") or "")}
     pruned = stamp_tool_injection_tiers(pruned, tier_apply.tier_by_tool, t4_names=t4_names)
+    pruned = _ensure_injection_schemas_for_tiers(pruned, original_tools)
     try:
         from cyt.tool_examples.enrich import enrich_tools_with_examples
 
