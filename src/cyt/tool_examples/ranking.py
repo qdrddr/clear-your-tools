@@ -444,7 +444,7 @@ def rank_full_call_examples(
     )
     out: list[dict[str, Any]] = []
     for item in ranked:
-        payload = payload_by_value.get(item.value)
-        if isinstance(payload, dict):
-            out.append(payload)
+        matched = payload_by_value.get(item.value)
+        if matched is not None:
+            out.append(matched)
     return out

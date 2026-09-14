@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cyt.tiers.config import tier_section_config
+from cyt.tiers.config import TierSectionConfig, tier_section_config
 from cyt.tiers.evaluator import epoch_remaining_ms, epoch_ttl_ms
 from cyt.tiers.models import EntityTierState, EpochState, Tier
 from cyt.tiers.status_overview import format_duration_compact
@@ -46,7 +46,7 @@ def fixture_pack(tmp_path: Path) -> TierWakeCycleFixturePack:
     return materialize_wake_cycle_pack(tmp_path)
 
 
-def _wake_cfg(pack: TierWakeCycleFixturePack) -> object:
+def _wake_cfg(pack: TierWakeCycleFixturePack) -> TierSectionConfig:
     return tier_section_config(tier_wake_config(pack), kind="tool")
 
 
@@ -91,7 +91,10 @@ def _cold_state(
     load_epoch_timing_scenarios(),
     ids=[scenario.id for scenario in load_epoch_timing_scenarios()],
 )
-def test_epoch_timing_from_fixture(scenario: EpochTimingScenario, fixture_pack: TierWakeCycleFixturePack) -> None:
+def test_epoch_timing_from_fixture(
+    scenario: EpochTimingScenario,
+    fixture_pack: TierWakeCycleFixturePack,
+) -> None:
     cfg = _wake_cfg(fixture_pack)
     epoch = EpochState(
         epoch_start_ms=scenario.epoch_start_ms,

@@ -16,6 +16,7 @@ from cyt_client.tool_gate import validate_pre_tool_call
 from tests.unit.gherkin.conftest import GherkinContext
 from tests.unit.gherkin.test_tool_catalog_gate_gherkin import (
     _patch_session_log_path,
+    _type2_cyt_mcp_tool,
     _write_session,
 )
 
@@ -81,7 +82,7 @@ def given_verify_only_cyt_mcp_catalog(
                 "key": "tool_catalog:cyt_mcp",
                 "catalog": "cyt_mcp",
                 "hash": "hash-cyt-mcp",
-                "tools": [{"name": tool_name, "input_schema": schema}],
+                "tools": [_type2_cyt_mcp_tool(tool_name, schema)],
             },
         ],
     )
@@ -113,7 +114,7 @@ def given_verify_only_explicit_branch(
                 "key": "tool_catalog:cyt_mcp",
                 "catalog": "cyt_mcp",
                 "hash": "hash-cyt-mcp",
-                "tools": [{"name": tool_name, "input_schema": schema}],
+                "tools": [_type2_cyt_mcp_tool(tool_name, schema)],
             },
         ],
     )

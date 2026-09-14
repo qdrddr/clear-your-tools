@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 from typing import Any
 
 from cyt.tiers.tool_token_materialization import input_schema_from_tool
@@ -36,7 +37,7 @@ def project_example_to_schema(
 
 
 def entangle_examples_with_schema(
-    examples: list[dict[str, Any]],
+    examples: Sequence[object],
     schema: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Filter and trim examples so each matches the injected input_schema shape."""
@@ -56,7 +57,11 @@ def ensure_required_properties_in_schema(
 ) -> dict[str, Any]:
     """Merge required property definitions from *full_schema* into *injection_schema*."""
     full = input_schema_from_tool({"input_schema": full_schema})
-    out = copy.deepcopy(injection_schema) if injection_schema else {"type": "object", "properties": {}}
+    out: dict[str, Any] = (
+        copy.deepcopy(injection_schema)
+        if injection_schema
+        else {"type": "object", "properties": {}}
+    )
     full_props = full.get("properties")
     if not isinstance(full_props, dict):
         return out
@@ -92,7 +97,7 @@ def ensure_tool_injection_schema(
     *,
     full_tool: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Ensure T2–T4 tools carry required schema fields; entangle examples to that schema."""
+    """Ensure T2-T4 tools carry required schema fields; entangle examples to that schema."""
     out = copy.deepcopy(tool)
     tier = out.get("cyt_injection_tier")
     schema = input_schema_from_tool(out)

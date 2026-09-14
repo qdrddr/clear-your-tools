@@ -383,7 +383,11 @@ def test_epoch_crystallizes_despite_poor_lifetime_execution() -> None:
     )
     assert state.stable_tier == Tier.HOT
     assert transitions[0].reason == "slow_promote_epoch_crystallized"
-    demotions = evaluate_slow_clock({key: state}, cfg=tier_section_config({}, kind="tool"), epoch=EpochState())
+    demotions = evaluate_slow_clock(
+        {key: state},
+        cfg=tier_section_config({}, kind="tool"),
+        epoch=EpochState(),
+    )
     assert not demotions
 
 
@@ -405,7 +409,11 @@ def test_epoch_success_blocks_demotion_of_stable_hot_tool() -> None:
         ),
     )
     cfg = tier_section_config({}, kind="tool")
-    transitions = evaluate_slow_clock({("tool", state.entity_id): state}, cfg=cfg, epoch=EpochState())
+    transitions = evaluate_slow_clock(
+        {("tool", state.entity_id): state},
+        cfg=cfg,
+        epoch=EpochState(),
+    )
     assert transitions == []
     assert state.stable_tier == Tier.HOT
 

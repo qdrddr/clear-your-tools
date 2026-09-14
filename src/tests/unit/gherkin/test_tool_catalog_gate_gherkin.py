@@ -31,6 +31,15 @@ def _write_session(path: Path, entries: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8")
 
 
+def _type2_cyt_mcp_tool(tool_name: str, schema: dict) -> dict:
+    record = {"name": tool_name, "input_schema": schema}
+    if "_" in tool_name:
+        server_key, backend_tool_name = tool_name.split("_", 1)
+        record["server_key"] = server_key
+        record["tool_name"] = backend_tool_name
+    return record
+
+
 def _cyt_mcp_catalog(tool_name: str, schema: dict, *, inject_enabled: bool = True) -> list[dict]:
     entries: list[dict] = [
         {
@@ -44,10 +53,7 @@ def _cyt_mcp_catalog(tool_name: str, schema: dict, *, inject_enabled: bool = Tru
             "catalog": "cyt_mcp",
             "hash": "hash-cyt-mcp",
             "tools": [
-                {
-                    "name": tool_name,
-                    "input_schema": schema,
-                },
+                _type2_cyt_mcp_tool(tool_name, schema),
             ],
         },
     ]

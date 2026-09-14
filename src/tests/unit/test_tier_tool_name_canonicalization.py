@@ -81,7 +81,9 @@ def test_extract_gated_tool_use_feedback_returns_wire_name(tmp_path: Path) -> No
                 "hash": "h",
                 "tools": [
                     {
-                        "name": "search_symbols",
+                        "name": "jcodemunch_search_symbols",
+                        "server_key": "jcodemunch",
+                        "tool_name": "search_symbols",
                         "input_schema": {
                             "type": "object",
                             "properties": {"query": {"type": "string"}, "repo": {"type": "string"}},

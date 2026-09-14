@@ -325,3 +325,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         for item in items:
             if item.get_closest_marker("runtime"):
                 item.add_marker(skip)
+
+
+pytest_plugins = [
+    "tests.support.inject_preview_fixtures",
+]

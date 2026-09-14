@@ -910,61 +910,89 @@ _HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
 }
 
 
+def _dispatch_stats_command(args: argparse.Namespace) -> bool:
+    if args.command != "stats":
+        return False
+    _ensure_stats_defaults(args)
+    config = load_config(getattr(args, "config", None))
+    _run_stats_cli(args, config)
+    return True
+
+
+def _dispatch_setup_command(args: argparse.Namespace) -> bool:
+    if args.command != "setup":
+        return False
+    from cyt.proxy.setup_wizard import run_setup
+
+    run_setup(resolve_setup_config_path(getattr(args, "config", None)))
+    return True
+
+
+def _dispatch_stop_command(args: argparse.Namespace) -> bool:
+    if args.command != "stop":
+        return False
+    from cyt.stop import stop_all
+
+    stop_all(
+        verbose=bool(getattr(args, "verbose", False)),
+        config_path=getattr(args, "config", None),
+    )
+    return True
+
+
+def _dispatch_inject_command(args: argparse.Namespace) -> bool:
+    if args.command != "inject":
+        return False
+    handler = getattr(args, "inject_handler", None)
+    if handler is None:
+        raise SystemExit("usage: cyt inject preview QUERY [--json] [--definitions]")
+    raise SystemExit(int(handler(args)))
+
+
+def _dispatch_handler_registry_command(args: argparse.Namespace) -> bool:
+    handler_command = _HANDLER_COMMANDS.get(args.command or "")
+    if handler_command is None:
+        return False
+    handler_attr, usage = handler_command
+    handler = getattr(args, handler_attr, None)
+    if handler is None:
+        raise SystemExit(usage)
+    result = handler(args)
+    if args.command == "tiers":
+        raise SystemExit(int(result))
+    return True
+
+
+def _dispatch_hook_command(args: argparse.Namespace) -> bool:
+    if args.command != "hook":
+        return False
+    _run_hook_command(args)
+    return True
+
+
+def _dispatch_client_command(args: argparse.Namespace) -> bool:
+    if args.command != "client":
+        return False
+    from cyt_client.cli import main as run_client
+
+    run_client()
+    return True
+
+
 def _dispatch_cli_command(args: argparse.Namespace) -> bool:
     """Run a named subcommand. Returns True when handled."""
-    if args.command == "stats":
-        _ensure_stats_defaults(args)
-        config = load_config(getattr(args, "config", None))
-        _run_stats_cli(args, config)
-        return True
-
-    if args.command == "setup":
-        from cyt.proxy.setup_wizard import run_setup
-
-        run_setup(resolve_setup_config_path(getattr(args, "config", None)))
-        return True
-
-    if args.command == "stop":
-        from cyt.stop import stop_all
-
-        stop_all(
-            verbose=bool(getattr(args, "verbose", False)),
-            config_path=getattr(args, "config", None),
-        )
-        return True
-
-    if args.command == "hook":
-        _run_hook_command(args)
-        return True
-
-    if args.command == "client":
-        from cyt_client.cli import main as run_client
-
-        run_client()
-        return True
-
-    if args.command == "inject":
-        from cyt.tools.inject_cli import run_inject_preview
-
-        handler = getattr(args, "inject_handler", None)
-        if handler is None:
-            raise SystemExit("usage: cyt inject preview QUERY [--json] [--definitions]")
-        raise SystemExit(int(handler(args)))
-
-    handler_command = _HANDLER_COMMANDS.get(args.command or "")
-    if handler_command is not None:
-        handler_attr, usage = handler_command
-        handler = getattr(args, handler_attr, None)
-        if handler is None:
-            raise SystemExit(usage)
-        result = handler(args)
-        if args.command == "tiers":
-            raise SystemExit(int(result))
-        return True
-
-    if _dispatch_launch_command(args):
-        return True
-
+    for dispatch in (
+        _dispatch_stats_command,
+        _dispatch_setup_command,
+        _dispatch_stop_command,
+        _dispatch_hook_command,
+        _dispatch_client_command,
+        _dispatch_inject_command,
+        _dispatch_handler_registry_command,
+        _dispatch_launch_command,
+    ):
+        if dispatch(args):
+            return True
     return False
 
 

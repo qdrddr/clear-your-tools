@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import sys
 from collections.abc import Callable
 from contextlib import nullcontext
 from typing import Any, TypedDict, cast
@@ -121,7 +122,7 @@ def _ensure_injection_schemas_for_tiers(
     pruned: list[dict[str, Any]],
     original_tools: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Keep required backend schema fields on T2–T4 injection payloads."""
+    """Keep required backend schema fields on T2-T4 injection payloads."""
     from cyt.tools.injection_schema import ensure_tool_injection_schema
 
     originals = _original_tools_by_name(original_tools)
@@ -959,7 +960,7 @@ def _log_operator_message(msg: str) -> None:
     from cyt.proxy.transport import append_debug_log_block, debug_endpoint_proxy_log_path
 
     logger.info(msg)
-    print(msg, flush=True)
+    print(msg, file=sys.stderr, flush=True)
     if (log_path := debug_endpoint_proxy_log_path.get()) is not None:
         append_debug_log_block(log_path, label="operator", content=msg)
 

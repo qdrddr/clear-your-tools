@@ -445,7 +445,7 @@ tools:
       require_success: true
     inject:
       max_per_property: 3
-      max_value_chars: 0  # per-string value cap in <examples>; 0 disables truncation
+      max_value_chars: 1024 # per-string value cap in <examples>; 0 disables truncation
       full_call_examples: true
       max_full_call_examples: 3
       cross_schema_fallback: false

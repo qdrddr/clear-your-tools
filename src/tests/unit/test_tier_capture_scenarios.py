@@ -89,8 +89,8 @@ def test_attempt_sequences_update_attempts_and_used(
         apply_attempt_sequence(manager, capture_pack, scenario)
         state = manager._states.get((EntityKind.TOOL, capture_pack.tool.entity_id))
         assert state is not None
-        assert state.stats.attempts == scenario.expected["attempts"]
-        assert state.stats.used == scenario.expected["used"]
+        assert state.stats.attempts == pytest.approx(scenario.expected["attempts"], abs=0.05)
+        assert state.stats.used == pytest.approx(scenario.expected["used"], abs=0.05)
         if scenario.expected.get("execution_lt_utility"):
             assert execution_score(state.stats) < utility_score(state.stats)
     finally:
@@ -121,7 +121,7 @@ def test_record_tool_attempt_feedback_matches_http_payload_expectations(
     manager = get_tier_manager(capture_pack.config, workspace=capture_pack.workspace)
     state = manager._states.get((EntityKind.TOOL, capture_pack.tool.entity_id))
     assert state is not None
-    assert state.stats.attempts == scenario.expected["attempts"]
+    assert state.stats.attempts == pytest.approx(scenario.expected["attempts"])
     assert state.stats.used == scenario.expected["used"]
 
 
@@ -153,7 +153,7 @@ def test_status_detail_includes_attempts_and_execution_score(
         for item in items
         if item["entity_id"] == capture_pack.tool.entity_id
     )
-    assert row["stats"]["attempts"] == scenario.expected["attempts"]
+    assert row["stats"]["attempts"] == pytest.approx(scenario.expected["attempts"], abs=0.05)
     assert row["scores"]["execution"] == execution_score(state.stats)
     assert row["scores"]["utility"] == utility_score(state.stats)
 

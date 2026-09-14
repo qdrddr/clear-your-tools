@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from cyt.skills import hook_quiet
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 
 def test_configure_hook_quiet_is_idempotent() -> None:
@@ -41,9 +42,14 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             "tools": {
                 "sequence": ["bm25"],
                 "pipelines": {"bm25": {"score_skills": 0.0}},
+                "hook": {
+                    "tools_from": "definitions",
+                    "mcp_definitions_file": str(root / "missing-tools.json"),
+                },
             },
         },
         "stats": {"database": {"path": str(root / "stats.db")}},
+        "agents": isolated_skills_agents_block(),
     }
 
 

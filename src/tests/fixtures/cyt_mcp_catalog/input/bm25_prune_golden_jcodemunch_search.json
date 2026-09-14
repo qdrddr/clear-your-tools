@@ -4,7 +4,10 @@
       "name": "code-review-graph_embed_graph_tool",
       "description": "Compute vector embeddings for all graph nodes to enable semantic search.\n\nRequires: pip install code-review-graph[embeddings] (local provider only;\ncloud providers use stdlib urllib).\nDefault provider: local. Default model: all-MiniLM-L6-v2.\nOverride provider via `provider` param, model via `model` param or\nCRG_EMBEDDING_MODEL / CRG_OPENAI_MODEL env vars.\nChanging the model or provider re-embeds all nodes automatically.\n\nAfter running this, semantic_search_nodes_tool will use vector similarity\ninstead of keyword matching for much better results.\n\nRuns the blocking sentence-transformers / Gemini / HTTP inference in a\nthread via ``asyncio.to_thread`` so the stdio event loop stays\nresponsive — without this wrapper, embedding a large graph would\nsilently hang the MCP server on Windows. See: #46, #136.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "embed_graph_tool"
     },
@@ -68,7 +71,10 @@
       "name": "context-mode_ctx_index",
       "description": "Store content in a searchable knowledge base (BM25 over FTS5). Splits markdown by headings, keeps code blocks intact, and persists the raw chunks. The full content stays in storage — retrieve any section on-demand via ctx_search; nothing is summarized or truncated.\n\nWHEN:\n  - Documentation from Context7, Skills, or MCP tools (API docs, framework guides, code examples)\n  - API references (endpoint details, parameter specs, response schemas)\n  - MCP tools/list output (exact tool signatures and descriptions)\n  - Skill prompts and instructions that are too large to keep verbatim in conversation\n  - README files, migration guides, changelog entries\n  - Any content with code examples you may need to reference precisely later\n\nWHEN NOT:\n  - Log files, test output, CSV, or build output — use ctx_execute_file, which processes in-sandbox without persisting bytes\n  - Single-use ephemeral content you will not query later — keep it inline if it fits, or ctx_execute_file it\n\nRETURNS:\n  Indexing metadata: chunk counts (total, code-bearing), source label, and the exact ctx_search call shape to query the indexed content. Raw content is NOT echoed back — it lives in storage, retrievable via ctx_search(source: \"<label>\"). When `path` is provided, a content hash is stored so ctx_search results auto-flag staleness on future calls.\n\nEXAMPLE: ctx_index(content: \"# React useEffect\\n\\nThe Effect Hook lets you ...\", source: \"react-useeffect-docs\")\nEXAMPLE: ctx_index(path: \"/path/to/large-spec.md\", source: \"openapi-v2-spec\")",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "context-mode",
       "tool_name": "ctx_index"
     },
@@ -76,7 +82,10 @@
       "name": "gitnexus_context",
       "description": "360-degree view of a single code symbol.\nShows categorized incoming/outgoing references (calls, imports, extends, implements, methods, properties, overrides), process participation, and file location.\n\nWHEN TO USE: After query() to understand a specific symbol in depth. When you need to know all callers, callees, and what execution flows a symbol participates in.\nAFTER THIS: Use impact() if planning changes, or READ gitnexus://repo/{name}/process/{processName} for full execution trace.\n\nHandles disambiguation: if multiple symbols share the same name, returns ranked candidates (each with a relevance score) for you to pick from. Use uid for zero-ambiguity lookup, or narrow the search with file_path and/or kind hints.\n\nNOTE: ACCESSES edges (field read/write tracking) are included in context results with reason 'read' or 'write'. CALLS edges resolve through field access chains and method-call chains (e.g., user.address.getCity().save() produces CALLS edges at each step).\n\nGROUP MODE: set \"repo\" to \"@<groupName>\" to run context in each member repo (aggregated list), or \"@<groupName>/<groupRepoPath>\" for one member. If you use \"@<groupName>\" only, the member defaults to the lexicographically first key in group.yaml \"repos\".\n\nSERVICE: optional monorepo path prefix (case-sensitive path segments). When \"repo\" starts with \"@\", prefix-matches resolved symbol file paths; when a hit is outside the prefix, that member returns an empty payload for the symbol. Ignored for a normal indexed repo name.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "gitnexus",
       "tool_name": "context"
     },
@@ -380,7 +389,10 @@
       "name": "jcodemunch_list_repos",
       "description": "List all indexed repositories. START HERE before using Grep/Read/search tools — check if the project is already indexed, then use search_symbols / get_symbol_source instead of native file reads. If jcodemunch tools appear as deferred in your tool list, call ToolSearch to load their schemas first.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "jcodemunch",
       "tool_name": "list_repos"
     },
@@ -532,7 +544,10 @@
       "name": "jcodemunch_tune_weights",
       "description": "Learn per-repo retrieval weights from the v1.78.0 ranking ledger. Computes confidence correlations for the semantic and identity-match channels and writes overrides to ~/.code-index/tuning.jsonc. search_symbols reads those overrides at query time when the caller doesn't pass an explicit semantic_weight. Learns from a recency window of the ledger (default 90 days) so stale events can't anchor the weights. Safe to re-run; idempotent for stable signal.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "jcodemunch",
       "tool_name": "tune_weights"
     }
@@ -545,8 +560,8 @@
   "score_tool_enum": 0.1,
   "prune_enums": true,
   "tokens_in": 55361,
-  "tokens_out": 5682,
-  "tokens_saved": 49679,
+  "tokens_out": 5712,
+  "tokens_saved": 49649,
   "tokenizer": "tiktoken_compact_json",
   "optional_properties_in": 6,
   "optional_properties_out": 0,

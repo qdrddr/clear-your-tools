@@ -24,6 +24,19 @@ from cyt.tiers.store import TierStore
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tier_flush"
 SCENARIOS_PATH = FIXTURES_ROOT / "scenarios.json"
 
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        return int(value)
+    return default
+
+
 _TIER_BY_NAME = {
     "DORMANT": Tier.DORMANT,
     "COLD": Tier.COLD,
@@ -260,10 +273,14 @@ def seed_tier_flush_db(pack: TierFlushFixturePack, path: Path = SCENARIOS_PATH) 
             store.save_epoch_state(
                 project,
                 EpochState(
-                    epoch_id=int(epoch_raw.get("epoch_id", 0)),
-                    epoch_start_ms=int(epoch_raw.get("epoch_start_ms", 0)),
-                    last_request_ms=int(epoch_raw.get("last_request_ms", 0)),
-                    wake_cycle_id=int(epoch_raw.get("wake_cycle_id", epoch_raw.get("session_id", 0))),
+                    epoch_id=_coerce_int(epoch_raw.get("epoch_id", 0)),
+                    epoch_start_ms=_coerce_int(epoch_raw.get("epoch_start_ms", 0)),
+                    last_request_ms=_coerce_int(epoch_raw.get("last_request_ms", 0)),
+                    wake_cycle_id=_coerce_int(
+                        epoch_raw.get("wake_cycle_id")
+                        if epoch_raw.get("wake_cycle_id") is not None
+                        else epoch_raw.get("session_id", 0),
+                    ),
                 ),
             )
         tools_raw = seed_raw.get("tools")

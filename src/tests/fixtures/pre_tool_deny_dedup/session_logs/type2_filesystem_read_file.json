@@ -12,6 +12,8 @@
     "tools": [
       {
         "name": "filesystem_read_file",
+        "server_key": "filesystem",
+        "tool_name": "read_file",
         "input_schema": {
           "type": "object",
           "properties": {

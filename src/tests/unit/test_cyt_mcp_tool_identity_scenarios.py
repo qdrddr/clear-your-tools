@@ -7,10 +7,14 @@ from pathlib import Path
 import pytest
 
 from cyt.injection.session_log_build import build_tool_catalog_log_entry
-from cyt_mcp.tool_identity import enrich_tool_identity, split_wire_name
 from cyt_client.tool_gate import validate_pre_tool_call
+from cyt_mcp.tool_identity import enrich_tool_identity, split_wire_name
 from tests.support.cyt_mcp_tool_identity_fixtures import (
+    EnrichmentExpectation,
     GateScenario,
+    SessionLogRejection,
+    SessionLogRequirement,
+    ToolIdentityFixturePack,
     catalog_for_variant,
     enrich_backend_tools,
     load_backend_tools,
@@ -26,7 +30,7 @@ from tests.support.cyt_mcp_tool_identity_fixtures import (
 
 
 @pytest.fixture(scope="module")
-def fixture_pack():
+def fixture_pack() -> ToolIdentityFixturePack:
     return load_fixture_pack()
 
 
@@ -35,7 +39,9 @@ def fixture_pack():
     load_enrichment_expectations(),
     ids=lambda item: item.wire_name,
 )
-def test_enrich_tool_identity_matches_fixture_expectations(expectation) -> None:
+def test_enrich_tool_identity_matches_fixture_expectations(
+    expectation: EnrichmentExpectation,
+) -> None:
     server_keys = load_server_keys()
     tool = {"name": expectation.wire_name}
     enriched = enrich_tool_identity(tool, list(server_keys))
@@ -57,7 +63,9 @@ def test_enrich_backend_tools_fixture_assigns_identity_to_all_tools() -> None:
     load_enrichment_expectations(),
     ids=lambda item: f"split-{item.wire_name}",
 )
-def test_split_wire_name_longest_prefix_from_fixture(expectation) -> None:
+def test_split_wire_name_longest_prefix_from_fixture(
+    expectation: EnrichmentExpectation,
+) -> None:
     server_keys = load_server_keys()
     identity = split_wire_name(expectation.wire_name, list(server_keys))
     assert identity is not None
@@ -70,7 +78,9 @@ def test_split_wire_name_longest_prefix_from_fixture(expectation) -> None:
     load_session_log_requirements(),
     ids=lambda item: item.expected_record_name,
 )
-def test_build_tool_catalog_preserves_wire_names_from_fixture(requirement) -> None:
+def test_build_tool_catalog_preserves_wire_names_from_fixture(
+    requirement: SessionLogRequirement,
+) -> None:
     entry = build_tool_catalog_log_entry("cyt_mcp", [requirement.tool])
     assert len(entry["tools"]) == 1
     record = entry["tools"][0]
@@ -84,7 +94,9 @@ def test_build_tool_catalog_preserves_wire_names_from_fixture(requirement) -> No
     load_session_log_rejections(),
     ids=lambda item: item.id,
 )
-def test_build_tool_catalog_rejects_missing_identity_from_fixture(rejection) -> None:
+def test_build_tool_catalog_rejects_missing_identity_from_fixture(
+    rejection: SessionLogRejection,
+) -> None:
     with pytest.raises(ValueError, match=rejection.error_contains):
         build_tool_catalog_log_entry("cyt_mcp", [rejection.tool])
 
@@ -160,5 +172,7 @@ def test_backend_tools_fixture_includes_collision_pair() -> None:
     assert "graphify_query_graph" in names
     assert "codebase-memory_query_graph" in names
     enriched = enrich_backend_tools(tools, load_server_keys())
-    bare_names = [str(tool["tool_name"]) for tool in enriched if tool.get("tool_name") == "query_graph"]
+    bare_names = [
+        str(tool["tool_name"]) for tool in enriched if tool.get("tool_name") == "query_graph"
+    ]
     assert len(bare_names) == 2

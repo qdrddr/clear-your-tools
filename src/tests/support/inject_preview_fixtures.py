@@ -173,7 +173,10 @@ def json_payload_from_stdout(text: str) -> dict[str, Any]:
     start = text.find("{")
     if start < 0:
         raise ValueError("stdout did not contain JSON object")
-    return json.loads(text[start:])
+    loaded = json.loads(text[start:])
+    if not isinstance(loaded, dict):
+        raise ValueError("stdout JSON root must be an object")
+    return loaded
 
 
 def patch_inject_preview_environment(

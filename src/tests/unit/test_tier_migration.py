@@ -75,7 +75,7 @@ def test_migrate_v1_scope_key_to_project_id(tmp_path: Path) -> None:
     store = TierStore.open(str(db_path))
     try:
         version = int(store._conn.execute("PRAGMA user_version").fetchone()[0])
-        assert version == 4
+        assert version == 5
         project_id = store.get_or_create_project(workspace)
         project = TierProject(project_id=project_id, root_path=Path(workspace).resolve())
         loaded = store.load_entity_states(project)
@@ -151,7 +151,7 @@ def test_migrate_v3_session_id_columns_to_wake_cycle(tmp_path: Path) -> None:
     store = TierStore.open(str(db_path))
     try:
         version = int(store._conn.execute("PRAGMA user_version").fetchone()[0])
-        assert version == 4
+        assert version == 5
         project = TierProject(project_id=1, root_path=Path(workspace).resolve())
         epoch = store.load_epoch_state(project)
         assert epoch.wake_cycle_id == 9

@@ -8,7 +8,6 @@ from cyt.tools.inject_cli import main as inject_main
 from tests.support.inject_preview_fixtures import (
     InjectPreviewFixturePack,
     InjectPreviewScenario,
-    disk_catalog_inject_preview_pack,
     json_payload_from_stdout,
     load_inject_preview_scenarios,
 )

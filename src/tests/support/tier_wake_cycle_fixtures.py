@@ -24,6 +24,19 @@ from cyt.tiers.store import TierStore
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tier_wake_cycle"
 SCENARIOS_PATH = FIXTURES_ROOT / "scenarios.json"
 
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        return int(value)
+    return default
+
+
 _TIER_BY_NAME = {
     "DORMANT": Tier.DORMANT,
     "COLD": Tier.COLD,
@@ -203,7 +216,9 @@ def load_epoch_timing_scenarios(path: Path = SCENARIOS_PATH) -> tuple[EpochTimin
     return tuple(scenarios)
 
 
-def load_duration_format_scenarios(path: Path = SCENARIOS_PATH) -> tuple[DurationFormatScenario, ...]:
+def load_duration_format_scenarios(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[DurationFormatScenario, ...]:
     scenarios: list[DurationFormatScenario] = []
     for row in _load_payload(path).get("duration_format", []):
         if not isinstance(row, dict):
@@ -225,9 +240,7 @@ def load_fast_wake_scenarios(path: Path = SCENARIOS_PATH) -> tuple[FastWakeScena
             continue
         stats_raw = row.get("stats")
         stats = (
-            {str(k): float(v) for k, v in stats_raw.items()}
-            if isinstance(stats_raw, dict)
-            else {}
+            {str(k): float(v) for k, v in stats_raw.items()} if isinstance(stats_raw, dict) else {}
         )
         scenarios.append(
             FastWakeScenario(
@@ -249,9 +262,7 @@ def load_fast_sleep_scenarios(path: Path = SCENARIOS_PATH) -> tuple[FastSleepSce
             continue
         stats_raw = row.get("stats")
         stats = (
-            {str(k): float(v) for k, v in stats_raw.items()}
-            if isinstance(stats_raw, dict)
-            else {}
+            {str(k): float(v) for k, v in stats_raw.items()} if isinstance(stats_raw, dict) else {}
         )
         expected_lease = row.get("expected_wake_lease_until_cycle")
         scenarios.append(
@@ -285,7 +296,9 @@ def load_request_cycle_scenarios(path: Path = SCENARIOS_PATH) -> tuple[RequestCy
             RequestCycleScenario(
                 id=str(row["id"]),
                 initial_wake_cycle_id=int(initial) if isinstance(initial, int) else None,
-                expected_after_begin=int(expected_after) if isinstance(expected_after, int) else None,
+                expected_after_begin=int(expected_after)
+                if isinstance(expected_after, int)
+                else None,
                 persisted_to_disk=row.get("persisted_to_disk") is True,
                 entity_id=str(row["entity_id"]) if row.get("entity_id") else None,
                 expected_tier_after_begin=(
@@ -324,7 +337,9 @@ def http_payload_by_id(payload_id: str, path: Path = SCENARIOS_PATH) -> HttpPayl
     raise KeyError(f"unknown wake-cycle http payload id: {payload_id}")
 
 
-def load_integration_scenarios(path: Path = SCENARIOS_PATH) -> tuple[WakeCycleIntegrationScenario, ...]:
+def load_integration_scenarios(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[WakeCycleIntegrationScenario, ...]:
     scenarios: list[WakeCycleIntegrationScenario] = []
     for row in _load_payload(path).get("integration", []):
         if not isinstance(row, dict):
@@ -394,11 +409,13 @@ def seed_wake_cycle_db(pack: TierWakeCycleFixturePack, path: Path = SCENARIOS_PA
             store.save_epoch_state(
                 project,
                 EpochState(
-                    epoch_id=int(epoch_raw.get("epoch_id", 0)),
-                    epoch_start_ms=int(epoch_raw.get("epoch_start_ms", 0)),
-                    last_request_ms=int(epoch_raw.get("last_request_ms", 0)),
-                    wake_cycle_id=int(
-                        epoch_raw.get("wake_cycle_id", epoch_raw.get("session_id", 0)),
+                    epoch_id=_coerce_int(epoch_raw.get("epoch_id", 0)),
+                    epoch_start_ms=_coerce_int(epoch_raw.get("epoch_start_ms", 0)),
+                    last_request_ms=_coerce_int(epoch_raw.get("last_request_ms", 0)),
+                    wake_cycle_id=_coerce_int(
+                        epoch_raw.get("wake_cycle_id")
+                        if epoch_raw.get("wake_cycle_id") is not None
+                        else epoch_raw.get("session_id", 0),
                     ),
                 ),
             )

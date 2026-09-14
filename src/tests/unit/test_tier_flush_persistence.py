@@ -162,14 +162,15 @@ def test_flush_all_tier_managers_only_flushes_dirty_managers(tmp_path: Path) -> 
     pack = materialize_flush_pack(tmp_path, disk_flush_seconds=900)
     manager = get_tier_manager(pack.config, workspace=pack.workspace)
     assert isinstance(manager, TierManager)
-    scenario = record_scenario_by_id("deferred_single_success")
+    scenario = record_scenario_by_id("deferred_failure_only")
     apply_record_scenario(manager, pack, scenario)
 
     assert entity_state_on_disk(pack) is None
     assert flush_all_tier_managers(force=False) == 1
     on_disk = entity_state_on_disk(pack)
     assert on_disk is not None
-    assert on_disk.stats.used == 1.0
+    assert on_disk.stats.attempts == 1.0
+    assert on_disk.stats.used == 0.0
     assert flush_all_tier_managers(force=False) == 0
 
 

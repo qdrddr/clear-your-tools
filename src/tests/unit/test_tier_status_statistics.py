@@ -174,7 +174,9 @@ def test_append_tier_statistics_tables_historical_activity_lines() -> None:
     lines: list[str] = []
 
     def _format_table_row(columns: list[str], widths: list[int]) -> str:
-        return "  ".join(str(column).ljust(width) for column, width in zip(columns, widths))
+        return "  ".join(
+            str(column).ljust(width) for column, width in zip(columns, widths, strict=True)
+        )
 
     append_tier_statistics_tables(
         lines,

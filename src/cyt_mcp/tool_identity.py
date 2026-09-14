@@ -22,7 +22,11 @@ def split_wire_name(wire_name: str, server_keys: list[str]) -> CytMcpToolIdentit
     name = str(wire_name or "").strip()
     if not name or not server_keys:
         return None
-    for server_key in sorted({str(key).strip() for key in server_keys if str(key).strip()}, key=len, reverse=True):
+    for server_key in sorted(
+        {str(key).strip() for key in server_keys if str(key).strip()},
+        key=len,
+        reverse=True,
+    ):
         prefix = f"{server_key}_"
         if not name.startswith(prefix):
             continue

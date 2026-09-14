@@ -56,7 +56,8 @@ def hook_safe_stdout(*, active: bool = True) -> Iterator[None]:
         stdout_fd = sys.stdout.fileno()
     except (AttributeError, io.UnsupportedOperation, ValueError):
         real_stdout = sys.stdout
-        sys.stdout = sys.stderr
+        sink = io.StringIO()
+        sys.stdout = sink
         try:
             yield
         finally:

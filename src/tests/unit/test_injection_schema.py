@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from cyt.tools.injection_schema import (
-    entangle_examples_with_schema,
     ensure_required_properties_in_schema,
+    entangle_examples_with_schema,
     project_example_to_schema,
 )
 
@@ -31,7 +31,7 @@ def test_entangle_examples_filters_list() -> None:
         "properties": {"query": {"type": "string"}},
         "required": ["query"],
     }
-    examples = [
+    examples: list[object] = [
         {"query": "bm25"},
         {"limit": 5},
         {"pattern": "bm25"},

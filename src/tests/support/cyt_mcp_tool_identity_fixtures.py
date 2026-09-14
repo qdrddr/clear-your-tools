@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import pytest
+
 from cyt.injection.session_log_build import build_tool_catalog_log_entry
 from cyt_mcp.tool_identity import enrich_tool_identity
 
@@ -160,9 +162,19 @@ def _parse_gate_scenario(raw: dict[str, Any]) -> GateScenario:
     catalog_tools: tuple[str, ...] | None = None
     if isinstance(catalog_tools_raw, list):
         catalog_tools = tuple(str(item) for item in catalog_tools_raw)
+    catalog_raw = str(raw.get("catalog") or "wire")
+    catalog: CatalogVariant
+    if catalog_raw == "wire":
+        catalog = "wire"
+    elif catalog_raw == "bare_regression":
+        catalog = "bare_regression"
+    elif catalog_raw == "wire_subset":
+        catalog = "wire_subset"
+    else:
+        raise ValueError(f"scenario {raw.get('id')}: unknown catalog variant {catalog_raw!r}")
     return GateScenario(
         id=str(raw.get("id") or ""),
-        catalog=str(raw.get("catalog") or "wire"),  # type: ignore[arg-type]
+        catalog=catalog,
         tool_name=str(raw.get("tool_name") or ""),
         tool_input=dict(raw.get("tool_input") or {}),
         allowed=bool(expected.get("allowed")),
@@ -310,7 +322,7 @@ def write_type2_session_log(
 
 
 def patch_session_log_resolver(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
     log_path: Path | None,
 ) -> None:
     def _resolver(_payload: dict) -> Path | None:

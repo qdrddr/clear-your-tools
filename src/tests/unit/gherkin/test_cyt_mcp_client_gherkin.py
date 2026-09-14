@@ -62,7 +62,20 @@ def _type2_cyt_mcp_session(
             "key": "tool_catalog:cyt_mcp",
             "catalog": "cyt_mcp",
             "hash": f"hash-{tool_name}",
-            "tools": [{"name": tool_name, "input_schema": schema}],
+            "tools": [
+                {
+                    "name": tool_name,
+                    "input_schema": schema,
+                    **(
+                        {
+                            "server_key": tool_name.split("_", 1)[0],
+                            "tool_name": tool_name.split("_", 1)[1],
+                        }
+                        if "_" in tool_name
+                        else {}
+                    ),
+                },
+            ],
         },
     ]
 

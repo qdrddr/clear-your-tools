@@ -7,12 +7,12 @@ from typing import Any
 
 from cyt.hook.workspace_config import hook_workspace_from_config
 from cyt.tiers.config import resolve_project_root_path
+from cyt.tiers.tool_token_materialization import input_schema_from_tool
 from cyt.tool_examples.config import ToolExamplesConfig, examples_active, tool_examples_config
 from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 from cyt.tool_examples.ranking import rank_full_call_examples
 from cyt.tool_examples.store import ToolCapture, ToolExamplesStore
-from cyt.tiers.tool_token_materialization import input_schema_from_tool
 from cyt.tools.injection_schema import entangle_examples_with_schema
 
 

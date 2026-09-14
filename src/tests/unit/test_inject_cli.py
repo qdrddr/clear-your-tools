@@ -15,8 +15,6 @@ from cyt.tools.inject_cli import config_for_inject_preview, run_inject_preview
 from cyt.tools.master_catalog import get_master_tool_catalog
 from tests.support.inject_preview_fixtures import (
     InjectPreviewFixturePack,
-    disk_catalog_inject_preview_pack,
-    inject_preview_pack,
     json_payload_from_stdout,
     patch_inject_preview_environment,
     scoped_hook_config,

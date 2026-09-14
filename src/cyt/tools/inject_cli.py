@@ -78,8 +78,6 @@ def _tools_for_sources(
         "definitions": [],
     }
     for tool in catalog:
-        if not isinstance(tool, dict):
-            continue
         source = str(tool.get("cyt_catalog_source") or "").strip()
         if source not in grouped:
             continue
@@ -215,7 +213,9 @@ def run_inject_preview(args: argparse.Namespace) -> int:
         payload: dict[str, Any] = {
             "query": args.query,
             "workspace": str(workspace),
-            "sources": sorted(sources_filter) if sources_filter else sorted(tools_hook_sources(config)),
+            "sources": sorted(sources_filter)
+            if sources_filter
+            else sorted(tools_hook_sources(config)),
             "prune": prune_meta,
             "tools": pruned_by_source,
             "injection": injection,

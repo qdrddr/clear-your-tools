@@ -829,11 +829,14 @@ class TierManager:
         tool_cfg = tier_section_config(config, kind="tool") if config is not None else None
         if tool_cfg is not None:
             summary["epoch_timeout_seconds"] = epoch_ttl_ms(tool_cfg) // 1000
-            summary["epoch_remaining_seconds"] = epoch_remaining_ms(
-                now_ms=now_ms,
-                epoch=self._epoch,
-                cfg=tool_cfg,
-            ) // 1000
+            summary["epoch_remaining_seconds"] = (
+                epoch_remaining_ms(
+                    now_ms=now_ms,
+                    epoch=self._epoch,
+                    cfg=tool_cfg,
+                )
+                // 1000
+            )
         summary["histogram"] = build_combined_histogram(
             self._states,
             now_ms=now_ms,

@@ -130,7 +130,10 @@
       "name": "context-mode_ctx_index",
       "description": "Store content in a searchable knowledge base (BM25 over FTS5). Splits markdown by headings, keeps code blocks intact, and persists the raw chunks. The full content stays in storage — retrieve any section on-demand via ctx_search; nothing is summarized or truncated.\n\nWHEN:\n  - Documentation from Context7, Skills, or MCP tools (API docs, framework guides, code examples)\n  - API references (endpoint details, parameter specs, response schemas)\n  - MCP tools/list output (exact tool signatures and descriptions)\n  - Skill prompts and instructions that are too large to keep verbatim in conversation\n  - README files, migration guides, changelog entries\n  - Any content with code examples you may need to reference precisely later\n\nWHEN NOT:\n  - Log files, test output, CSV, or build output — use ctx_execute_file, which processes in-sandbox without persisting bytes\n  - Single-use ephemeral content you will not query later — keep it inline if it fits, or ctx_execute_file it\n\nRETURNS:\n  Indexing metadata: chunk counts (total, code-bearing), source label, and the exact ctx_search call shape to query the indexed content. Raw content is NOT echoed back — it lives in storage, retrievable via ctx_search(source: \"<label>\"). When `path` is provided, a content hash is stored so ctx_search results auto-flag staleness on future calls.\n\nEXAMPLE: ctx_index(content: \"# React useEffect\\n\\nThe Effect Hook lets you ...\", source: \"react-useeffect-docs\")\nEXAMPLE: ctx_index(path: \"/path/to/large-spec.md\", source: \"openapi-v2-spec\")",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "context-mode",
       "tool_name": "ctx_index"
     },
@@ -138,7 +141,10 @@
       "name": "context-mode_ctx_upgrade",
       "description": "Upgrade context-mode to the latest version. Returns a shell command to execute. You MUST run the returned command using your shell tool (Bash, shell_execute, run_in_terminal, etc.) and display the output as a checklist. Tell the user to restart their session after upgrade.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "context-mode",
       "tool_name": "ctx_upgrade"
     },
@@ -170,8 +176,8 @@
   "score_tool_enum": 0.1,
   "prune_enums": true,
   "tokens_in": 55361,
-  "tokens_out": 3170,
-  "tokens_saved": 52191,
+  "tokens_out": 3182,
+  "tokens_saved": 52179,
   "tokenizer": "tiktoken_compact_json",
   "optional_properties_in": 10,
   "optional_properties_out": 2,

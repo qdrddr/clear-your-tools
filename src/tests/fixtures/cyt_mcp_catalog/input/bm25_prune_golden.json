@@ -23,7 +23,10 @@
       "name": "code-review-graph_find_large_functions_tool",
       "description": "Find functions, classes, or files exceeding a line-count threshold.\n\nUseful for decomposition audits, code quality checks, and enforcing\nsize limits during code review. Results are ordered by line count.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "find_large_functions_tool"
     },
@@ -31,7 +34,10 @@
       "name": "code-review-graph_get_affected_flows_tool",
       "description": "Find execution flows affected by changed files.\n\nIdentifies which execution flows pass through nodes in the changed files.\nUseful during code review to understand which user-facing or critical paths\nare impacted by a change. Auto-detects changed files from git if not specified.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "get_affected_flows_tool"
     },
@@ -39,7 +45,10 @@
       "name": "code-review-graph_get_flow_tool",
       "description": "Get detailed information about a single execution flow.\n\nReturns the full call path with each step's function name, file, and\nline numbers. Optionally includes source code snippets for each step.\n\nProvide either flow_id (from list_flows_tool) or flow_name to search by name.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "get_flow_tool"
     },
@@ -47,7 +56,10 @@
       "name": "code-review-graph_get_impact_radius_tool",
       "description": "Analyze the blast radius of changed files in the codebase.\n\nShows which functions, classes, and files are impacted by changes.\nAuto-detects changed files from git if not specified.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "get_impact_radius_tool"
     },
@@ -55,7 +67,10 @@
       "name": "code-review-graph_get_knowledge_gaps_tool",
       "description": "Identify structural weaknesses in the codebase graph.\n\nFinds isolated nodes (disconnected), thin communities (< 3 members),\nuntested hotspots (high-degree nodes without test coverage), and\nsingle-file communities.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "get_knowledge_gaps_tool"
     },
@@ -63,7 +78,10 @@
       "name": "code-review-graph_list_communities_tool",
       "description": "List detected code communities in the codebase.\n\nEach community represents a cluster of related code entities (functions,\nclasses) detected via the Leiden algorithm or file-based grouping.\nUse this to understand the high-level structure of the codebase.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "list_communities_tool"
     },
@@ -71,7 +89,10 @@
       "name": "code-review-graph_list_flows_tool",
       "description": "List execution flows in the codebase, sorted by criticality.\n\nEach flow represents a call chain starting from an entry point\n(HTTP handler, CLI command, test function, etc.). Use this to\nunderstand the main execution paths through the codebase.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "list_flows_tool"
     },
@@ -79,7 +100,10 @@
       "name": "code-review-graph_list_graph_stats_tool",
       "description": "Get aggregate statistics about the code knowledge graph.\n\nShows total nodes, edges, languages, files, and last update time.\nUseful for checking if the graph is built and up to date.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "list_graph_stats_tool"
     },
@@ -111,7 +135,10 @@
       "name": "code-review-graph_refactor_tool",
       "description": "Graph-powered refactoring operations.\n\nUnified entry point for rename previews, dead code detection, and\nrefactoring suggestions.\n\nModes:\n- rename: Preview renaming a symbol. Returns an edit list and a refactor_id\n  to pass to apply_refactor_tool. Requires old_name and new_name.\n- dead_code: Find unreferenced functions/classes (no callers, tests, or\n  importers, and not entry points).\n- suggest: Get community-driven refactoring suggestions (move misplaced\n  functions, remove dead code).",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "code-review-graph",
       "tool_name": "refactor_tool"
     },
@@ -340,7 +367,10 @@
       "name": "context-mode_ctx_index",
       "description": "Store content in a searchable knowledge base (BM25 over FTS5). Splits markdown by headings, keeps code blocks intact, and persists the raw chunks. The full content stays in storage — retrieve any section on-demand via ctx_search; nothing is summarized or truncated.\n\nWHEN:\n  - Documentation from Context7, Skills, or MCP tools (API docs, framework guides, code examples)\n  - API references (endpoint details, parameter specs, response schemas)\n  - MCP tools/list output (exact tool signatures and descriptions)\n  - Skill prompts and instructions that are too large to keep verbatim in conversation\n  - README files, migration guides, changelog entries\n  - Any content with code examples you may need to reference precisely later\n\nWHEN NOT:\n  - Log files, test output, CSV, or build output — use ctx_execute_file, which processes in-sandbox without persisting bytes\n  - Single-use ephemeral content you will not query later — keep it inline if it fits, or ctx_execute_file it\n\nRETURNS:\n  Indexing metadata: chunk counts (total, code-bearing), source label, and the exact ctx_search call shape to query the indexed content. Raw content is NOT echoed back — it lives in storage, retrievable via ctx_search(source: \"<label>\"). When `path` is provided, a content hash is stored so ctx_search results auto-flag staleness on future calls.\n\nEXAMPLE: ctx_index(content: \"# React useEffect\\n\\nThe Effect Hook lets you ...\", source: \"react-useeffect-docs\")\nEXAMPLE: ctx_index(path: \"/path/to/large-spec.md\", source: \"openapi-v2-spec\")",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "context-mode",
       "tool_name": "ctx_index"
     },
@@ -348,7 +378,10 @@
       "name": "context-mode_ctx_search",
       "description": "Search a unified knowledge base with a multi-strategy ranking pipeline. Two parallel matchers run on every query: a Porter-stemming matcher (\"caching\" finds \"cached\", \"caches\", \"cach\") and a trigram-substring matcher (\"useEff\" finds \"useEffect\"). Their ranked lists are merged via Reciprocal Rank Fusion, so a document that ranks well in both surfaces above one that wins only on a single strategy. Multi-term queries get an additional proximity-rerank pass that boosts passages where the query terms appear close together. Typos are corrected via Levenshtein distance and re-searched. Result snippets are window-extracted around the matched terms, not blindly truncated.\n\nThe knowledge base is unified: queries reach indexed content you stored (ctx_index, ctx_fetch_and_index, ctx_batch_execute output) AND auto-captured session memory written by hooks (decisions, errors, blockers, plans, user prompts, rejected approaches, tool failures, compaction guides — 26 event categories). File-backed sources carry a content hash and auto-flag staleness when the source file changes.\n\nWHEN:\n  - You want to recall something that exists in storage (recently indexed content, prior session events, auto-memory) instead of re-reading raw sources\n  - You have multiple related questions about the same body of knowledge — batch every question into one call (the ranking pipeline runs per-query but the round-trip cost is paid once)\n  - You want to scope the query to one labelled source (pass `source` — partial match is fine)\n  - You want a chronological view across current session + prior sessions + persistent auto-memory (pass `sort: \"timeline\"` — the default `relevance` mode only ranks within the current session)\n  - You want to filter ranked results by content shape (pass `contentType: \"code\"` to surface implementation snippets or `contentType: \"prose\"` to surface explanations)\n\nWHEN NOT:\n  - The data you want to query has never been stored in the knowledge base AND no session memory has accumulated around it — capture first (run a gather-and-index call), then come back here to query\n  - You have one ad-hoc question against data that is not in the knowledge base — answer it inline by running code in the sandbox tool; one round-trip instead of capture-then-query\n\nRETURNS:\n  Per-query ranked sections with window-extracted snippets. Use 2-4 specific technical terms per query. Common session-memory source labels: `decision` (user corrections / preferences), `error` and `error-resolution` (past failures + their fixes), `blocker`, `plan`, `user-prompt`, `rejected-approach`, `compaction` (post-compact session guide). See ctx_stats for live category counts. Each response carries a throttle counter (call #N/M in the rolling time window); results taper toward the soft cap and calls block after the hard cap. Tune via CONTEXT_MODE_SEARCH_WINDOW_MS, CONTEXT_MODE_SEARCH_MAX_RESULTS_AFTER, CONTEXT_MODE_SEARCH_BLOCK_AFTER.\n\nEXAMPLE: ctx_search(queries: [\"root cause\", \"proposed fix\", \"test coverage\"], source: \"issue-#683\")\nEXAMPLE: ctx_search(queries: [\"what did we decide about caching\"], source: \"decision\", sort: \"timeline\")\nEXAMPLE: ctx_search(queries: [\"useEffect cleanup pattern\"], source: \"react-docs\", contentType: \"code\", limit: 5)\nEXAMPLE: ctx_search(queries: [\"last user prompt\", \"active skills\", \"open blockers\"], sort: \"timeline\")",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "context-mode",
       "tool_name": "ctx_search"
     },
@@ -375,7 +408,10 @@
       "name": "gitnexus_explain",
       "description": "Explain persisted taint findings recorded by `gitnexus analyze --pdg`: intra-procedural source→sink data flows (TAINTED edges, statement-level hops) AND cross-function flows (TAINT_PATH edges, function-level hops, marked `interprocedural: true`).\n\nEach finding carries the sink category (command-injection, code-injection, path-traversal, sql-injection, xss) and the ordered hop path. Intra-procedural findings carry source/sink lines and the variable on each hop; interprocedural findings carry the source and sink FUNCTION names and the chain of functions the taint crossed (decoded from the persisted path encoding).\n\nWHEN TO USE: Security review — \"what taint findings exist in this repo / file / function?\". Requires the repo to be indexed with `gitnexus analyze --pdg`; without that layer the tool returns a clear \"no taint layer\" note, not an error.\n\nANCHORLESS (no \"target\"): enumerates all persisted findings for the repo — bounded (\"limit\", deterministic order), with \"totalFindings\" and a \"truncated\" flag.\nANCHORED (\"target\" = file path or symbol/function name): full hop detail for that anchor. A file-ish target (contains \"/\" or an extension) filters by file; a symbol name resolves like context() — ambiguous names return ranked candidates, unknown names return not-found. Symbol anchoring is line-range granular for intra-procedural findings; cross-function findings match when the symbol is the source OR sink function.\n\nCONTRACT CAVEATS (absent flows are NOT proof of safety):\n- Cross-function flows ARE modeled (#2084 M4): a source flowing through helper functions into a sink is found, via summary composition over the call graph (context-insensitive — return/call-site merging is accepted).\n- Cross-function matching is by callee NAME (context-insensitive): when one caller invokes two distinct same-named callees, a flow into one over-attributes to both — a cross-function finding does not prove the taint reached every same-named function (sound over-report, never a missed flow).\n- Closure/callback flows are invisible in both directions (e.g. arr.forEach(() => sink(y))) — the largest false-negative class.\n- Property/field flows are not tracked (obj.x = taint; sink(obj.y) has no chain).\n- Guard-style sanitizers (if (isValid(x))) and implicit/control-dependence flows are not modeled.\n- CommonJS aliasing is partially modeled (require('<literal>') joins resolve; dynamic requires do not).\n- Exception-path over-approximation can produce false-positive noise.\n\nFindings are deliberately NOT part of impact()'s traversal or the web schema — explain is the dedicated taint consumer. SANITIZES (kill) edges are queryable via cypher.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": null,
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "server_key": "gitnexus",
       "tool_name": "explain"
     },
@@ -550,8 +586,8 @@
   "score_tool_enum": 0.1,
   "prune_enums": true,
   "tokens_in": 55361,
-  "tokens_out": 9453,
-  "tokens_saved": 45908,
+  "tokens_out": 9525,
+  "tokens_saved": 45836,
   "tokenizer": "tiktoken_compact_json",
   "optional_properties_in": 6,
   "optional_properties_out": 0,

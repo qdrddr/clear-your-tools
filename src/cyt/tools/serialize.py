@@ -8,7 +8,7 @@ from typing import Any
 from cyt.tool_examples.hash_utils import canonical_json
 
 
-def canonicalize_json_value(value: Any) -> Any:
+def canonicalize_json_value(value: object) -> object:
     """Return a deep copy with object keys in canonical JSON order."""
     return json.loads(canonical_json(value))
 
@@ -59,7 +59,7 @@ def _truncate_string(value: str, max_chars: int) -> str:
     return value[: max_chars - 3] + "..."
 
 
-def _truncate_payload_values(value: Any, max_chars: int) -> Any:
+def _truncate_payload_values(value: object, max_chars: int) -> object:
     """Truncate string leaves in a payload; ``max_chars <= 0`` disables truncation."""
     if max_chars <= 0:
         return value

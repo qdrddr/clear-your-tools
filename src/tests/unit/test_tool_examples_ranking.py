@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
 
 from cyt.tool_examples.config import ExampleRankingConfig

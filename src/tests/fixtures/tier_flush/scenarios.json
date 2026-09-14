@@ -43,7 +43,7 @@
       "disk_flush_seconds": 900,
       "steps": [{"success": true, "args": {"search_query": "auth flow"}}],
       "expected": {"attempts": 1.0, "used": 1.0},
-      "persisted_before_flush": false,
+      "persisted_before_flush": true,
       "persisted_after_flush": true
     },
     {

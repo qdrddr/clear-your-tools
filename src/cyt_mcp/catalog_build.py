@@ -91,9 +91,7 @@ async def refresh_catalog_cache(
     )
     if config is not None:
         server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
-        catalog_entries = [
-            enrich_tool_identity(entry, server_keys) for entry in catalog_entries
-        ]
+        catalog_entries = [enrich_tool_identity(entry, server_keys) for entry in catalog_entries]
     cache.replace(catalog_entries, search_index=search_index)
     refresh_search_tool_schema(cache)
     if config is not None:
