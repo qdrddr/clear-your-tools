@@ -70,7 +70,7 @@ def test_select_respects_max_tokens() -> None:
         _skill("b", 100, 0.8),
         _skill("c", 100, 0.7),
     ]
-    selected = select_skills_within_budget(candidates, max_tokens=150)
+    selected = select_skills_within_budget(candidates, max_tokens=200)
     assert len(selected) == 1
     assert selected[0].doc_id == "a"
 
@@ -87,7 +87,7 @@ def test_budget_trace_marks_dropped_search_survivors() -> None:
     ]
     selected, budget_rows = select_skills_with_budget_trace(
         candidates,
-        max_tokens=150,
+        max_tokens=200,
         search_rows=search_rows,
     )
     assert [match.doc_id for match in selected] == ["a"]
@@ -108,7 +108,7 @@ def test_budget_trace_ignores_search_rows_that_failed_threshold() -> None:
     ]
     selected, budget_rows = select_skills_with_budget_trace(
         candidates,
-        max_tokens=150,
+        max_tokens=200,
         search_rows=search_rows,
     )
     assert selected

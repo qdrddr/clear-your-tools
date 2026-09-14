@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def temp_promotion_until_ms(cfg: TierSectionConfig, *, now_ms: int | None = None) -> int:
-    """Wall-clock expiry for fast T→HOT promotions (turns × prompt-cache TTL)."""
+    """Wall-clock expiry for fast T→HOT promotions (turns x prompt-cache TTL)."""
     if now_ms is None:
         now_ms = int(time.time() * 1000)
     turns = max(int(cfg.temp_promotion_turns), 1)

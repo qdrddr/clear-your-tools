@@ -90,7 +90,10 @@ def test_schema_v2_migration_adds_success_count(tmp_path: Path) -> None:
         store.close()
 
 
-def test_success_count_increments_on_repeat_capture(store: ToolExamplesStore, tmp_path: Path) -> None:
+def test_success_count_increments_on_repeat_capture(
+    store: ToolExamplesStore,
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     project_id = store.get_or_create_project(str(root))

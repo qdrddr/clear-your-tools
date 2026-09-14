@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
-from cyt.tiers.store import TierStore, _SCHEMA_VERSION
+from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier, TierProject
+from cyt.tiers.store import _SCHEMA_VERSION, TierStore
 
 
 def test_fresh_store_has_attempts_column(tmp_path: Path) -> None:
@@ -33,7 +33,7 @@ def test_v2_store_migrates_attempts_column(tmp_path: Path) -> None:
     try:
         assert store._table_has_column("entity_stats", "attempts")
         project_id = store.get_or_create_project(str(tmp_path))
-        project = type("P", (), {"project_id": project_id, "root_path": tmp_path})()
+        project = TierProject(project_id=project_id, root_path=tmp_path.resolve())
         state = EntityTierState(
             entity_id="cyt_mcp:search",
             kind=EntityKind.TOOL,

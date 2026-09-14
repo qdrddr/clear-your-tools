@@ -49,8 +49,6 @@ def start_tier_flush_scheduler(config: dict[str, Any] | None = None) -> None:
 
 def stop_tier_flush_scheduler(*, join_timeout: float = 2.0) -> None:
     """Stop the scheduler (primarily for tests)."""
-    global _thread
-
     _stop_event.set()
     with _scheduler_lock:
         thread = _thread

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -15,6 +16,7 @@ import pytest
 
 from cyt.launch.secrets import clear_keyring_cache
 from cyt.skills import cli as skills_cli
+from cyt.skills.search import search_skills as _real_search_skills
 from tests.support.credential_helpers import (
     apply_ci_credential_stubs,
     clear_credential_env_var,
@@ -54,6 +56,17 @@ def _track_shell_exports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
 def _write_skill(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
+
+
+def _patch_hook_quiet_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cyt.skills.cli.hook_safe_stdout",
+        lambda **kwargs: contextlib.nullcontext(),
+    )
+    monkeypatch.setattr(
+        "cyt.skills.cli.hook_quiet_stderr",
+        lambda **kwargs: contextlib.nullcontext(),
+    )
 
 
 def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
@@ -648,13 +661,12 @@ def test_user_prompt_uses_transcript_query_before_search_skills(
         ) -> list:
             del pruner_settings, skip_frontmatter_gate
             captured["query"] = query
-            from cyt.skills.search import search_skills as real_search
+            return _real_search_skills(query, entries, config=config, max_tokens=max_tokens)
 
-            return real_search(query, entries, config=config, max_tokens=max_tokens)
-
+        _patch_hook_quiet_stdio(monkeypatch)
         with patch("cyt.skills.cli.load_config", return_value=config):
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
-                with patch("cyt.skills.cli.search_skills", side_effect=_capture_search):
+                with patch("cyt.skills.search.search_skills", side_effect=_capture_search):
                     skills_cli.run()
 
         assert captured["query"] == (
@@ -724,9 +736,10 @@ def test_user_prompt_uses_transcript_query_for_all_pipelines(
             _ = max_tokens
             return []
 
+        _patch_hook_quiet_stdio(monkeypatch)
         with patch("cyt.skills.cli.load_config", return_value=config):
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
-                with patch("cyt.skills.cli.search_skills", side_effect=_capture_search):
+                with patch("cyt.skills.search.search_skills", side_effect=_capture_search):
                     skills_cli.run()
 
         assert captured["query"] == (
@@ -801,7 +814,7 @@ def test_hook_stdout_is_pure_json_when_search_prints_to_stdout(
         config = _skills_config(root, skills_dir, catalog_dir)
         with patch("cyt.skills.cli.load_config", return_value=config):
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
-                with patch("cyt.skills.cli.search_skills", side_effect=_noisy_search):
+                with patch("cyt.skills.search.search_skills", side_effect=_noisy_search):
                     skills_cli.run()
 
         raw = stdout.getvalue()

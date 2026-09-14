@@ -238,7 +238,9 @@ def materialize_capture_pack(tmp_path: Path) -> TierCaptureFixturePack:
             "tools": {
                 "tiers": {
                     "mode": "shadow",
-                    "capture": {"source": load_capture_config_values().get("capture_default", "cyt_mcp")},
+                    "capture": {
+                        "source": load_capture_config_values().get("capture_default", "cyt_mcp"),
+                    },
                     "database": {"path": str(tier_db_path)},
                 },
             },
@@ -322,8 +324,8 @@ __all__ = [
     "IntegrationCaptureScenario",
     "TierCaptureFixturePack",
     "apply_attempt_sequence",
-    "capture_tool_dict",
     "capture_tier_config",
+    "capture_tool_dict",
     "http_payload_by_id",
     "load_attempt_sequences",
     "load_capture_config_values",

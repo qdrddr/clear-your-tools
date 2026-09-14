@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
 from typing import Any
 
 from cyt.hook.workspace_config import hook_workspace_from_config
@@ -143,10 +142,7 @@ def _append_full_call_examples(
 ) -> None:
     if not cfg.full_call_examples:
         return
-    call_items = [
-        (capture.input_json, capture.last_seen_ms)
-        for capture in captures
-    ]
+    call_items = [(capture.input_json, capture.last_seen_ms) for capture in captures]
     ranked_calls = rank_full_call_examples(
         query,
         call_items,

@@ -415,6 +415,8 @@ class ToolExamplesStore:
 
     @staticmethod
     def _row_to_example(row: tuple[Any, ...]) -> ToolExampleRow:
+        if len(row) < 5:
+            raise ValueError(f"tool_example row has {len(row)} columns, expected at least 5")
         success_count = int(row[5]) if len(row) > 5 else 1
         return ToolExampleRow(
             schema_id=int(row[0]),

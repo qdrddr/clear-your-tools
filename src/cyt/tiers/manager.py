@@ -41,6 +41,7 @@ from cyt.tiers.models import (
     EntityKind,
     EntityTierState,
     EntityTierView,
+    EpochState,
     SkillsTierPartition,
     Tier,
     TierProject,
@@ -68,6 +69,17 @@ class NoOpTierManager:
 
     project: TierProject | None = None
     is_noop = True
+    _states: dict[tuple[str, str], EntityTierState]
+    _epoch: EpochState
+
+    def __init__(self) -> None:
+        self._states = {}
+        self._epoch = EpochState(
+            epoch_id=0,
+            epoch_start_ms=0,
+            last_request_ms=0,
+            session_id=0,
+        )
 
     def close(self) -> None:
         return
@@ -604,7 +616,9 @@ class TierManager:
             for match in matches:
                 path = getattr(match, "file_path", None) or getattr(match, "source_path", "")
                 doc_id = getattr(match, "doc_id", None)
-                resolved_doc_id = str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
+                resolved_doc_id = (
+                    str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
+                )
                 entity_id = tier_entity_id_for_skill(str(path), doc_id=resolved_doc_id)
                 if not entity_id:
                     continue

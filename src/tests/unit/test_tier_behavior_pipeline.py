@@ -9,8 +9,8 @@ import pytest
 
 from cyt.skills.catalog import SkillEntryRef
 from cyt.tiers.adapters.skills import (
-    prepare_skill_entry_for_tier_search,
     prepare_skill_entries_for_tier_search,
+    prepare_skill_entry_for_tier_search,
 )
 from cyt.tiers.adapters.tools import (
     prepare_tool_for_tier_pipeline,
@@ -147,11 +147,11 @@ def test_prepare_skill_entries_for_tier_search_batch(
 ) -> None:
     from cyt.tiers.adapters.skills import skill_entity_id
 
-    entries = [_entry_with_source_markdown(entry) for entry in build_registry_from_pack(fixture_pack)]
+    entries = [
+        _entry_with_source_markdown(entry) for entry in build_registry_from_pack(fixture_pack)
+    ]
     tier_by_skill = {
-        skill_entity_id(entry): Tier.COLD
-        for entry in entries
-        if skill_entity_id(entry)
+        skill_entity_id(entry): Tier.COLD for entry in entries if skill_entity_id(entry)
     }
     prepared = prepare_skill_entries_for_tier_search(entries, tier_by_skill)
     assert len(prepared) == len(entries)

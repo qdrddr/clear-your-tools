@@ -14,7 +14,7 @@ from cyt.proxy.anthropic import PruneResult
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.catalog import build_registry
 from cyt.skills.inject import format_agent_skills
-from cyt.skills.search import MatchedSkill, search_skills
+from cyt.skills.search import MatchedSkill
 
 _PROXY_KINDS = frozenset({"anthropic", "openai"})
 

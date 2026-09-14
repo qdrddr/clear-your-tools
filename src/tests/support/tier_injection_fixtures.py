@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from tests.support.paths import FIXTURES_DIR
+from tests.support.tier_behavior_fixtures import IntegrationScenario
 
 TIER_INJECTION_DIR = FIXTURES_DIR / "tier_injection"
 SCENARIOS_PATH = TIER_INJECTION_DIR / "scenarios.json"
@@ -114,12 +115,10 @@ def load_injection_integration_scenarios(
                 behavior_scenario_id=str(row["behavior_scenario_id"]),
                 query=str(row["query"]) if row.get("query") else None,
                 expected_stamped_tools={
-                    str(name): str(tier)
-                    for name, tier in dict(stamped_raw).items()
+                    str(name): str(tier) for name, tier in dict(stamped_raw).items()
                 },
                 expected_skill_tiers={
-                    str(doc_id): str(tier)
-                    for doc_id, tier in dict(skill_raw).items()
+                    str(doc_id): str(tier) for doc_id, tier in dict(skill_raw).items()
                 },
                 expects_tool_legend=bool(row.get("expects_tool_legend", False)),
                 expects_tier_attr_on_tools=tuple(
@@ -130,7 +129,7 @@ def load_injection_integration_scenarios(
     return tuple(scenarios)
 
 
-def behavior_scenario_by_id(scenario_id: str):
+def behavior_scenario_by_id(scenario_id: str) -> IntegrationScenario:
     from tests.support.tier_behavior_fixtures import load_integration_scenarios
 
     for scenario in load_integration_scenarios():

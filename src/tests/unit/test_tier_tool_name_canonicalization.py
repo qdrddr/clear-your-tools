@@ -13,9 +13,9 @@ from cyt.tiers.feedback import record_tool_used_feedback
 from cyt.tiers.manager import TierManager
 from cyt.tiers.models import Tier
 from cyt_client.tool_gate import (
+    _extract_tool_call,
     extract_gated_tool_use_feedback,
     normalize_mcp_tool_name,
-    _extract_tool_call,
 )
 
 
@@ -69,7 +69,9 @@ def test_resolve_canonical_tool_name_from_unique_suffix() -> None:
 def test_extract_gated_tool_use_feedback_returns_wire_name(tmp_path: Path) -> None:
     log_path = tmp_path / "session.log"
     log_path.write_text(
-        json.dumps({"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True})
+        json.dumps(
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+        )
         + "\n"
         + json.dumps(
             {

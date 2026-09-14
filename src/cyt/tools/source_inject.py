@@ -225,7 +225,10 @@ def _cyt_mcp_prompt_parts(
     parts: list[str] = []
     if not tool_tier_legend_pre_exposed(session_text, TOOL_TIER_LEGEND):
         parts.append(TOOL_TIER_LEGEND)
-    if include_workspace_note and not cyt_mcp_note_pre_exposed(session_text, _CYT_MCP_WORKSPACE_NOTE):
+    if include_workspace_note and not cyt_mcp_note_pre_exposed(
+        session_text,
+        _CYT_MCP_WORKSPACE_NOTE,
+    ):
         parts.append(_CYT_MCP_WORKSPACE_NOTE)
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) > 1:

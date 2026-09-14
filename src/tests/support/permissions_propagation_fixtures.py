@@ -45,7 +45,9 @@ class PropagationFixturePack:
     scenarios: tuple[PropagationScenario, ...]
 
 
-def load_catalog_tools(path: Path = CATALOG_TOOLS_PATH) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
+def load_catalog_tools(
+    path: Path = CATALOG_TOOLS_PATH,
+) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     names_raw = payload.get("catalog_tool_names")
     tools_raw = payload.get("tools")
@@ -116,6 +118,8 @@ def cyt_mcp_catalog_tools(pack: PropagationFixturePack) -> list[dict[str, Any]]:
 def tier_config_for_pack(pack: PropagationFixturePack, agent: str = "cursor") -> dict[str, Any]:
     global_cfg: dict[str, Any] = {}
     merged = merged_hook_config(agent, global_config=global_cfg, workspace_root=pack.workspace)
+    merged_tools = merged.get("tools")
+    tools_section: dict[str, Any] = dict(merged_tools) if isinstance(merged_tools, dict) else {}
     return set_hook_workspace_in_config(
         {
             **merged,
@@ -124,7 +128,7 @@ def tier_config_for_pack(pack: PropagationFixturePack, agent: str = "cursor") ->
                 "database": {"path": str(pack.workspace / ".agents" / "cyt" / "tier_state.db")},
             },
             "tools": {
-                **(merged.get("tools") if isinstance(merged.get("tools"), dict) else {}),
+                **tools_section,
                 "hook": {"sources": ["cyt_mcp"]},
             },
         },
@@ -277,9 +281,9 @@ def tool_entity_ids_in_status(status: dict[str, Any]) -> set[str]:
 __all__ = [
     "CATALOG_TOOLS_PATH",
     "FIXTURES_ROOT",
+    "SCENARIOS_PATH",
     "PropagationFixturePack",
     "PropagationScenario",
-    "SCENARIOS_PATH",
     "assert_catalog_and_detail_filters_agree",
     "cyt_mcp_catalog_tools",
     "disable_tool_on_pack",

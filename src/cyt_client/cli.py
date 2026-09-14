@@ -298,8 +298,8 @@ def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
         _verbose_log(f"cyt-client: failed to record tool examples: {exc}")
     try:
         from cyt_client.config import tier_tool_capture_via_hooks
-        from cyt_client.tool_gate import extract_post_tool_tier_feedback
         from cyt_client.tier_feedback import notify_tool_used_feedback
+        from cyt_client.tool_gate import extract_post_tool_tier_feedback
 
         if tier_tool_capture_via_hooks():
             tier_feedback = extract_post_tool_tier_feedback(payload)

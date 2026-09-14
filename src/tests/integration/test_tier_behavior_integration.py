@@ -326,7 +326,9 @@ def test_all_cold_tools_bm25_subsets_without_forcing_injection(
 
     assert pipeline_batches
     pipeline_tools = pipeline_batches[0]
-    assert {str(tool.get("name")) for tool in pipeline_tools} == scenario.expected_eligible_tool_names
+    assert {
+        str(tool.get("name")) for tool in pipeline_tools
+    } == scenario.expected_eligible_tool_names
     for tool in pipeline_tools:
         assert not (tool.get("input_schema") or tool.get("inputSchema"))
 

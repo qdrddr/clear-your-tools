@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from fastmcp.tools.base import Tool
 
 from cyt.permissions.editor import (
     disable_mcp_tool,
@@ -20,10 +21,10 @@ from cyt.permissions.match import (
     normalize_permission_tool_input,
 )
 from cyt_mcp.catalog_build import build_catalog_from_tools
-from fastmcp.tools.base import Tool
 from tests.support.permissions_mcp_tool_aliases_fixtures import (
     CATALOG_TOOLS_PATH,
     SCENARIOS_PATH,
+    McpToolAliasFixturePack,
     apply_alias_steps,
     assert_alias_runtime_tools,
     assert_alias_scope_deny_empty,
@@ -36,7 +37,7 @@ from tests.support.permissions_mcp_tool_aliases_fixtures import (
 
 
 @pytest.fixture
-def alias_pack(tmp_path: Path):
+def alias_pack(tmp_path: Path) -> McpToolAliasFixturePack:
     return materialize_alias_fixture_pack(tmp_path)
 
 
@@ -90,7 +91,10 @@ def test_is_mcp_tool_denied_matches_all_hedl_batch_aliases() -> None:
     assert is_catalog_tool_denied("hedl_hedl_batch", ("hedl/hedl_batch",))
 
 
-def test_disable_mcp_tool_stores_deny_entry(alias_pack, tmp_path: Path) -> None:
+def test_disable_mcp_tool_stores_deny_entry(
+    alias_pack: McpToolAliasFixturePack,
+    tmp_path: Path,
+) -> None:
     disable_mcp_tool(
         "hedl",
         "hedl_batch",
@@ -105,7 +109,7 @@ def test_disable_mcp_tool_stores_deny_entry(alias_pack, tmp_path: Path) -> None:
     assert "hedl/hedl_batch" in deny
 
 
-def test_enable_mcp_tool_removes_alias_deny_entries(alias_pack) -> None:
+def test_enable_mcp_tool_removes_alias_deny_entries(alias_pack: McpToolAliasFixturePack) -> None:
     disable_mcp_tool(
         "hedl",
         "batch",
@@ -147,7 +151,7 @@ def test_build_catalog_from_tools_respects_hedl_batch_alias_deny() -> None:
     ids=[scenario.id for scenario in load_alias_scenarios()[1]],
 )
 def test_mcp_tool_alias_scenarios_runtime_filters(
-    alias_pack,
+    alias_pack: McpToolAliasFixturePack,
     scenario_id: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -171,7 +175,7 @@ def test_mcp_tool_alias_scenarios_runtime_filters(
     ids=[scenario.id for scenario in load_alias_scenarios()[1]],
 )
 def test_mcp_tool_alias_effective_deny_union(
-    alias_pack,
+    alias_pack: McpToolAliasFixturePack,
     scenario_id: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

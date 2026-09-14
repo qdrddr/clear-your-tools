@@ -157,9 +157,8 @@ def format_agent_skills(
             emitted_full_flags.append(full)
     if not any(item_lines):
         return ""
-    from cyt.injection.pre_exposed import is_pre_exposed
-
     from cyt.injection.header_pre_exposed import skill_tier_legend_pre_exposed
+    from cyt.injection.pre_exposed import is_pre_exposed
     from cyt.injection.tier_legend import SKILL_TIER_LEGEND
 
     intro = skills_inject_intro(full=bool(emitted_full_flags) and all(emitted_full_flags))

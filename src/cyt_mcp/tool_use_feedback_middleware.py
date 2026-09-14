@@ -35,9 +35,7 @@ def _is_meta_tool(tool_name: str) -> bool:
         return True
     if normalized in _META_TOOL_NAMES:
         return True
-    return normalized.endswith("_get-tool-definitions") or normalized.endswith(
-        "__get-tool-definitions",
-    )
+    return normalized.endswith(("_get-tool-definitions", "__get-tool-definitions"))
 
 
 def _tool_call_succeeded(result: ToolResult) -> bool:

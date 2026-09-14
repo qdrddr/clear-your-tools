@@ -181,8 +181,6 @@ def resolve_canonical_tool_name_for_tiers(
 
     master_by_name: dict[str, dict[str, Any]] = {}
     for tool in master:
-        if not isinstance(tool, dict):
-            continue
         wire = str(tool.get("name") or "").strip()
         if wire:
             master_by_name[wire] = tool
@@ -399,13 +397,14 @@ def stamp_tool_injection_tiers(
     for tool in tools:
         copy_tool = copy.deepcopy(tool)
         name = str(copy_tool.get("name") or "")
+        tier_attr: str | None
         if name in t4:
             tier_attr = "t4"
         else:
             entity_id = tool_entity_id(copy_tool)
             tier = tier_by_tool.get(entity_id, Tier.ACTIVE) if entity_id else Tier.ACTIVE
             tier_attr = injection_tier_attr(_tier_label_for_pipeline(tier))
-        if tier_attr:
+        if tier_attr is not None:
             copy_tool["cyt_injection_tier"] = tier_attr
         stamped.append(copy_tool)
     return stamped

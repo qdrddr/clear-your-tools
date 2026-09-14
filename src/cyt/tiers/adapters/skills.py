@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.pruners.remote import PrunerSettingsCache
 
 from cyt.common.paths import expand_home_path
 from cyt.skills.catalog import SkillEntryRef, doc_id_from_path
@@ -724,7 +727,7 @@ def resolve_tiered_skill_matches(
     *,
     config: dict[str, Any],
     max_tokens: int | None = None,
-    pruner_settings: Any | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
     skip_frontmatter_gate: bool = False,
 ) -> list[MatchedSkill]:
     """Partition by tier, search eligible pool, and merge T4 direct inject matches."""

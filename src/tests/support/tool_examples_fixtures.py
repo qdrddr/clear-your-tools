@@ -11,7 +11,7 @@ import pytest
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tool_examples.enrich import _collect_property_nodes, enrich_tools_with_examples
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
-from cyt.tool_examples.report import QueryScoreReport, format_query_score_report_json
+from cyt.tool_examples.report import QueryScoreReport
 from cyt.tool_examples.store import ToolExamplesStore
 from tests.support.paths import FIXTURES_DIR
 

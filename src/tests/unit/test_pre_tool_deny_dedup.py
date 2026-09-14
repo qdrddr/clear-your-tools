@@ -93,7 +93,9 @@ def test_is_tool_definition_pre_exposed_for_deny_detects_prior_deny_json_in_prom
     write_session_log_from_template(log_path, "type2_filesystem_read_file")
     patch_session_log(monkeypatch, log_path)
 
-    scenario = next(item for item in _UNIT_SCENARIOS if item.id == "prior_deny_json_in_prompt_omits_definition")
+    scenario = next(
+        item for item in _UNIT_SCENARIOS if item.id == "prior_deny_json_in_prompt_omits_definition"
+    )
     tools = load_tools()
     tool_record = dict(tools["filesystem_read_file"])
     tool_record["name"] = "filesystem_read_file"

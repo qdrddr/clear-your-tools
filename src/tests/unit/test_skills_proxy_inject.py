@@ -272,10 +272,6 @@ def test_inject_skills_into_openai_body_inserts_developer_message() -> None:
 
 def test_inject_skills_skipped_when_pipeline_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "cyt.skills.proxy_inject.search_skills",
-        lambda *args, **kwargs: [],
-    )
-    monkeypatch.setattr(
         "cyt.skills.proxy_inject.build_registry",
         lambda *args, **kwargs: [],
     )
@@ -300,10 +296,6 @@ def test_inject_skills_skipped_when_pipeline_rerank(monkeypatch: pytest.MonkeyPa
 
 
 def test_inject_skills_skipped_when_pipeline_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "cyt.skills.proxy_inject.search_skills",
-        lambda *args, **kwargs: [],
-    )
     monkeypatch.setattr(
         "cyt.skills.proxy_inject.build_registry",
         lambda *args, **kwargs: [],

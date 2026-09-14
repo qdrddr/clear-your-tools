@@ -12,16 +12,14 @@ from cyt.tiers.manager import TierManager, _managers
 from cyt.tiers.models import Tier
 from cyt.tools.master_catalog import rebuild_master_catalog
 from tests.support.permissions_propagation_fixtures import (
+    PropagationFixturePack,
     PropagationScenario,
     assert_catalog_and_detail_filters_agree,
-    cyt_mcp_catalog_tools,
     disable_tool_on_pack,
     enable_tool_on_pack,
     load_propagation_scenarios,
     notify_hook_permissions_changed,
     patch_global_config_path,
-    propagation_hook_client,
-    propagation_pack,
     seed_catalog_on_hook,
     tier_config_for_pack,
     tool_entity_ids_in_status,
@@ -38,7 +36,7 @@ def clear_tier_managers() -> None:
 @pytest.mark.parametrize("scenario", load_propagation_scenarios(), ids=lambda s: s.id)
 @pytest.mark.asyncio
 async def test_permissions_disable_propagates_to_catalog_and_tier_tracking(
-    propagation_pack,
+    propagation_pack: PropagationFixturePack,
     scenario: PropagationScenario,
     propagation_hook_client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,

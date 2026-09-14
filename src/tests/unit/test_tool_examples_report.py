@@ -10,7 +10,6 @@ import pytest
 from cyt.tool_examples.report import format_query_score_report, format_query_score_report_json
 from tests.support.tool_examples_fixtures import (
     install_staggered_capture_clock,
-    load_json,
     run_ranking_query_score_report,
 )
 

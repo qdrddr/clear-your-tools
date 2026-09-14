@@ -5,15 +5,13 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-import pytest
-
 from cyt.tool_examples.config import ExampleRankingConfig
 from cyt.tool_examples.ranking import (
     RankedExampleValue,
     effective_example_pipeline,
-    reciprocal_rank_fusion,
     rank_example_values,
     rank_full_call_examples,
+    reciprocal_rank_fusion,
     select_diverse_values,
     usage_popularity_score,
     values_too_similar,

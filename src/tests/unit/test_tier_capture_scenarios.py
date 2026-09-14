@@ -11,12 +11,15 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import CallToolRequestParams, TextContent
 
 from cyt.hook.daemon_client import normalize_hook_base_url, resolve_hook_path
-from cyt.tiers.config import tier_tool_capture_source, tier_tool_capture_via_hooks
+from cyt.tiers.config import (
+    tier_section_config,
+    tier_tool_capture_source,
+    tier_tool_capture_via_hooks,
+)
 from cyt.tiers.manager import _managers
 from cyt.tiers.models import EntityKind
 from cyt.tiers.scores import execution_score, utility_score
 from cyt.tiers.status_detail import build_kind_detail
-from cyt.tiers.config import tier_section_config
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.tier_feedback_push import _build_payload
 from cyt_mcp.tool_use_feedback_middleware import ToolUseFeedbackMiddleware, _is_meta_tool
@@ -70,7 +73,6 @@ def test_capture_fixture_scenarios_are_self_consistent() -> None:
     assert config_values["capture_default"] == "cyt_mcp"
     assert config_values["capture_hooks"] == "hooks"
 
-    payload_ids = {item.id for item in payloads}
     for sequence in sequences:
         assert sequence.steps
         assert "attempts" in sequence.expected
@@ -126,7 +128,9 @@ def test_record_tool_attempt_feedback_matches_http_payload_expectations(
 def test_status_detail_includes_attempts_and_execution_score(
     capture_pack: TierCaptureFixturePack,
 ) -> None:
-    scenario = next(item for item in load_attempt_sequences() if item.id == "mixed_two_fail_one_success")
+    scenario = next(
+        item for item in load_attempt_sequences() if item.id == "mixed_two_fail_one_success"
+    )
     manager = manager_for_pack(capture_pack)
     try:
         apply_attempt_sequence(manager, capture_pack, scenario)
@@ -154,7 +158,7 @@ def test_status_detail_includes_attempts_and_execution_score(
     assert row["scores"]["utility"] == utility_score(state.stats)
 
 
-def test_build_payload_from_capture_fixture(tmp_path) -> None:
+def test_build_payload_from_capture_fixture(tmp_path: Path) -> None:
     tool = load_capture_tool()
     config = sample_aggregator_config(catalog_scope="workspace", workspace_root=tmp_path)
     payload = _build_payload(
@@ -196,7 +200,9 @@ def test_tracked_tool_is_reported_by_middleware() -> None:
 
 
 @pytest.mark.asyncio
-async def test_middleware_skips_meta_tools_from_fixture(capture_pack: TierCaptureFixturePack) -> None:
+async def test_middleware_skips_meta_tools_from_fixture(
+    capture_pack: TierCaptureFixturePack,
+) -> None:
     from cyt_mcp.config_holder import ConfigHolder
     from cyt_mcp.runtime_cache import RuntimeToolCache
 
@@ -239,7 +245,7 @@ def test_capture_tool_dict_matches_fixture_entity_id() -> None:
     assert tool_entity_id(capture_tool_dict(tool)) == tool.entity_id
 
 
-def test_materialize_capture_pack_has_git_root(tmp_path) -> None:
+def test_materialize_capture_pack_has_git_root(tmp_path: Path) -> None:
     pack = materialize_capture_pack(tmp_path)
     assert (pack.workspace / ".git").is_dir()
     assert pack.tool.entity_id.startswith("cyt_mcp:")

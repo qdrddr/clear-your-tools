@@ -13,7 +13,7 @@ from cyt.tiers.flush_scheduler import (
     start_tier_flush_scheduler,
     stop_tier_flush_scheduler,
 )
-from cyt.tiers.manager import _managers, flush_all_tier_managers, get_tier_manager
+from cyt.tiers.manager import TierManager, _managers, flush_all_tier_managers, get_tier_manager
 from cyt.tiers.models import EntityKind
 from tests.support.tier_flush_fixtures import (
     RecordScenario,
@@ -115,6 +115,7 @@ def test_record_scenarios_persist_according_to_flush_mode(
 def test_startup_manager_loads_seeded_fixture_state(tmp_path: Path) -> None:
     pack = materialize_flush_pack(tmp_path, seed=True)
     manager = get_tier_manager(pack.config, workspace=pack.workspace)
+    assert isinstance(manager, TierManager)
     state = manager._states.get((EntityKind.TOOL, pack.tool.entity_id))
     assert state is not None
     assert state.stats.used == 3.0
@@ -131,6 +132,7 @@ def test_warm_tier_statistics_loads_seeded_state_when_cache_disabled(
     warm_tier_statistics(pack.config)
 
     manager = get_tier_manager(pack.config, workspace=pack.workspace)
+    assert isinstance(manager, TierManager)
     state = manager._states.get((EntityKind.TOOL, pack.tool.entity_id))
     assert state is not None
     assert state.stats.attempts == 5.0
@@ -159,6 +161,7 @@ def test_get_tier_manager_starts_scheduler_for_deferred_mode(
 def test_flush_all_tier_managers_only_flushes_dirty_managers(tmp_path: Path) -> None:
     pack = materialize_flush_pack(tmp_path, disk_flush_seconds=900)
     manager = get_tier_manager(pack.config, workspace=pack.workspace)
+    assert isinstance(manager, TierManager)
     scenario = record_scenario_by_id("deferred_single_success")
     apply_record_scenario(manager, pack, scenario)
 
@@ -181,6 +184,7 @@ def test_scheduler_fixture_interval_persists_deferred_records(
     monkeypatch.setattr("cyt.tiers.flush_scheduler.tier_disk_flush_seconds", lambda _cfg: interval)
 
     manager = get_tier_manager(config, workspace=pack.workspace)
+    assert isinstance(manager, TierManager)
     start_tier_flush_scheduler(config)
     scenario = record_scenario_by_id("deferred_single_success")
     apply_record_scenario(manager, pack, scenario)

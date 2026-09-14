@@ -71,8 +71,18 @@ def _bm25_pair_similarity(a: str, b: str) -> float:
     if not tokens_a or not tokens_b:
         return 0.0
     avg_len = (len(tokens_a) + len(tokens_b)) / 2.0
-    forward = _bm25_score(tokens_a, _normalize_display_value(b), avg_len=avg_len, doc_len=len(tokens_b))
-    backward = _bm25_score(tokens_b, _normalize_display_value(a), avg_len=avg_len, doc_len=len(tokens_a))
+    forward = _bm25_score(
+        tokens_a,
+        _normalize_display_value(b),
+        avg_len=avg_len,
+        doc_len=len(tokens_b),
+    )
+    backward = _bm25_score(
+        tokens_b,
+        _normalize_display_value(a),
+        avg_len=avg_len,
+        doc_len=len(tokens_a),
+    )
     return max(normalize_bm25_similarity(forward), normalize_bm25_similarity(backward))
 
 
@@ -124,8 +134,7 @@ def select_diverse_values(
         if len(selected) >= max_count:
             break
         if any(
-            values_too_similar(value, picked, threshold=diversity_threshold)
-            for picked in selected
+            values_too_similar(value, picked, threshold=diversity_threshold) for picked in selected
         ):
             continue
         selected.append(value)
@@ -144,18 +153,14 @@ def _ranking_from_rows(
     if key == "usage":
         total = float(sum(row.success_count for row in rows))
         scored = {
-            row.value: usage_popularity_score(float(row.success_count), total)
-            for row in rows
+            row.value: usage_popularity_score(float(row.success_count), total) for row in rows
         }
     elif key == "recency":
         timestamps = [row.timestamp_ms for row in rows]
         min_ts = min(timestamps)
         max_ts = max(timestamps)
         span = max(max_ts - min_ts, 1)
-        scored = {
-            row.value: (row.timestamp_ms - min_ts) / span
-            for row in rows
-        }
+        scored = {row.value: (row.timestamp_ms - min_ts) / span for row in rows}
     else:
         return []
     return _ranking_from_scores(scored)
@@ -175,8 +180,7 @@ def _recency_ranking(rows: list[ToolExampleRow]) -> list[str]:
 def _usage_ranking(rows: list[ToolExampleRow]) -> tuple[list[str], dict[str, float]]:
     total = float(sum(row.success_count for row in rows))
     usage_scores = {
-        row.value: usage_popularity_score(float(row.success_count), total)
-        for row in rows
+        row.value: usage_popularity_score(float(row.success_count), total) for row in rows
     }
     return _ranking_from_scores(usage_scores), usage_scores
 
@@ -235,7 +239,9 @@ def _llm_ranking(
         return []
     context_query = query.strip()
     if property_description.strip():
-        context_query = f"{context_query}\nProperty: {property_name}\n{property_description}".strip()
+        context_query = (
+            f"{context_query}\nProperty: {property_name}\n{property_description}".strip()
+        )
     formatted = [
         f"[{index}] {property_name}: {_normalize_display_value(row.value)}"
         for index, row in enumerate(rows)
@@ -253,8 +259,7 @@ def _llm_ranking(
         logger.warning("example llm ranking failed: %s", exc)
         return []
     scored_rows = [
-        (row.value, float(selected_scores.get(index, 0)))
-        for index, row in enumerate(rows)
+        (row.value, float(selected_scores.get(index, 0))) for index, row in enumerate(rows)
     ]
     scored_rows.sort(key=lambda pair: pair[1], reverse=True)
     return [value for value, _score in scored_rows if _score > 0]

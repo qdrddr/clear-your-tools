@@ -14,11 +14,15 @@ from cyt.injection.tier_legend import (
     injection_tier_attr,
 )
 from cyt.tiers.models import Tier
-from tests.support.tier_injection_fixtures import load_legend_snippets, load_tier_attr_cases
+from tests.support.tier_injection_fixtures import (
+    TierAttrCase,
+    load_legend_snippets,
+    load_tier_attr_cases,
+)
 
 
 @pytest.mark.parametrize("case", load_tier_attr_cases(), ids=lambda case: case.tier)
-def test_injection_tier_attr_normalizes_enum_and_strings(case) -> None:
+def test_injection_tier_attr_normalizes_enum_and_strings(case: TierAttrCase) -> None:
     tier_enum = Tier[case.tier]
     assert injection_tier_attr(tier_enum) == case.expected_attr
     assert injection_tier_attr(case.expected_attr) == case.expected_attr

@@ -17,7 +17,6 @@ from cyt.injection.session_log_build import (
     tool_item_key,
     tool_item_legacy_keys,
 )
-
 from cyt_client.agent import infer_harness_agent
 from cyt_client.catalog_hash import catalog_tool_record_content_hash
 from cyt_client.sessions import (

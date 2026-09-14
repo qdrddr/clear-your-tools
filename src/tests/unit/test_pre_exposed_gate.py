@@ -96,7 +96,7 @@ def test_gate_and_filter_tools_drops_pre_exposed_t4_tool() -> None:
     tool["cyt_injection_tier"] = "t4"
     tool["cyt_catalog_source"] = "cyt_mcp"
     fragment = format_tool_item(tool)
-    ctx = PreExposureContext.from_entries(payload_text=fragment, entries=())
+    ctx = PreExposureContext.from_entries(payload_text=fragment, entries=[])
     gated, _logs, _ = gate_and_filter_tools(
         [tool],
         config={},

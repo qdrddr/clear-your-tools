@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -197,19 +197,18 @@ def assert_alias_scope_deny_empty(
         global_config_path=pack.global_config_path,
         workspace_root=pack.workspace,
     )
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
-        raw = {}
-    kind = "skills" if assertion.kind == "skills" else "mcp"
-    deny, _allow = load_permissions_lists(raw, kind=kind, agent_target="all")
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    config_raw: dict[str, Any] = loaded if isinstance(loaded, dict) else {}
+    perm_kind: Literal["mcp", "skills"] = "skills" if assertion.kind == "skills" else "mcp"
+    deny, _allow = load_permissions_lists(config_raw, kind=perm_kind, agent_target="all")
     assert deny == [], f"expected empty deny at {assertion.scope}/{assertion.kind}, got {deny!r}"
 
 
 __all__ = [
     "CATALOG_TOOLS_PATH",
     "FIXTURES_ROOT",
-    "McpToolAliasFixturePack",
     "SCENARIOS_PATH",
+    "McpToolAliasFixturePack",
     "apply_alias_steps",
     "assert_alias_runtime_tools",
     "assert_alias_scope_deny_empty",

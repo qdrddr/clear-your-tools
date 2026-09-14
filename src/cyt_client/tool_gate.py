@@ -129,6 +129,15 @@ def _first_str(data: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
+def _normalize_mcp_double_underscore_name(name: str) -> str | None:
+    parts = [part for part in name.split("__") if part]
+    if len(parts) >= 3 and parts[0] == "mcp":
+        return f"{parts[1]}_{'__'.join(parts[2:])}"
+    if len(parts) == 2 and parts[0] == "mcp":
+        return parts[1]
+    return None
+
+
 def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
     name = str(raw_name or "").strip()
     if not name:
@@ -139,13 +148,9 @@ def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
     if name.upper().startswith("MCP:"):
         name = name[4:].strip()
     if name.startswith("mcp__"):
-        parts = [part for part in name.split("__") if part]
-        if len(parts) >= 3 and parts[0] == "mcp":
-            server = parts[1]
-            tool = "__".join(parts[2:])
-            return f"{server}_{tool}"
-        if len(parts) == 2 and parts[0] == "mcp":
-            return parts[1]
+        normalized = _normalize_mcp_double_underscore_name(name)
+        if normalized is not None:
+            return normalized
     if agent == "codex" and name.count("__") >= 2 and name.startswith("mcp__"):
         _, server, tool = name.split("__", 2)
         if server and tool:

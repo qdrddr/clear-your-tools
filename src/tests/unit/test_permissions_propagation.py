@@ -8,13 +8,19 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from cyt.cyt_mcp.catalog import _CytMcpCacheKey, _CytMcpCatalogState, _catalog_states
-from cyt.cyt_mcp.catalog import invalidate_cyt_mcp_catalog_for_workspace
+from cyt.cyt_mcp.catalog import (
+    _catalog_states,
+    _CytMcpCacheKey,
+    _CytMcpCatalogState,
+    invalidate_cyt_mcp_catalog_for_workspace,
+)
 from cyt.permissions.editor import load_permissions_lists
 from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
 from tests.support.permissions_propagation_fixtures import (
     CATALOG_TOOLS_PATH,
     SCENARIOS_PATH,
+    PropagationFixturePack,
+    PropagationScenario,
     disable_tool_on_pack,
     load_catalog_tools,
     load_propagation_scenarios,
@@ -26,7 +32,7 @@ from tests.support.permissions_propagation_fixtures import (
 
 
 @pytest.fixture
-def propagation_pack(tmp_path: Path):
+def propagation_pack(tmp_path: Path) -> PropagationFixturePack:
     return materialize_propagation_fixture_pack(tmp_path)
 
 
@@ -42,8 +48,8 @@ def test_propagation_fixture_files_exist() -> None:
 
 @pytest.mark.parametrize("scenario", load_propagation_scenarios(), ids=lambda s: s.id)
 def test_filter_tools_for_tier_tracking_skips_denied_tool(
-    propagation_pack,
-    scenario,
+    propagation_pack: PropagationFixturePack,
+    scenario: PropagationScenario,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_global_config_path(monkeypatch, propagation_pack)
@@ -59,7 +65,7 @@ def test_filter_tools_for_tier_tracking_skips_denied_tool(
 
 
 def test_editor_disable_writes_workspace_deny_entry(
-    propagation_pack,
+    propagation_pack: PropagationFixturePack,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_global_config_path(monkeypatch, propagation_pack)

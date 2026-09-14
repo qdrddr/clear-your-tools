@@ -70,11 +70,8 @@ def normalize_permission_tool_input(value: str, *, agent: str = "cursor") -> str
     text = str(value or "").strip()
     if not text:
         return text
-    if (
-        text.startswith("mcp__")
-        or text.upper().startswith("MCP:")
-        or text.startswith("user-cyt-mcp-")
-        or text.startswith("user_cyt_mcp_")
+    if text.startswith(("mcp__", "user-cyt-mcp-", "user_cyt_mcp_")) or text.upper().startswith(
+        "MCP:",
     ):
         from cyt_client.tool_gate import normalize_mcp_tool_name
 

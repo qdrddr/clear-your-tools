@@ -13,16 +13,15 @@ Actual output is written to ``fixtures/tool_examples/out/`` on each test run.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from tests.support.tool_examples_fixtures import (
+    INPUT_DIR,
     RANKING_CAPTURES_FIXTURE,
     RANKING_QUERIES_FIXTURE,
     RANKING_TOOLS_FIXTURE,
-    INPUT_DIR,
     install_staggered_capture_clock,
     load_json,
     ranking_query_ids,

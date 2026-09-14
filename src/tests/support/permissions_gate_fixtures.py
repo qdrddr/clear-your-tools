@@ -6,7 +6,7 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, Protocol, TypedDict, cast
 
 import pytest
 import yaml
@@ -610,9 +610,14 @@ def materialize_fixture_pack(tmp_path: Path) -> PermissionsGateFixturePack:
     )
 
 
+class GlobalConfigPathPack(Protocol):
+    @property
+    def global_config_path(self) -> Path: ...
+
+
 def patch_global_config_path(
     monkeypatch: pytest.MonkeyPatch,
-    pack: PermissionsGateFixturePack,
+    pack: GlobalConfigPathPack,
 ) -> None:
     monkeypatch.setattr(
         "cyt.permissions.merge.DEFAULT_USER_CONFIG_PATH",

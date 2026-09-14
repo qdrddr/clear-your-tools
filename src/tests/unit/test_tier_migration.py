@@ -75,7 +75,7 @@ def test_migrate_v1_scope_key_to_project_id(tmp_path: Path) -> None:
     store = TierStore.open(str(db_path))
     try:
         version = int(store._conn.execute("PRAGMA user_version").fetchone()[0])
-        assert version == 2
+        assert version == 3
         project_id = store.get_or_create_project(workspace)
         project = TierProject(project_id=project_id, root_path=Path(workspace).resolve())
         loaded = store.load_entity_states(project)

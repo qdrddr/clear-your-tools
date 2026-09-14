@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,6 +26,17 @@ from cyt_mcp.hook_daemon_push import (
     schedule_catalog_push,
 )
 from cyt_mcp.runtime_cache import RuntimeToolCache
+
+
+class _TrackingConfigHolder(ConfigHolder):
+    def __init__(self, agg_config: AggregatorConfig) -> None:
+        super().__init__(agg_config)
+        self.reload_calls = 0
+
+    def reload_mcp_deny(self) -> tuple[str, ...]:
+        self.reload_calls += 1
+        self.config = replace(self.config, mcp_deny=("hedl/hedl_batch",))
+        return self.config.mcp_deny
 
 
 def _config(
@@ -254,22 +266,7 @@ async def test_maybe_reload_permissions_notifies_when_deny_changes_without_hash_
     cache = RuntimeToolCache()
     cache.replace([{"name": "hedl_batch", "inputSchema": {"type": "object"}}])
 
-    class _FakeConfigHolder:
-        def __init__(self) -> None:
-            self.config = config
-            self._deny: tuple[str, ...] = ()
-            self.reload_calls = 0
-
-        @property
-        def mcp_deny(self) -> tuple[str, ...]:
-            return self._deny
-
-        def reload_mcp_deny(self) -> tuple[str, ...]:
-            self.reload_calls += 1
-            self._deny = ("hedl/hedl_batch",)
-            return self._deny
-
-    config_holder = _FakeConfigHolder()
+    config_holder = _TrackingConfigHolder(config)
 
     middleware = MagicMock()
     middleware.notify_all_sessions = AsyncMock()
@@ -305,22 +302,7 @@ def test_sync_push_notifies_on_deny_only_change(tmp_path: Path) -> None:
     cache = RuntimeToolCache()
     cache.replace([{"name": "hedl_batch", "inputSchema": {"type": "object"}}])
 
-    class _FakeConfigHolder:
-        def __init__(self) -> None:
-            self.config = config
-            self._deny: tuple[str, ...] = ()
-            self.reload_calls = 0
-
-        @property
-        def mcp_deny(self) -> tuple[str, ...]:
-            return self._deny
-
-        def reload_mcp_deny(self) -> tuple[str, ...]:
-            self.reload_calls += 1
-            self._deny = ("hedl/hedl_batch",)
-            return self._deny
-
-    holder = _FakeConfigHolder()
+    holder = _TrackingConfigHolder(config)
     middleware = MagicMock()
     middleware.notify_all_sessions = AsyncMock()
 

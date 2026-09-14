@@ -33,7 +33,9 @@ def test_cyt_config_exports_capture_helpers() -> None:
     from cyt.config import tier_tool_capture_source, tier_tool_capture_via_hooks
 
     assert tier_tool_capture_source({}) == "cyt_mcp"
-    assert tier_tool_capture_via_hooks({"tools": {"tiers": {"capture": {"source": "hooks"}}}}) is True
+    assert (
+        tier_tool_capture_via_hooks({"tools": {"tiers": {"capture": {"source": "hooks"}}}}) is True
+    )
 
 
 def test_tier_tool_capture_source_hooks() -> None:

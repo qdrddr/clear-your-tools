@@ -42,7 +42,11 @@ def read_hook_daemon_entries() -> list[dict[str, Any]]:
     return []
 
 
-def fetch_cyt_health(port: int, *, timeout: float = HEALTH_TIMEOUT_SECONDS) -> dict[str, Any] | None:
+def fetch_cyt_health(
+    port: int,
+    *,
+    timeout: float = HEALTH_TIMEOUT_SECONDS,
+) -> dict[str, Any] | None:
     url = f"http://{LOCAL_HOST}:{port}/health"
     try:
         with urlopen(url, timeout=timeout) as response:

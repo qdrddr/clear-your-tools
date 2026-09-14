@@ -11,6 +11,7 @@ from cyt.tools.inject import format_tool_item
 from cyt.tools.mcpc_inject import _format_mcpc_tool_item
 from cyt.tools.source_inject import format_cyt_mcp_source_section
 from tests.support.tier_injection_fixtures import (
+    PreExposureCase,
     load_pre_exposure_cases,
     load_sample_tools,
     sample_tool_by_name,
@@ -38,7 +39,7 @@ def test_mcpc_tool_item_emits_tier_attribute() -> None:
 
 
 @pytest.mark.parametrize("case", load_pre_exposure_cases(), ids=lambda case: case.id)
-def test_fixture_pre_exposure_cases_skip_when_fragment_present(case) -> None:
+def test_fixture_pre_exposure_cases_skip_when_fragment_present(case: PreExposureCase) -> None:
     tool = sample_tool_by_name(case.tool_ref)
     fragment = format_tool_item(tool)
     filtered = filter_pre_exposed_tools([tool], fragment)

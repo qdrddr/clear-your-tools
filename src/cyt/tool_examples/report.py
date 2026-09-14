@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from cyt.tool_examples.config import tool_examples_config
-from cyt.tool_examples.enrich import _collect_property_nodes, _property_name_from_path, _schema_from_tool
+from cyt.tool_examples.enrich import (
+    _collect_property_nodes,
+    _property_name_from_path,
+    _schema_from_tool,
+)
 from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 from cyt.tool_examples.ranking import RankedExampleValue, rank_example_values

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -15,12 +14,12 @@ from cyt.injection.tier_legend import TOOL_TIER_LEGEND
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.skills.cli import _search_skills_for_user_prompt
 from cyt.skills.inject import format_skill_item
-from cyt.skills.proxy_inject import resolve_skills_for_query
 from cyt.tiers.adapters.skills import resolve_tiered_skill_matches
 from cyt.tiers.manager import TierManager, _managers
 from cyt.tools.hook import gate_and_format_hook_tools
 from cyt.tools.inject import format_tool_item
 from cyt.tools.master_catalog import clear_master_catalog_cache
+from cyt_core.types.prune import PruneResult
 from tests.support.tier_behavior_fixtures import (
     TierBehaviorFixturePack,
     build_registry_from_pack,
@@ -33,6 +32,7 @@ from tests.support.tier_behavior_fixtures import (
     write_cyt_mcp_disk_catalog_for_pack,
 )
 from tests.support.tier_injection_fixtures import (
+    InjectionIntegrationScenario,
     behavior_scenario_by_id,
     load_injection_integration_scenarios,
 )
@@ -70,16 +70,12 @@ def _manager_for_pack(pack: TierBehaviorFixturePack) -> TierManager:
 
 @pytest.mark.parametrize(
     "scenario",
-    [
-        item
-        for item in load_injection_integration_scenarios()
-        if item.expected_stamped_tools
-    ],
+    [item for item in load_injection_integration_scenarios() if item.expected_stamped_tools],
     ids=[item.id for item in load_injection_integration_scenarios() if item.expected_stamped_tools],
 )
 def test_filter_tools_for_query_stamps_cyt_injection_tier(
     disk_catalog_pack: TierBehaviorFixturePack,
-    scenario,
+    scenario: InjectionIntegrationScenario,
 ) -> None:
     behavior = behavior_scenario_by_id(scenario.behavior_scenario_id)
     pack = disk_catalog_pack
@@ -110,16 +106,12 @@ def test_filter_tools_for_query_stamps_cyt_injection_tier(
 
 @pytest.mark.parametrize(
     "scenario",
-    [
-        item
-        for item in load_injection_integration_scenarios()
-        if item.expected_skill_tiers
-    ],
+    [item for item in load_injection_integration_scenarios() if item.expected_skill_tiers],
     ids=[item.id for item in load_injection_integration_scenarios() if item.expected_skill_tiers],
 )
 def test_resolve_tiered_skill_matches_sets_injection_tier(
     fixture_pack: TierBehaviorFixturePack,
-    scenario,
+    scenario: InjectionIntegrationScenario,
 ) -> None:
     behavior = behavior_scenario_by_id(scenario.behavior_scenario_id)
     pack = fixture_pack
@@ -149,7 +141,10 @@ def test_hook_search_skills_uses_tiered_resolver(
     config = live_tier_config(pack, kind="skill")
 
     with (
-        patch("cyt.skills.cli.build_registry_for_hook_payload", return_value=build_registry_from_pack(pack)),
+        patch(
+            "cyt.skills.cli.build_registry_for_hook_payload",
+            return_value=build_registry_from_pack(pack),
+        ),
         patch("cyt.skills.search.search_skills", return_value=[]),
     ):
         matches, _, _ = _search_skills_for_user_prompt(
@@ -180,7 +175,7 @@ def test_hook_search_skills_uses_tiered_resolver(
 )
 def test_gate_and_format_hook_tools_emits_legend_and_tier_attrs(
     disk_catalog_pack: TierBehaviorFixturePack,
-    scenario,
+    scenario: InjectionIntegrationScenario,
 ) -> None:
     behavior = behavior_scenario_by_id(scenario.behavior_scenario_id)
     pack = disk_catalog_pack
@@ -202,9 +197,7 @@ def test_gate_and_format_hook_tools_emits_legend_and_tier_attrs(
 
     assert result.tools
     cyt_tools = [
-        tool
-        for tool in result.tools
-        if str(tool.get("cyt_catalog_source") or "") == "cyt_mcp"
+        tool for tool in result.tools if str(tool.get("cyt_catalog_source") or "") == "cyt_mcp"
     ]
     formatted, _logs = gate_and_format_hook_tools(
         cyt_tools,
@@ -275,7 +268,17 @@ def test_second_turn_pre_exposure_skips_t4_tool_and_skill(
         config=config,
         payload=payload,
         session_text=session_text,
-        prune_results={"cyt_mcp": type("R", (), {"tools": [t4_tool]})()},
+        prune_results={
+            "cyt_mcp": PruneResult(
+                tools=[t4_tool],
+                status="applied",
+                query="",
+                tools_in=1,
+                mcp_tools_in=1,
+                tools_out=1,
+                error=None,
+            ),
+        },
     )
     assert "gitnexus_query" not in formatted
 

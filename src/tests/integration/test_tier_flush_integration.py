@@ -7,11 +7,15 @@ from pathlib import Path
 
 import pytest
 
+from cyt.tiers.flush_scheduler import (
+    reset_tier_flush_scheduler_for_tests,
+    stop_tier_flush_scheduler,
+)
 from cyt.tiers.manager import _managers, flush_all_tier_managers, get_tier_manager
-from cyt.tiers.models import EntityKind
-from cyt.tiers.flush_scheduler import reset_tier_flush_scheduler_for_tests, stop_tier_flush_scheduler
+from cyt.tiers.models import EntityKind, EntityTierState
 from tests.support.tier_flush_fixtures import (
     IntegrationFlushScenario,
+    TierFlushFixturePack,
     entity_state_on_disk,
     http_payload_by_id,
     load_integration_flush_scenarios,
@@ -39,6 +43,23 @@ def _isolate_master_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _assert_tool_stats(
+    state: EntityTierState,
+    expected: dict[str, float | int],
+) -> None:
+    for key, value in expected.items():
+        assert getattr(state.stats, key) == value
+
+
+def _seeded_manager_state(
+    pack: TierFlushFixturePack,
+) -> EntityTierState:
+    manager = get_tier_manager(pack.config, workspace=pack.workspace)
+    state = manager._states.get((EntityKind.TOOL, pack.tool.entity_id))
+    assert state is not None
+    return state
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "scenario",
@@ -59,19 +80,11 @@ async def test_tier_flush_integration_scenarios(
     if scenario.disable_cache:
         monkeypatch.setattr("cyt.cache.warm.cache_enabled", lambda _cfg: False)
         warm_tier_statistics(pack.config)
-        manager = get_tier_manager(pack.config, workspace=pack.workspace)
-        state = manager._states.get((EntityKind.TOOL, pack.tool.entity_id))
-        assert state is not None
-        for key, expected in scenario.expected.items():
-            assert getattr(state.stats, key) == expected
+        _assert_tool_stats(_seeded_manager_state(pack), scenario.expected)
         return
 
     if scenario.uses_seed and scenario.payload_id is None:
-        manager = get_tier_manager(pack.config, workspace=pack.workspace)
-        state = manager._states.get((EntityKind.TOOL, pack.tool.entity_id))
-        assert state is not None
-        for key, expected in scenario.expected.items():
-            assert getattr(state.stats, key) == expected
+        _assert_tool_stats(_seeded_manager_state(pack), scenario.expected)
         return
 
     assert scenario.payload_id is not None
@@ -83,23 +96,17 @@ async def test_tier_flush_integration_scenarios(
     )
     assert status == 204
 
-    manager = get_tier_manager(pack.config, workspace=pack.workspace)
-    memory_state = manager._states.get((EntityKind.TOOL, pack.tool.entity_id))
-    assert memory_state is not None
-    for key, expected in scenario.expected.items():
-        assert getattr(memory_state.stats, key) == expected
+    _assert_tool_stats(_seeded_manager_state(pack), scenario.expected)
 
     on_disk = entity_state_on_disk(pack)
     if scenario.persisted_before_flush is False:
         assert on_disk is None
     elif scenario.persisted_before_flush is True:
         assert on_disk is not None
-        for key, expected in scenario.expected.items():
-            assert getattr(on_disk.stats, key) == expected
+        _assert_tool_stats(on_disk, scenario.expected)
 
     if scenario.persisted_after_flush:
         assert flush_all_tier_managers(force=False) >= 0
         on_disk_after = entity_state_on_disk(pack)
         assert on_disk_after is not None
-        for key, expected in scenario.expected.items():
-            assert getattr(on_disk_after.stats, key) == expected
+        _assert_tool_stats(on_disk_after, scenario.expected)

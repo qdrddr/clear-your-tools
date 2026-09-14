@@ -6,53 +6,18 @@
   },
   "pruned_tools": [
     {
-      "name": "code-review-graph_detect_changes_tool",
-      "description": "Detect changes and produce risk-scored, priority-ordered review guidance.\n\nPrimary tool for code review. Maps git diffs to affected functions,\nflows, communities, and test coverage gaps. Returns risk scores and\nprioritized review items. Replaces get_review_context for change-aware reviews.\n\nOffloaded to a thread via ``asyncio.to_thread`` — runs `git diff`\nsubprocesses and BFS traversals that can take several seconds on\nlarge repos. See: #46, #136.",
+      "name": "code-review-graph_get_hub_nodes_tool",
+      "description": "Find the most connected nodes in the codebase (architectural hotspots).\n\nHub nodes have the highest total degree (in + out edges). Changes to\nthem have disproportionate blast radius. Excludes File nodes.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "max_depth": {
-            "default": 2,
-            "description": "Impact radius depth for BFS traversal. Default: 2.",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
+      "input_schema": null,
       "server_key": "code-review-graph",
-      "tool_name": "detect_changes_tool"
+      "tool_name": "get_hub_nodes_tool"
     },
     {
       "name": "code-review-graph_get_impact_radius_tool",
       "description": "Analyze the blast radius of changed files in the codebase.\n\nShows which functions, classes, and files are impacted by changes.\nAuto-detects changed files from git if not specified.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "base": {
-            "default": "HEAD~1",
-            "description": "Git ref for auto-detecting changes. Default: HEAD~1.",
-            "type": "string"
-          },
-          "changed_files": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "List of changed file paths (relative to repo root). Auto-detected if omitted."
-          }
-        },
-        "type": "object"
-      },
+      "input_schema": null,
       "server_key": "code-review-graph",
       "tool_name": "get_impact_radius_tool"
     },
@@ -79,26 +44,26 @@
       "tool_name": "trace_path"
     },
     {
+      "name": "gitnexus_detect_changes",
+      "description": "Analyze uncommitted git changes and find affected execution flows.\nMaps git diff hunks to indexed symbols, then traces which processes are impacted.\n\nWHEN TO USE: Before committing — to understand what your changes affect. Pre-commit review, PR preparation.\nAFTER THIS: Review affected processes. Use context() on high-risk symbols. READ gitnexus://repo/{name}/process/{name} for full traces.\n\nGIT WORKTREE SUPPORT: GitNexus automatically detects when the MCP server was launched from inside a linked git worktree and runs git diff against that worktree — no extra parameters needed in the common case. Pass \"worktree\" explicitly only when the server was started from a different directory than the worktree you are editing (e.g., the server runs from the canonical root but your changes are in a linked worktree at a different path).\n\nReturns: changed symbols, affected processes, and a risk summary.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": null,
+      "server_key": "gitnexus",
+      "tool_name": "detect_changes"
+    },
+    {
+      "name": "gitnexus_route_map",
+      "description": "Show API route mappings: which components/hooks fetch which API endpoints, and which handler files serve them.\n\nWHEN TO USE: Understanding API consumption patterns, finding orphaned routes. For pre-change analysis, prefer `api_impact` which combines this data with mismatch detection and risk assessment.\nAFTER THIS: Use impact() on specific route handlers to see full blast radius.\n\nReturns: route nodes with their handlers, middleware wrapper chains (e.g., withAuth, withRateLimit), and consumers. Each route object includes its \"method\" (the HTTP verb, \"*\" for method-agnostic routes, or null for method-less routes).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": null,
+      "server_key": "gitnexus",
+      "tool_name": "route_map"
+    },
+    {
       "name": "graphify_list_prs",
       "description": "List open GitHub PRs with CI status, review state, and graph impact (which communities each PR touches, blast radius). Use this before starting work to check if a PR already covers the area you're about to change.",
       "cyt_catalog_source": "cyt_mcp",
-      "input_schema": {
-        "properties": {
-          "base": {
-            "description": "Base branch to filter PRs by (auto-detected if omitted)",
-            "type": "string"
-          },
-          "project_path": {
-            "description": "Absolute path to a project directory containing graphify-out/graph.json. Optional — defaults to the graph this server was started with.",
-            "type": "string"
-          },
-          "repo": {
-            "description": "GitHub repo (owner/repo). Defaults to current repo.",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
+      "input_schema": null,
       "server_key": "graphify",
       "tool_name": "list_prs"
     },
@@ -108,47 +73,9 @@
       "cyt_catalog_source": "cyt_mcp",
       "input_schema": {
         "properties": {
-          "call_depth": {
-            "default": 0,
-            "description": "When > 0, also find symbols that *call* this symbol (call-level analysis). Returns a callers list alongside the import-level confirmed/potential. Max 3. Default 0 (disabled).",
-            "type": "integer"
-          },
-          "cross_repo": {
-            "default": false,
-            "description": "When true, also find files in other indexed repos that consume this repo's package. Default: false.",
-            "type": "boolean"
-          },
-          "decorator_filter": {
-            "description": "Optional: filter confirmed results to only those containing symbols with this decorator (case-insensitive substring match)",
-            "type": "string"
-          },
-          "depth": {
-            "default": 1,
-            "description": "Import hops to traverse (1 = direct importers only, max 3). Default 1.",
-            "type": "integer"
-          },
-          "fqn": {
-            "description": "PHP fully-qualified class name (e.g. 'App\\Models\\User'). Resolves to symbol via PSR-4. Alternative to symbol.",
-            "type": "string"
-          },
-          "include_decisions": {
-            "default": false,
-            "description": "When true, attach a read-only 'decisions' block: decision-bearing commits (revert/perf/refactor/rename/bugfix) mined from the git history of the focal symbol's file and the confirmed affected files, plus a volatility read ('3 reverts + 2 perf rewrites in 180d — review before changing'). Surfaced from the commit record; nothing is persisted. Default false (spends a few git-log calls).",
-            "type": "boolean"
-          },
-          "include_depth_scores": {
-            "default": false,
-            "description": "When true, adds impact_by_depth (files grouped by hop distance) and per-depth risk scores. overall_risk_score and direct_dependents_count are always included. Default false.",
-            "type": "boolean"
-          },
           "repo": {
             "description": "Repository identifier (owner/repo or just repo name)",
             "type": "string"
-          },
-          "source_budget": {
-            "default": 8000,
-            "description": "Max tokens for source snippets across all files (default 8000). Files are prioritized by reference count.",
-            "type": "integer"
           },
           "symbol": {
             "description": "Symbol name or ID to analyse (e.g. 'calculateScore' or a full symbol ID)",
@@ -165,50 +92,11 @@
       "tool_name": "get_blast_radius"
     },
     {
-      "name": "jcodemunch_get_changed_symbols",
-      "description": "Map a git diff to affected symbols: given two commits, returns which symbols were added, removed, modified, or renamed. Useful after merging a PR to answer 'what actually changed?' for code review or regression triage. Requires a locally indexed repo (index_folder). Defaults to comparing current HEAD against the SHA stored at index time.",
-      "cyt_catalog_source": "cyt_mcp",
-      "input_schema": {
-        "properties": {
-          "include_blast_radius": {
-            "default": false,
-            "description": "Also return downstream importers (blast radius) for each changed symbol (default false).",
-            "type": "boolean"
-          },
-          "max_blast_depth": {
-            "default": 3,
-            "description": "Hop limit when include_blast_radius=true (default 3, max 5).",
-            "type": "integer"
-          },
-          "repo": {
-            "description": "Repository identifier — must be locally indexed with index_folder",
-            "type": "string"
-          }
-        },
-        "required": [
-          "repo"
-        ],
-        "type": "object"
-      },
-      "server_key": "jcodemunch",
-      "tool_name": "get_changed_symbols"
-    },
-    {
       "name": "jcodemunch_get_endpoint_impact",
       "description": "Endpoint-centric impact analysis: 'what breaks if I change this HTTP endpoint?' Given an endpoint (method + URL, e.g. 'GET /users') or a handler symbol, returns the handler plus what changing it affects — importing files + callers (blast radius) and any templates it renders. Read-only. Resolves string-dispatch routes (Django/Express/Flask/Rails) and decorator routes (Flask/FastAPI/Spring) by their local path; for prefix-composed FastAPI (APIRouter prefix) or Spring class-level mappings whose full URL isn't resolved yet, pass handler_symbol_id instead.",
       "cyt_catalog_source": "cyt_mcp",
       "input_schema": {
         "properties": {
-          "depth": {
-            "default": 1,
-            "description": "Import hops for blast radius (1 = direct importers; max 3).",
-            "type": "integer"
-          },
-          "include_infra": {
-            "default": false,
-            "description": "Attach per-impact infra links: env vars / compose services / Dockerfiles / CI jobs / scripts whose project-intel cross-references land in the endpoint's blast-radius files (downstream), plus what exposes the app (compose ports, K8s Service/Ingress; precision host_port unless an Ingress path rule names the route). File-granular evidence.",
-            "type": "boolean"
-          },
           "repo": {
             "description": "Repository identifier (owner/repo or just repo name)",
             "type": "string"
@@ -221,24 +109,43 @@
       },
       "server_key": "jcodemunch",
       "tool_name": "get_endpoint_impact"
+    },
+    {
+      "name": "jcodemunch_render_diagram",
+      "description": "Render any graph-producing tool's output as rich, annotated Mermaid markup. Pass the raw output dict from get_call_hierarchy, get_signal_chains, get_tectonic_map, get_dependency_cycles, get_impact_preview, get_blast_radius, or get_dependency_graph. Auto-detects the source tool and picks the optimal diagram type: flowchart TD (call hierarchy, blast radius), flowchart BT (impact preview), flowchart LR (tectonic plates, dependency graph, cycles), or sequenceDiagram (signal chains). Encodes metadata as visual signals: edge colors for resolution confidence, node shapes for symbol kind, subgraph grouping by file/plate/depth, risk heat coloring. Themes: 'flow' (blue/purple depth gradient), 'risk' (red/yellow/green heat), 'minimal' (monochrome). Smart pruning keeps output under max_nodes.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "source": {
+            "description": "Raw output dict from any supported graph-producing tool.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "render_diagram"
     }
   ],
   "query": "analyze blast radius and impact before changing a shared function callers",
   "status": "applied",
   "tools_in": 189,
-  "tools_out": 7,
+  "tools_out": 9,
   "score_tool": 0.4,
   "score_tool_enum": 0.1,
   "prune_enums": true,
   "tokens_in": 55361,
-  "tokens_out": 1723,
-  "tokens_saved": 53638,
+  "tokens_out": 1500,
+  "tokens_saved": 53861,
   "tokenizer": "tiktoken_compact_json",
-  "optional_properties_in": 575,
-  "optional_properties_out": 18,
+  "optional_properties_in": 6,
+  "optional_properties_out": 0,
   "decomposed": {
-    "bm25": 22,
-    "build_index": 934
+    "bm25": 37,
+    "build_index": 222
   },
   "must_include_tools": [],
   "must_exclude_tools": [

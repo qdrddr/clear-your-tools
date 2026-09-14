@@ -43,7 +43,7 @@ async def test_middleware_reports_success_and_failure() -> None:
 
     scheduled: list[dict] = []
 
-    def capture_schedule(**kwargs):  # type: ignore[no-untyped-def]
+    def capture_schedule(**kwargs: object) -> None:
         scheduled.append(kwargs)
 
     params = CallToolRequestParams(name="srv_tool", arguments={"q": "x"})
@@ -92,10 +92,13 @@ async def test_middleware_reports_failure_when_call_next_raises() -> None:
 
     call_next = AsyncMock(side_effect=RuntimeError("backend down"))
 
-    with patch(
-        "cyt_mcp.tool_use_feedback_middleware.schedule_tool_use_feedback",
-        side_effect=lambda **kwargs: scheduled.append(kwargs),
-    ), pytest.raises(RuntimeError, match="backend down"):
+    with (
+        patch(
+            "cyt_mcp.tool_use_feedback_middleware.schedule_tool_use_feedback",
+            side_effect=lambda **kwargs: scheduled.append(kwargs),
+        ),
+        pytest.raises(RuntimeError, match="backend down"),
+    ):
         await middleware.on_call_tool(context, call_next)
 
     assert scheduled[0]["success"] is False

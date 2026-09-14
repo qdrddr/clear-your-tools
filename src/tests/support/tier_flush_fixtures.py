@@ -10,8 +10,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tiers.adapters.tools import stamp_tool_catalog_source
-from cyt.tiers.manager import TierManager, flush_all_tier_managers, get_tier_manager
-from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, EpochState, Tier, TierProject
+from cyt.tiers.manager import TierManager
+from cyt.tiers.models import (
+    EffectiveStats,
+    EntityKind,
+    EntityTierState,
+    EpochState,
+    Tier,
+    TierProject,
+)
 from cyt.tiers.store import TierStore
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tier_flush"
@@ -187,14 +194,10 @@ def load_integration_flush_scenarios(
                 uses_seed=row.get("uses_seed") is True,
                 payload_id=str(row["payload_id"]) if row.get("payload_id") else None,
                 persisted_before_flush=(
-                    bool(row["persisted_before_flush"])
-                    if "persisted_before_flush" in row
-                    else None
+                    bool(row["persisted_before_flush"]) if "persisted_before_flush" in row else None
                 ),
                 persisted_after_flush=(
-                    bool(row["persisted_after_flush"])
-                    if "persisted_after_flush" in row
-                    else None
+                    bool(row["persisted_after_flush"]) if "persisted_after_flush" in row else None
                 ),
                 disable_cache=row.get("disable_cache") is True,
             ),

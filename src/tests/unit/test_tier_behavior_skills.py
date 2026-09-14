@@ -14,8 +14,7 @@ from cyt.tiers.adapters.skills import (
     resolve_tiered_skill_matches,
     skill_entity_id,
 )
-from cyt.tiers.models import SkillsTierPartition
-from cyt.tiers.models import Tier
+from cyt.tiers.models import SkillsTierPartition, Tier
 from cyt.tiers.skill_token_materialization import (
     clear_carried_token_memo,
     effective_skill_token_count,
@@ -193,7 +192,11 @@ def test_resolve_tiered_skill_matches_merges_t4_direct(
     search_entries = [entry for entry in entries if skill_fixture_key(entry) != "create-hook"]
 
     class _FakeManager:
-        def partition_skills(self, _entries, _config):
+        def partition_skills(
+            self,
+            _entries: list[object],
+            _config: dict[str, object],
+        ) -> SkillsTierPartition:
             return SkillsTierPartition(
                 search_entries=search_entries,
                 t4_direct=[t4_entry],
@@ -201,7 +204,11 @@ def test_resolve_tiered_skill_matches_merges_t4_direct(
                 representation_by_skill=representation,
             )
 
-        def record_skill_candidates(self, _entries, _config) -> None:
+        def record_skill_candidates(
+            self,
+            _entries: list[object],
+            _config: dict[str, object],
+        ) -> None:
             return None
 
     monkeypatch.setattr(

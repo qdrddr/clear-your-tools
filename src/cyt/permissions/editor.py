@@ -436,5 +436,5 @@ def parse_server_tool_arg(value: str, *, agent: str = "cursor") -> tuple[str, st
         return parts
     raise ValueError(
         f"Expected SERVER/TOOL or catalog tool name (e.g. hedl/batch, hedl_batch, "
-        f"hedl_hedl_batch, mcp__hedl__hedl_batch), got {value!r}"
+        f"hedl_hedl_batch, mcp__hedl__hedl_batch), got {value!r}",
     )

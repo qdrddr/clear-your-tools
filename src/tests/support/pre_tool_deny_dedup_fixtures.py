@@ -90,7 +90,9 @@ def load_unit_scenarios(path: Path = SCENARIOS_PATH) -> tuple[DenyScenario, ...]
                 id=str(row["id"]),
                 session_log=str(row["session_log"]),
                 tool=str(row["tool"]),
-                tool_input=row.get("tool_input") if isinstance(row.get("tool_input"), dict) else None,
+                tool_input=row.get("tool_input")
+                if isinstance(row.get("tool_input"), dict)
+                else None,
                 shell_command=str(row["shell_command"]) if row.get("shell_command") else None,
                 prompt=str(row["prompt"]) if row.get("prompt") else None,
                 expect=_parse_expectation(row["expect"]),
@@ -122,7 +124,9 @@ def load_integration_scenarios(path: Path = SCENARIOS_PATH) -> tuple[DenyIntegra
                 id=str(row["id"]),
                 session_log=str(row["session_log"]),
                 tool=str(row["tool"]),
-                tool_input=row.get("tool_input") if isinstance(row.get("tool_input"), dict) else None,
+                tool_input=row.get("tool_input")
+                if isinstance(row.get("tool_input"), dict)
+                else None,
                 shell_command=str(row["shell_command"]) if row.get("shell_command") else None,
                 prompt=str(row["prompt"]) if row.get("prompt") else None,
                 steps=steps,

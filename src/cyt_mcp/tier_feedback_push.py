@@ -6,7 +6,10 @@ import asyncio
 import json
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -97,13 +100,13 @@ def _push_sync(payload: dict[str, Any]) -> None:
 
 async def _maybe_sync_catalog(
     *,
-    server: Any,
+    server: FastMCP[Any],
     cache: RuntimeToolCache,
     config_holder: ConfigHolder,
     catalog_content_hash: str | None,
 ) -> None:
     from cyt_mcp.catalog_build import refresh_catalog_cache
-    from cyt_mcp.hook_daemon_push import _last_success_hash, _instance_key, schedule_catalog_push
+    from cyt_mcp.hook_daemon_push import _instance_key, _last_success_hash, schedule_catalog_push
 
     config = config_holder.config
     current_hash = catalog_tools_content_hash(cache.snapshot())
@@ -131,7 +134,7 @@ async def _report_async(
     mcp_server: str | None,
     bare_tool_name: str | None,
     input_schema: dict[str, Any] | None,
-    server: Any | None,
+    server: FastMCP[Any] | None,
     cache: RuntimeToolCache | None,
     config_holder: ConfigHolder | None,
 ) -> None:
@@ -167,7 +170,7 @@ def schedule_tool_use_feedback(
     mcp_server: str | None = None,
     bare_tool_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
-    server: Any | None = None,
+    server: FastMCP[Any] | None = None,
     cache: RuntimeToolCache | None = None,
     config_holder: ConfigHolder | None = None,
 ) -> None:

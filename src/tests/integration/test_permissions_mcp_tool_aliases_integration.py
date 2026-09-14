@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,7 +13,8 @@ from cyt.cyt_mcp.catalog import _filter_tools_by_permissions
 from cyt.hook.catalog_registry import catalog_for_hook, clear_catalog_registry, register_catalog
 from cyt.permissions.match import is_catalog_tool_denied
 from cyt.permissions.merge import merged_hook_config
-from cyt_mcp.config import sample_aggregator_config
+from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.hook_daemon_push import (
     PushContext,
     _instance_key,
@@ -21,6 +23,7 @@ from cyt_mcp.hook_daemon_push import (
 )
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from tests.support.permissions_mcp_tool_aliases_fixtures import (
+    McpToolAliasFixturePack,
     apply_alias_steps,
     load_alias_scenarios,
     load_catalog_tools,
@@ -29,7 +32,7 @@ from tests.support.permissions_mcp_tool_aliases_fixtures import (
 )
 
 
-def _merged_config(pack, agent: str = "cursor") -> dict:
+def _merged_config(pack: McpToolAliasFixturePack, agent: str = "cursor") -> dict:
     global_cfg = yaml.safe_load(pack.global_config_path.read_text(encoding="utf-8")) or {}
     if not isinstance(global_cfg, dict):
         global_cfg = {}
@@ -112,22 +115,17 @@ async def test_maybe_reload_permissions_notifies_on_deny_only_change(tmp_path: P
     cache = RuntimeToolCache()
     cache.replace(load_catalog_tools())
 
-    class _FakeConfigHolder:
-        def __init__(self) -> None:
-            self.config = config
-            self._deny: tuple[str, ...] = ()
+    class _TrackingConfigHolder(ConfigHolder):
+        def __init__(self, agg_config: AggregatorConfig) -> None:
+            super().__init__(agg_config)
             self.reload_calls = 0
-
-        @property
-        def mcp_deny(self) -> tuple[str, ...]:
-            return self._deny
 
         def reload_mcp_deny(self) -> tuple[str, ...]:
             self.reload_calls += 1
-            self._deny = ("hedl/hedl_batch",)
-            return self._deny
+            self.config = replace(self.config, mcp_deny=("hedl/hedl_batch",))
+            return self.config.mcp_deny
 
-    holder = _FakeConfigHolder()
+    holder = _TrackingConfigHolder(config)
     middleware = MagicMock()
     middleware.notify_all_sessions = AsyncMock()
 

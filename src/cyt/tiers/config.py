@@ -8,10 +8,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
-TierToolCaptureSource = Literal["cyt_mcp", "hooks"]
-
 from cyt.config.sections import tools_at
 from cyt.hook.install_scope import CytInstallScope
+
+TierToolCaptureSource = Literal["cyt_mcp", "hooks"]
 
 
 class TierMode(StrEnum):

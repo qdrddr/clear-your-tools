@@ -180,7 +180,10 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
 
 
 @pytest.mark.asyncio
-async def test_hook_tier_feedback_records_failed_attempt(project_root: Path, base_config: dict) -> None:
+async def test_hook_tier_feedback_records_failed_attempt(
+    project_root: Path,
+    base_config: dict,
+) -> None:
     from cyt.hook.http_server import hook_tier_feedback
 
     db_path = project_root / "tier_state.db"

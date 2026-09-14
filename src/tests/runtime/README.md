@@ -9,7 +9,7 @@ These never run from pre-commit hooks, `workflow.sh all`, or
 ## Scope
 
 | Module | What it covers |
-|--------|----------------|
+| --- | --- |
 | [`test_runtime_opt_in.py`](test_runtime_opt_in.py) | Category smoke |
 | [`test_hook_daemon_e2e.py`](test_hook_daemon_e2e.py) | Real hook daemon: `/health`, tools BM25 inject, skills frontmatter gate, live tiers |
 | [`test_launch_proxy_e2e.py`](test_launch_proxy_e2e.py) | Real launch proxy + mock upstream; asserts pruned tools forwarded |

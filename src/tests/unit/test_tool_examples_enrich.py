@@ -304,11 +304,7 @@ def test_enrich_prefers_diverse_high_usage_values(
     assert len(values) == 3
     assert "New York, NY" in values
     assert "San Francisco, CA" in values
-    chicago_variants = [
-        value
-        for value in values
-        if value.casefold().startswith("chicago")
-    ]
+    chicago_variants = [value for value in values if value.casefold().startswith("chicago")]
     assert len(chicago_variants) == 1
 
 

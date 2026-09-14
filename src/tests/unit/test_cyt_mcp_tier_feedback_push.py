@@ -42,10 +42,13 @@ def test_schedule_tool_use_feedback_posts_in_background(tmp_path: Path) -> None:
     def fake_push(payload: dict) -> None:
         posted.append(payload)
 
-    with patch(
-        "cyt_mcp.tier_feedback_push.resolve_hook_path",
-        return_value="http://127.0.0.1:8834/hook/tier/feedback",
-    ), patch("cyt_mcp.tier_feedback_push._push_sync", side_effect=fake_push):
+    with (
+        patch(
+            "cyt_mcp.tier_feedback_push.resolve_hook_path",
+            return_value="http://127.0.0.1:8834/hook/tier/feedback",
+        ),
+        patch("cyt_mcp.tier_feedback_push._push_sync", side_effect=fake_push),
+    ):
         schedule_tool_use_feedback(
             config=config,
             tool_name="jcodemunch_search_symbols",
