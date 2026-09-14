@@ -15,7 +15,7 @@
         "properties": {
           "city": {
             "type": "string",
-            "description": "City name or city with state. Examples: 'Chicago, Illinois', 'San Francisco, CA', 'New York, NY'."
+            "description": "City name or city with state."
           }
         },
         "required": [
@@ -24,16 +24,7 @@
       }
     }
   ],
-  "flattened_examples": [
-    {
-      "path": "geo.lookup.inputSchema.properties.city",
-      "values": [
-        "Chicago, Illinois",
-        "San Francisco, CA",
-        "New York, NY"
-      ]
-    }
-  ],
+  "flattened_examples": [],
   "inject": {
     "max_per_property": 3,
     "max_value_chars": 120,

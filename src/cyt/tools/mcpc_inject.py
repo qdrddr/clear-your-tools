@@ -11,7 +11,11 @@ from cyt.injection.mcpc_pre_exposed import McpcPreExposureFlags, compute_mcpc_pr
 __all__ = [
     "compute_mcpc_pre_exposure_flags",
 ]
-from cyt.tools.inject import _xml_single_quoted_attr, ensure_agent_tools_starts_on_new_line
+from cyt.tools.inject import (
+    _format_examples_block,
+    _xml_single_quoted_attr,
+    ensure_agent_tools_starts_on_new_line,
+)
 from cyt.tools.serialize import minimize_json_single_quotes
 
 _MCPC_WORKSPACE_NOTE = (
@@ -233,18 +237,19 @@ def _format_mcpc_tool_item(
     if isinstance(tier, str) and tier.strip():
         attrs.append(f"tier='{_xml_single_quoted_attr(tier.strip().lower())}'")
     cli_line = _cli_example(session, tool_name, schema_body)
-    return "\n".join(
-        [
-            f"<tool {' '.join(attrs)}>",
-            "<cli>",
-            cli_line,
-            "</cli>",
-            "<json-schema>",
-            minimize_json_single_quotes(schema_body),
-            "</json-schema>",
-            "</tool>",
-        ],
-    )
+    lines = [
+        f"<tool {' '.join(attrs)}>",
+        "<cli>",
+        cli_line,
+        "</cli>",
+        "<json-schema>",
+        minimize_json_single_quotes(schema_body),
+        "</json-schema>",
+    ]
+    if examples_block := _format_examples_block(tool):
+        lines.append(examples_block)
+    lines.append("</tool>")
+    return "\n".join(lines)
 
 
 def _group_tools_by_session(tools: list[dict[str, Any]]) -> OrderedDict[str, list[dict[str, Any]]]:

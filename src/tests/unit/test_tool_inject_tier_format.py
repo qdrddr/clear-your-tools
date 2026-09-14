@@ -61,6 +61,32 @@ def test_format_tool_item_includes_tier_attribute() -> None:
     assert "tier='t2'" in item
 
 
+def test_format_tool_item_omits_examples_when_absent() -> None:
+    item = format_tool_item(_sample_tool(with_schema=True))
+    assert "<examples>" not in item
+
+
+def test_format_tool_item_omits_examples_when_list_empty() -> None:
+    tool = _sample_tool(with_schema=True)
+    tool["cyt_injection_examples"] = []
+    tool["cyt_injection_examples_max_chars"] = 120
+    item = format_tool_item(tool)
+    assert "<examples>" not in item
+    assert "</examples>" not in item
+
+
+def test_format_tool_item_renders_examples_block() -> None:
+    tool = _sample_tool(with_schema=True)
+    tool["cyt_injection_examples"] = [
+        {"query": "useEffect cleanup pattern", "limit": 5},
+    ]
+    tool["cyt_injection_examples_max_chars"] = 120
+    item = format_tool_item(tool)
+    assert "<examples>" in item
+    assert "- {'query':'useEffect cleanup pattern','limit':5}" in item
+    assert "</examples>" in item
+
+
 def test_format_agent_tools_mixed_t1_and_t3_tools() -> None:
     t1 = prepare_tool_for_tier_pipeline(
         _sample_tool(name="cold_tool", with_schema=True),

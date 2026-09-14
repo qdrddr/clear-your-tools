@@ -15,7 +15,7 @@
         "properties": {
           "repo_path": {
             "type": "string",
-            "description": "Path to the repository. Examples: '/Volumes/cross-repo-intelligence', '/tmp/unrelated', '/Volumes/projects/clear-your-tools'."
+            "description": "Path to the repository"
           },
           "mode": {
             "type": "string",
@@ -26,7 +26,7 @@
               "cross-repo-intelligence"
             ],
             "default": "full",
-            "description": "All modes run type-aware LSP call/usage resolution (per-file + cross-file). full: all files + similarity/semantic edges. moderate: filtered files + similarity/semantic. fast: filtered files, no similarity/semantic. cross-repo-intelligence: match Routes/Channels across projects. Examples: 'cross-repo-intelligence', 'fast', 'full'."
+            "description": "All modes run type-aware LSP call/usage resolution (per-file + cross-file). full: all files + similarity/semantic edges. moderate: filtered files + similarity/semantic. fast: filtered files, no similarity/semantic. cross-repo-intelligence: match Routes/Channels across projects."
           },
           "target_projects": {
             "type": "array",
@@ -52,24 +52,7 @@
       "cyt_catalog_source": "cyt_mcp"
     }
   ],
-  "flattened_examples": [
-    {
-      "path": "codebase-memory.index_repository.inputSchema.properties.mode",
-      "values": [
-        "cross-repo-intelligence",
-        "fast",
-        "full"
-      ]
-    },
-    {
-      "path": "codebase-memory.index_repository.inputSchema.properties.repo_path",
-      "values": [
-        "/Volumes/cross-repo-intelligence",
-        "/tmp/unrelated",
-        "/Volumes/projects/clear-your-tools"
-      ]
-    }
-  ],
+  "flattened_examples": [],
   "inject": {
     "max_per_property": 3,
     "max_value_chars": 120,

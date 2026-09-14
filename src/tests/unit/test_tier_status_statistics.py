@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cyt.tiers.status_statistics import (
+    append_tier_statistics_tables,
     build_kind_tier_statistics,
     format_compact_tokens,
 )
@@ -48,6 +49,8 @@ def test_build_kind_tier_statistics_histogram_and_temp() -> None:
     assert totals["count"] == 4
     assert totals["temp"] == 2
     assert stats["activity"]["injected"] == 10.0
+    assert stats["activity"]["injected_entities"] == 3
+    assert stats["activity"]["used_entities"] == 0
 
 
 def test_build_kind_tier_statistics_tool_tokens_from_catalog() -> None:
@@ -165,3 +168,43 @@ def test_build_kind_tier_statistics_unknown_tokens() -> None:
     assert row["count"] == 1
     assert row["tokens_known"] == 0
     assert row["tokens"] == 0
+
+
+def test_append_tier_statistics_tables_historical_activity_lines() -> None:
+    lines: list[str] = []
+
+    def _format_table_row(columns: list[str], widths: list[int]) -> str:
+        return "  ".join(str(column).ljust(width) for column, width in zip(columns, widths))
+
+    append_tier_statistics_tables(
+        lines,
+        {
+            "tier_statistics": {
+                "tools": {
+                    "rows": [],
+                    "totals": {"count": 0, "temp": 0, "tokens": 0, "tokens_known": 0},
+                    "activity": {
+                        "injected": 270.34203593954095,
+                        "used": 41.8403994495833,
+                        "injected_entities": 88,
+                        "used_entities": 45,
+                    },
+                },
+                "skills": {
+                    "rows": [],
+                    "totals": {"count": 0, "temp": 0, "tokens": 0, "tokens_known": 0},
+                    "activity": {
+                        "injected": 3.0,
+                        "used": 12.0,
+                        "injected_entities": 2,
+                        "used_entities": 5,
+                    },
+                },
+            },
+        },
+        format_table_row=_format_table_row,
+    )
+
+    assert "Historical signals (decayed sum):" in lines
+    assert "  Demand:  tools injected=270.3 (88)  skills injected=3 (2)" in lines
+    assert "  Usage:   tools used=41.8 (45)  skills used=12 (5)" in lines

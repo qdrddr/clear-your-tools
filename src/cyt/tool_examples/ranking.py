@@ -120,6 +120,27 @@ def values_too_similar(a: str, b: str, *, threshold: float) -> bool:
     return _bm25_pair_similarity(a, b) >= threshold
 
 
+def select_top_unique_values(
+    scores: dict[str, float],
+    *,
+    max_count: int,
+) -> list[str]:
+    """Take highest-scoring values, deduping only exact string matches."""
+    if max_count <= 0 or not scores:
+        return []
+    ordered = sorted(scores.keys(), key=lambda value: scores[value], reverse=True)
+    selected: list[str] = []
+    seen: set[str] = set()
+    for value in ordered:
+        if value in seen:
+            continue
+        selected.append(value)
+        seen.add(value)
+        if len(selected) >= max_count:
+            break
+    return selected
+
+
 def select_diverse_values(
     scores: dict[str, float],
     *,
@@ -297,6 +318,7 @@ def rank_example_values(
     ranking: ExampleRankingConfig,
     property_name: str = "",
     property_description: str = "",
+    exact_diversity: bool = False,
 ) -> list[RankedExampleValue]:
     if not rows or max_count <= 0:
         return []
@@ -350,11 +372,14 @@ def rank_example_values(
             channel_ranks["llm"] = {value: idx + 1 for idx, value in enumerate(llm_ranking)}
 
     rrf_scores = reciprocal_rank_fusion(rankings, k=ranking.rrf_k)
-    selected_values = select_diverse_values(
-        rrf_scores,
-        max_count=max_count,
-        diversity_threshold=ranking.diversity_threshold,
-    )
+    if exact_diversity:
+        selected_values = select_top_unique_values(rrf_scores, max_count=max_count)
+    else:
+        selected_values = select_diverse_values(
+            rrf_scores,
+            max_count=max_count,
+            diversity_threshold=ranking.diversity_threshold,
+        )
 
     recency_by_value = {row.value: row.timestamp_ms for row in rows}
     min_ts = min(recency_by_value.values())
@@ -388,21 +413,25 @@ def rank_full_call_examples(
     max_count: int,
     config: dict[str, Any],
     ranking: ExampleRankingConfig,
-) -> list[str]:
-    """Rank and diversify full-call JSON examples."""
+) -> list[dict[str, Any]]:
+    """Rank and diversify full-call invocation payloads."""
     if not captures or max_count <= 0:
         return []
-    rows = [
-        ToolExampleRow(
-            schema_id=0,
-            json_path="full_call",
-            value=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-            value_type="object",
-            timestamp_ms=ts,
-            success_count=1,
+    payload_by_value: dict[str, dict[str, Any]] = {}
+    rows: list[ToolExampleRow] = []
+    for payload, ts in captures:
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        payload_by_value.setdefault(serialized, payload)
+        rows.append(
+            ToolExampleRow(
+                schema_id=0,
+                json_path="full_call",
+                value=serialized,
+                value_type="object",
+                timestamp_ms=ts,
+                success_count=1,
+            ),
         )
-        for payload, ts in captures
-    ]
     ranked = rank_example_values(
         query,
         rows,
@@ -411,5 +440,11 @@ def rank_full_call_examples(
         ranking=ranking,
         property_name="full_call",
         property_description="Complete tool invocation arguments",
+        exact_diversity=True,
     )
-    return [item.value for item in ranked]
+    out: list[dict[str, Any]] = []
+    for item in ranked:
+        payload = payload_by_value.get(item.value)
+        if isinstance(payload, dict):
+            out.append(payload)
+    return out

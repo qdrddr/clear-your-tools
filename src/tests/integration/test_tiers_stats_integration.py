@@ -95,7 +95,7 @@ def test_tiers_stats_overview_text_shows_nonzero_tool_total(
     assert "=== tools ===" in out
     assert f"Total  {expected['tools_total']}" in out
     assert "=== skills ===" in out
-    skills_block = out.split("=== skills ===", 1)[1].split("injected:", 1)[0]
+    skills_block = out.split("=== skills ===", 1)[1].split("Historical signals", 1)[0]
     assert "Total  2" in skills_block
 
 

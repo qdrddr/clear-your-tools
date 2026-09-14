@@ -180,6 +180,5 @@ def test_rank_full_call_examples_diversifies_json_payloads() -> None:
         ranking=_ranking_config(),
     )
     assert len(ranked) == 3
-    decoded = [json.loads(item) for item in ranked]
-    chicago_variants = sum(1 for item in decoded if "Chicago" in item.get("city", ""))
-    assert chicago_variants == 1
+    cities = [item["city"] for item in ranked]
+    assert len(set(cities)) == 3

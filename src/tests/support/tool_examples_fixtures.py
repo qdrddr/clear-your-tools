@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from cyt.hook.workspace_config import set_hook_workspace_in_config
-from cyt.tool_examples.enrich import _collect_property_nodes, enrich_tools_with_examples
+from cyt.tool_examples.enrich import enrich_tools_with_examples
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 from cyt.tool_examples.report import QueryScoreReport
 from cyt.tool_examples.store import ToolExamplesStore
@@ -270,51 +270,20 @@ def seed_ranking_captures(
     )
 
 
-def extract_example_values(description: str) -> list[str]:
-    marker = "Examples:"
-    if marker not in description:
-        return []
-    tail = description.split(marker, 1)[1].strip()
-    if tail.endswith("."):
-        tail = tail[:-1].strip()
-    values: list[str] = []
-    index = 0
-    while index < len(tail):
-        if tail[index] != "'":
-            index += 1
-            continue
-        end = index + 1
-        while end < len(tail) and tail[end] != "'":
-            end += 1
-        values.append(tail[index + 1 : end])
-        index = end + 1
-        while index < len(tail) and tail[index] in ", ":
-            index += 1
-    return values
-
-
-def flattened_key(server_key: str, tool_name: str, json_path: str) -> str:
-    return f"{server_key}.{tool_name}.{json_path}"
-
-
 def flattened_examples_from_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for tool in tools:
-        server_key, bare_tool = resolve_mcp_server_and_tool(tool)
-        schema = tool.get("input_schema") or tool.get("inputSchema") or {}
-        if not isinstance(schema, dict):
+        examples = tool.get("cyt_injection_examples")
+        if not isinstance(examples, list) or not examples:
             continue
-        for json_path, spec in _collect_property_nodes(schema):
-            values = extract_example_values(str(spec.get("description") or ""))
-            if not values:
-                continue
-            rows.append(
-                {
-                    "path": flattened_key(server_key, bare_tool, json_path),
-                    "values": values,
-                },
-            )
-    rows.sort(key=lambda row: str(row["path"]))
+        wire_name = str(tool.get("name") or "")
+        rows.append(
+            {
+                "tool": wire_name,
+                "examples": examples,
+            },
+        )
+    rows.sort(key=lambda row: str(row["tool"]))
     return rows
 
 
@@ -328,6 +297,9 @@ def normalize_enriched_tool(tool: dict[str, Any]) -> dict[str, Any]:
     }
     if tool.get("cyt_catalog_source") is not None:
         out["cyt_catalog_source"] = tool.get("cyt_catalog_source")
+    examples = tool.get("cyt_injection_examples")
+    if isinstance(examples, list) and examples:
+        out["cyt_injection_examples"] = examples
     return out
 
 

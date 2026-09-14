@@ -7,7 +7,7 @@ from typing import Any
 
 from cyt.executor.tool_names import agent_visible_tool_name
 from cyt.indexer.tokens import count_tokens
-from cyt.tools.serialize import minimize_json_single_quotes
+from cyt.tools.serialize import format_examples_block, minimize_json_single_quotes
 
 _EXECUTOR_WORKSPACE_NOTE = (
     "When using tools with executor, you typically required to specify path to the repository "
@@ -17,13 +17,15 @@ _EXECUTOR_WORKSPACE_NOTE = (
 _AGENT_TOOLS_DESCRIPTION_BASE = (
     "Pruned MCP tool definitions below-minimized JSON with relevant properties and enums only for selection. "
     "Name and description live on each <tool> tag; JSON carries input_schema with "
-    "outer double quotes swapped by single quotes to save tokens normally should be double quotes."
+    "outer double quotes swapped by single quotes to save tokens normally should be double quotes. "
+    "When available, successful past invocations from this project appear in a per-tool <examples> block."
 )
 
 _AGENT_TOOLS_DESCRIPTION_STUBS_ONLY_BASE = (
     "Pruned MCP tool definitions below-minimized JSON with relevant properties and enums only for selection. "
     "Name lives on each <tool> tag; descriptions are in root tools[] stubs; JSON carries input_schema with "
-    "outer double quotes swapped by single quotes to save tokens normally should be double quotes."
+    "outer double quotes swapped by single quotes to save tokens normally should be double quotes. "
+    "When available, successful past invocations from this project appear in a per-tool <examples> block."
 )
 
 
@@ -97,6 +99,24 @@ def _tool_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
     return dict(schema) if isinstance(schema, dict) else {}
 
 
+def _tool_injection_examples(tool: dict[str, Any]) -> tuple[list[dict[str, Any]], int | None]:
+    raw = tool.get("cyt_injection_examples")
+    if not isinstance(raw, list) or not raw:
+        return [], None
+    examples = [item for item in raw if isinstance(item, dict)]
+    if not examples:
+        return [], None
+    max_chars = tool.get("cyt_injection_examples_max_chars")
+    if isinstance(max_chars, int) and max_chars > 0:
+        return examples, max_chars
+    return examples, None
+
+
+def _format_examples_block(tool: dict[str, Any]) -> str:
+    examples, max_chars = _tool_injection_examples(tool)
+    return format_examples_block(examples, max_chars=max_chars)
+
+
 def format_tool_item(
     tool: dict[str, Any],
     *,
@@ -115,6 +135,8 @@ def format_tool_item(
     lines = [_tool_open_tag(name, description, tier=tier_attr)]
     if schema:
         lines.append(minimize_json_single_quotes({"input_schema": schema}))
+    if examples_block := _format_examples_block(tool):
+        lines.append(examples_block)
     lines.append("</tool>")
     return "\n".join(lines)
 

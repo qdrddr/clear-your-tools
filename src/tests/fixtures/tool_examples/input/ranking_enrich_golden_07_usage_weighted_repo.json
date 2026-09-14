@@ -15,11 +15,11 @@
         "properties": {
           "repo": {
             "type": "string",
-            "description": "Repository identifier (owner/repo or just repo name). Examples: 'local/clear-your-tools', 'local/demo'."
+            "description": "Repository identifier (owner/repo or just repo name)"
           },
           "query": {
             "type": "string",
-            "description": "Search query (matches symbol names, signatures, summaries, docstrings). Examples: 'kubernetes deployment autoscaling pods', 'docker compose build image'."
+            "description": "Search query (matches symbol names, signatures, summaries, docstrings)"
           },
           "kind": {
             "type": "string",
@@ -36,7 +36,7 @@
           },
           "file_pattern": {
             "type": "string",
-            "description": "Optional glob pattern to filter files (e.g., 'src/**/*.py'). Examples: 'docker/**', 'charts/**'."
+            "description": "Optional glob pattern to filter files (e.g., 'src/**/*.py')"
           },
           "language": {
             "type": "string",
@@ -177,29 +177,7 @@
       "cyt_catalog_source": "cyt_mcp"
     }
   ],
-  "flattened_examples": [
-    {
-      "path": "jcodemunch.search_symbols.inputSchema.properties.file_pattern",
-      "values": [
-        "docker/**",
-        "charts/**"
-      ]
-    },
-    {
-      "path": "jcodemunch.search_symbols.inputSchema.properties.query",
-      "values": [
-        "kubernetes deployment autoscaling pods",
-        "docker compose build image"
-      ]
-    },
-    {
-      "path": "jcodemunch.search_symbols.inputSchema.properties.repo",
-      "values": [
-        "local/clear-your-tools",
-        "local/demo"
-      ]
-    }
-  ],
+  "flattened_examples": [],
   "inject": {
     "max_per_property": 3,
     "max_value_chars": 120,

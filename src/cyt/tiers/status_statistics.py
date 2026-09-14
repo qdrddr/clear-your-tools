@@ -88,9 +88,11 @@ def _effective_skill_tokens(entity: dict[str, Any], *, tier: str) -> int | None:
     return effective_skill_token_count(entity, tier)
 
 
-def _aggregate_activity(by_tier: dict[str, Any]) -> dict[str, float]:
+def _aggregate_activity(by_tier: dict[str, Any]) -> dict[str, float | int]:
     injected = 0.0
     used = 0.0
+    injected_entities = 0
+    used_entities = 0
     for items in by_tier.values():
         if not isinstance(items, list):
             continue
@@ -103,10 +105,21 @@ def _aggregate_activity(by_tier: dict[str, Any]) -> dict[str, float]:
             raw_injected = stats.get("injected")
             raw_used = stats.get("used")
             if isinstance(raw_injected, (int, float)):
-                injected += float(raw_injected)
+                injected_value = float(raw_injected)
+                injected += injected_value
+                if injected_value > 0:
+                    injected_entities += 1
             if isinstance(raw_used, (int, float)):
-                used += float(raw_used)
-    return {"injected": injected, "used": used}
+                used_value = float(raw_used)
+                used += used_value
+                if used_value > 0:
+                    used_entities += 1
+    return {
+        "injected": injected,
+        "used": used,
+        "injected_entities": injected_entities,
+        "used_entities": used_entities,
+    }
 
 
 def _tier_row_from_entities(
@@ -233,6 +246,8 @@ def build_kind_tier_statistics(
         "activity": {
             "injected": activity["injected"],
             "used": activity["used"],
+            "injected_entities": activity["injected_entities"],
+            "used_entities": activity["used_entities"],
         },
     }
 
@@ -342,40 +357,76 @@ def append_kind_tier_statistics_table(
             )
 
 
-def _format_injected_activity_value(value: object) -> object:
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return value
+def _format_decayed_activity_value(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return "0"
+    rounded = round(float(value), 1)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:.1f}"
 
 
-def _append_injected_activity_line(
+def _activity_metric(
+    stats: dict[str, Any] | None,
+    *,
+    metric: str,
+    entities_key: str,
+) -> tuple[str, str] | None:
+    if not isinstance(stats, dict):
+        return None
+    activity = stats.get("activity")
+    if not isinstance(activity, dict) or metric not in activity:
+        return None
+    value = _format_decayed_activity_value(activity.get(metric))
+    entities = activity.get(entities_key)
+    entity_count = str(int(entities)) if isinstance(entities, int) else "0"
+    return value, entity_count
+
+
+def _append_historical_activity_lines(
     lines: list[str],
     *,
     tools_stats: dict[str, Any] | None,
     skills_stats: dict[str, Any] | None,
 ) -> None:
-    tools_injected = None
-    skills_injected = None
-    if isinstance(tools_stats, dict):
-        activity = tools_stats.get("activity")
-        if isinstance(activity, dict) and "injected" in activity:
-            tools_injected = activity.get("injected")
-    if isinstance(skills_stats, dict):
-        activity = skills_stats.get("activity")
-        if isinstance(activity, dict) and "injected" in activity:
-            skills_injected = activity.get("injected")
+    tools_injected = _activity_metric(
+        tools_stats,
+        metric="injected",
+        entities_key="injected_entities",
+    )
+    skills_injected = _activity_metric(
+        skills_stats,
+        metric="injected",
+        entities_key="injected_entities",
+    )
+    tools_used = _activity_metric(tools_stats, metric="used", entities_key="used_entities")
+    skills_used = _activity_metric(skills_stats, metric="used", entities_key="used_entities")
 
     if tools_injected is None and skills_injected is None:
         return
 
-    parts: list[str] = []
-    if tools_injected is not None:
-        parts.append(f"tools={_format_injected_activity_value(tools_injected)}")
-    if skills_injected is not None:
-        parts.append(f"skills={_format_injected_activity_value(skills_injected)}")
-    if parts:
-        lines.append("")
-        lines.append(f"injected: {'  '.join(parts)}")
+    def _kind_metric(
+        tools: tuple[str, str] | None,
+        skills: tuple[str, str] | None,
+        *,
+        label: str,
+    ) -> str:
+        tools_text = (
+            f"tools {label}={tools[0]} ({tools[1]})"
+            if tools is not None
+            else f"tools {label}=0 (0)"
+        )
+        skills_text = (
+            f"skills {label}={skills[0]} ({skills[1]})"
+            if skills is not None
+            else f"skills {label}=0 (0)"
+        )
+        return f"{tools_text}  {skills_text}"
+
+    lines.append("")
+    lines.append("Historical signals (decayed sum):")
+    lines.append(f"  Demand:  {_kind_metric(tools_injected, skills_injected, label='injected')}")
+    lines.append(f"  Usage:   {_kind_metric(tools_used, skills_used, label='used')}")
 
 
 def append_tier_statistics_tables(
@@ -410,7 +461,7 @@ def append_tier_statistics_tables(
             entity_label="skills",
         )
 
-    _append_injected_activity_line(
+    _append_historical_activity_lines(
         lines,
         tools_stats=tools_stats if isinstance(tools_stats, dict) else None,
         skills_stats=skills_stats if isinstance(skills_stats, dict) else None,

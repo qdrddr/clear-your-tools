@@ -15,15 +15,15 @@
         "properties": {
           "search_query": {
             "type": "string",
-            "description": "Natural language or keyword search query. Examples: 'cypher match callers validateUser', 'oauth jwt bearer token validation', 'session cookie login redirect'."
+            "description": "Natural language or keyword search query."
           },
           "task_context": {
             "type": "string",
-            "description": "What you are working on (e.g., \"adding OAuth support\"). Helps ranking. Examples: 'debug login flow', 'adding OAuth support'."
+            "description": "What you are working on (e.g., \"adding OAuth support\"). Helps ranking."
           },
           "goal": {
             "type": "string",
-            "description": "What you want to find (e.g., \"existing auth validation logic\"). Helps ranking. Examples: 'find authentication validation logic'."
+            "description": "What you want to find (e.g., \"existing auth validation logic\"). Helps ranking."
           },
           "limit": {
             "type": "number",
@@ -46,7 +46,7 @@
           },
           "repo": {
             "type": "string",
-            "description": "Indexed repository name or path, or group mode \"@<groupName>\" / \"@<groupName>/<memberPath>\" (member path keys from group.yaml). Omit when only one indexed repo exists. Examples: 'clear-your-tools'."
+            "description": "Indexed repository name or path, or group mode \"@<groupName>\" / \"@<groupName>/<memberPath>\" (member path keys from group.yaml). Omit when only one indexed repo exists."
           },
           "service": {
             "type": "string",
@@ -65,35 +65,7 @@
       "cyt_catalog_source": "cyt_mcp"
     }
   ],
-  "flattened_examples": [
-    {
-      "path": "gitnexus.query.inputSchema.properties.goal",
-      "values": [
-        "find authentication validation logic"
-      ]
-    },
-    {
-      "path": "gitnexus.query.inputSchema.properties.repo",
-      "values": [
-        "clear-your-tools"
-      ]
-    },
-    {
-      "path": "gitnexus.query.inputSchema.properties.search_query",
-      "values": [
-        "cypher match callers validateUser",
-        "oauth jwt bearer token validation",
-        "session cookie login redirect"
-      ]
-    },
-    {
-      "path": "gitnexus.query.inputSchema.properties.task_context",
-      "values": [
-        "debug login flow",
-        "adding OAuth support"
-      ]
-    }
-  ],
+  "flattened_examples": [],
   "inject": {
     "max_per_property": 3,
     "max_value_chars": 120,

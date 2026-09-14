@@ -104,8 +104,8 @@ def test_maintenance_then_enrich_still_serves_examples(project_root: Path, tmp_p
         "input_schema": schema,
     }
     enriched = enrich_tools_with_examples([tool], "retained project", config)
-    desc = enriched[0]["input_schema"]["properties"]["project"]["description"]
-    assert "retained-project" in desc
+    examples = enriched[0]["cyt_injection_examples"]
+    assert any(example.get("project") == "retained-project" for example in examples)
 
 
 def test_capture_to_enrich_pipeline(project_root: Path, tmp_path: Path) -> None:
@@ -140,10 +140,9 @@ def test_capture_to_enrich_pipeline(project_root: Path, tmp_path: Path) -> None:
         "cyt_catalog_source": "cyt_mcp",
     }
     enriched = enrich_tools_with_examples([tool], "bm25 ranking project", config)
-    project_desc = enriched[0]["input_schema"]["properties"]["project"]["description"]
-    assert "clear-your-tools" in project_desc
-    assert "Examples:" in project_desc
-    assert "Full-call examples:" in enriched[0]["description"]
+    examples = enriched[0]["cyt_injection_examples"]
+    assert any(example.get("project") == "clear-your-tools" for example in examples)
+    assert enriched[0]["input_schema"]["properties"]["project"]["description"] == "Project name"
 
 
 @pytest.mark.asyncio
@@ -231,9 +230,8 @@ def test_filter_tools_injects_examples(project_root: Path, tmp_path: Path) -> No
 
     assert result.tools is not None
     assert len(result.tools) == 1
-    desc = result.tools[0]["input_schema"]["properties"]["query"]["description"]
-    assert "cached-query-value" in desc
-    assert "Examples:" in desc
+    examples = result.tools[0]["cyt_injection_examples"]
+    assert any(example.get("query") == "cached-query-value" for example in examples)
 
 
 def test_client_notify_record_enrich_pipeline(
@@ -330,31 +328,8 @@ def test_client_notify_record_enrich_pipeline(
         "description": "Search",
     }
     enriched = enrich_tools_with_examples([tool], "integration project", config)
-    desc = enriched[0]["input_schema"]["properties"]["project"]["description"]
-    assert "integration-project" in desc
-
-
-def _extract_example_values(description: str) -> list[str]:
-    marker = "Examples:"
-    if marker not in description:
-        return []
-    tail = description.split(marker, 1)[1].strip()
-    if tail.endswith("."):
-        tail = tail[:-1].strip()
-    values: list[str] = []
-    index = 0
-    while index < len(tail):
-        if tail[index] != "'":
-            index += 1
-            continue
-        end = index + 1
-        while end < len(tail) and tail[end] != "'":
-            end += 1
-        values.append(tail[index + 1 : end])
-        index = end + 1
-        while index < len(tail) and tail[index] in ", ":
-            index += 1
-    return values
+    examples = enriched[0]["cyt_injection_examples"]
+    assert any(example.get("project") == "integration-project" for example in examples)
 
 
 def _ranking_config(db_path: Path, workspace: Path) -> dict:
@@ -366,7 +341,7 @@ def _ranking_config(db_path: Path, workspace: Path) -> dict:
                     "enabled": True,
                     "database": {"path": str(db_path)},
                     "inject": {
-                        "max_per_property": 3,
+                        "max_full_call_examples": 3,
                         "ranking": {
                             "pipeline": ["bm25"],
                             "diversity_threshold": 0.6,
@@ -415,10 +390,8 @@ def test_repeated_captures_boost_ranking_in_enrich_pipeline(
         "input_schema": schema,
     }
     enriched = enrich_tools_with_examples([tool], "search repository demo", config)
-    values = _extract_example_values(
-        enriched[0]["input_schema"]["properties"]["repo"]["description"],
-    )
-    assert values[0] == "popular-repo"
+    repos = [example["repo"] for example in enriched[0]["cyt_injection_examples"]]
+    assert repos[0] == "popular-repo"
 
 
 def test_retention_keeps_high_usage_values_for_enrich(
@@ -467,18 +440,14 @@ def test_retention_keeps_high_usage_values_for_enrich(
         "input_schema": schema,
     }
     enriched = enrich_tools_with_examples([tool], "city address lookup", config)
-    values = _extract_example_values(
-        enriched[0]["input_schema"]["properties"]["city"]["description"],
-    )
-    assert len(values) == 3
-    assert "New York, NY" in values
-    assert "San Francisco, CA" in values
-    chicago_variants = [value for value in values if value.casefold().startswith("chicago")]
-    assert len(chicago_variants) == 1
+    examples = enriched[0]["cyt_injection_examples"]
+    assert len(examples) == 3
+    cities = [example["city"] for example in examples]
+    assert len(set(cities)) == 3
 
 
 def test_capture_to_enrich_applies_diversity(project_root: Path, tmp_path: Path) -> None:
-    """End-to-end capture and enrich should not inject near-duplicate city variants."""
+    """End-to-end capture and enrich should inject distinct successful call payloads."""
     db = tmp_path / "tool_examples.db"
     config = _ranking_config(db, project_root)
     schema = {
@@ -510,11 +479,7 @@ def test_capture_to_enrich_applies_diversity(project_root: Path, tmp_path: Path)
         "input_schema": schema,
     }
     enriched = enrich_tools_with_examples([tool], "city address lookup", config)
-    values = _extract_example_values(
-        enriched[0]["input_schema"]["properties"]["city"]["description"],
-    )
-    assert len(values) == 3
-    assert "New York, NY" in values
-    assert "San Francisco, CA" in values
-    chicago_variants = [value for value in values if value.casefold().startswith("chicago")]
-    assert len(chicago_variants) == 1
+    examples = enriched[0]["cyt_injection_examples"]
+    assert len(examples) == 3
+    cities = [example["city"] for example in examples]
+    assert len(set(cities)) == 3

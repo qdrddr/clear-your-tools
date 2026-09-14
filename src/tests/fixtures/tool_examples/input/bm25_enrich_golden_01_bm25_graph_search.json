@@ -14,12 +14,11 @@
         "type": "object",
         "properties": {
           "project": {
-            "type": "string",
-            "description": "Examples: 'demo', 'other-repo', 'clear-your-tools'."
+            "type": "string"
           },
           "query": {
             "type": "string",
-            "description": "Natural-language or keyword full-text search using BM25 ranking. Tokens are split on whitespace; camelCase identifiers are indexed as individual words (updateCloudClient → update, cloud, client). Results are ranked with structural boosting: Functions/Methods +10, Routes +8, Classes/Interfaces +5. Noise labels (File/Folder/Module/Variable) are filtered out. When provided, name_pattern is ignored. Examples: 'ranking algorithm bm25 tokens', 'settings configuration yaml'."
+            "description": "Natural-language or keyword full-text search using BM25 ranking. Tokens are split on whitespace; camelCase identifiers are indexed as individual words (updateCloudClient → update, cloud, client). Results are ranked with structural boosting: Functions/Methods +10, Routes +8, Classes/Interfaces +5. Noise labels (File/Folder/Module/Variable) are filtered out. When provided, name_pattern is ignored."
           },
           "label": {
             "type": "string"
@@ -72,23 +71,7 @@
       "cyt_catalog_source": "cyt_mcp"
     }
   ],
-  "flattened_examples": [
-    {
-      "path": "codebase-memory.search_graph.inputSchema.properties.project",
-      "values": [
-        "demo",
-        "other-repo",
-        "clear-your-tools"
-      ]
-    },
-    {
-      "path": "codebase-memory.search_graph.inputSchema.properties.query",
-      "values": [
-        "ranking algorithm bm25 tokens",
-        "settings configuration yaml"
-      ]
-    }
-  ],
+  "flattened_examples": [],
   "inject": {
     "max_per_property": 3,
     "max_value_chars": 120,

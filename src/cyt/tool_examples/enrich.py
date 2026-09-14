@@ -1,4 +1,4 @@
-"""Append query-relevant examples to pruned tool property descriptions."""
+"""Attach query-relevant successful tool call examples to pruned tools."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from cyt.tiers.config import resolve_project_root_path
 from cyt.tool_examples.config import ToolExamplesConfig, examples_active, tool_examples_config
 from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
-from cyt.tool_examples.ranking import rank_example_values, rank_full_call_examples
-from cyt.tool_examples.store import ToolCapture, ToolExampleRow, ToolExamplesStore
+from cyt.tool_examples.ranking import rank_full_call_examples
+from cyt.tool_examples.store import ToolCapture, ToolExamplesStore
 
 
 def _schema_from_tool(tool: dict[str, Any]) -> dict[str, Any]:
@@ -49,50 +49,6 @@ def _property_name_from_path(json_path: str) -> str:
     return json_path.rsplit(".", 1)[-1]
 
 
-def _append_examples(description: str, values: list[str], *, max_value_chars: int) -> str:
-    if not values:
-        return description
-    clipped = []
-    for value in values:
-        text = value
-        if len(text) > 2 and text[0] == text[-1] and text[0] in ('"', "'"):
-            text = text[1:-1]
-        if len(text) > max_value_chars:
-            text = text[: max_value_chars - 3] + "..."
-        clipped.append(f"'{text}'")
-    suffix = f" Examples: {', '.join(clipped)}."
-    base = (description or "").rstrip()
-    if not base:
-        return suffix.lstrip()
-    if base.endswith("."):
-        return f"{base}{suffix}"
-    return f"{base}.{suffix}"
-
-
-def _rank_example_values(
-    query: str,
-    rows: list[ToolExampleRow],
-    *,
-    max_count: int,
-    config: dict[str, Any],
-    cfg: ToolExamplesConfig,
-    property_name: str,
-    property_description: str,
-) -> list[str]:
-    if not rows:
-        return []
-    ranked = rank_example_values(
-        query,
-        rows,
-        max_count=max_count,
-        config=config,
-        ranking=cfg.ranking,
-        property_name=property_name,
-        property_description=property_description,
-    )
-    return [item.value for item in ranked]
-
-
 def enrich_tools_with_examples(
     tools: list[dict[str, Any]],
     query: str,
@@ -123,16 +79,7 @@ def enrich_tools_with_examples(
         store.close()
 
 
-def _write_schema_back_to_tool(out: dict[str, Any], schema: dict[str, Any]) -> None:
-    if "input_schema" in out:
-        out["input_schema"] = schema
-    elif "inputSchema" in out:
-        out["inputSchema"] = schema
-    elif "parameters" in out:
-        out["parameters"] = schema
-
-
-def _append_full_call_examples(
+def _attach_call_examples(
     out: dict[str, Any],
     *,
     query: str,
@@ -152,46 +99,8 @@ def _append_full_call_examples(
     )
     if not ranked_calls:
         return
-    snippets = []
-    for text in ranked_calls:
-        if len(text) > cfg.max_value_chars:
-            text = text[: cfg.max_value_chars - 3] + "..."
-        snippets.append(text)
-    desc = str(out.get("description") or "").rstrip()
-    call_suffix = f" Full-call examples: {'; '.join(snippets)}."
-    out["description"] = f"{desc}{call_suffix}" if desc else call_suffix.lstrip()
-
-
-def _enrich_schema_properties(
-    schema: dict[str, Any],
-    *,
-    query: str,
-    schema_ids: list[int],
-    store: ToolExamplesStore,
-    cfg: ToolExamplesConfig,
-    config: dict[str, Any],
-) -> None:
-    for path, spec in _collect_property_nodes(schema):
-        rows = store.list_aggregated_examples_for_path(
-            schema_ids,
-            path,
-            limit=cfg.max_per_path,
-        )
-        property_name = _property_name_from_path(path)
-        property_description = str(spec.get("description") or "")
-        values = _rank_example_values(
-            query,
-            rows,
-            max_count=cfg.max_per_property,
-            config=config,
-            cfg=cfg,
-            property_name=property_name,
-            property_description=property_description,
-        )
-        if not values:
-            continue
-        current = str(spec.get("description") or "")
-        spec["description"] = _append_examples(current, values, max_value_chars=cfg.max_value_chars)
+    out["cyt_injection_examples"] = ranked_calls
+    out["cyt_injection_examples_max_chars"] = cfg.max_value_chars
 
 
 def _enrich_single_tool(
@@ -225,15 +134,5 @@ def _enrich_single_tool(
         )
     if not captures:
         return out
-    schema_ids = [capture.schema_id for capture in captures]
-    _enrich_schema_properties(
-        schema,
-        query=query,
-        schema_ids=schema_ids,
-        store=store,
-        cfg=cfg,
-        config=config,
-    )
-    _append_full_call_examples(out, query=query, captures=captures, cfg=cfg, config=config)
-    _write_schema_back_to_tool(out, schema)
+    _attach_call_examples(out, query=query, captures=captures, cfg=cfg, config=config)
     return out
