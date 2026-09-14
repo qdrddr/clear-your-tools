@@ -86,3 +86,60 @@ def resolve_backend_identity(tool: dict[str, Any]) -> tuple[str, str]:
     if server and bare:
         return server, bare
     return "unknown", wire or "unknown"
+
+
+def is_known_server_key(server_key: str, server_keys: list[str]) -> bool:
+    """True when *server_key* appears in the configured MCP server key list."""
+    key = str(server_key or "").strip()
+    if not key:
+        return False
+    return key in {str(item).strip() for item in server_keys if str(item).strip()}
+
+
+def is_canonical_schema_identity(
+    mcp_server: str,
+    tool_name: str,
+    server_keys: list[str],
+) -> bool:
+    """True when stored (mcp_server, tool_name) matches wire-name split for known server keys."""
+    server = str(mcp_server or "").strip()
+    bare = str(tool_name or "").strip()
+    if not server or not bare or not server_keys:
+        return False
+    if not is_known_server_key(server, server_keys):
+        return False
+    wire = wire_name_for(server, bare)
+    identity = split_wire_name(wire, server_keys)
+    if identity is None:
+        return wire == bare or wire == server
+    return identity.server_key == server and identity.backend_tool_name == bare
+
+
+def canonical_backend_identity(
+    tool: dict[str, Any],
+    server_keys: list[str],
+) -> tuple[str, str]:
+    """Return authoritative backend identity using wire-name split when possible."""
+    wire = str(tool.get("name") or "").strip()
+    explicit_server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+    explicit_bare = str(tool.get("tool_name") or "").strip()
+    if not explicit_bare and explicit_server and wire:
+        explicit_bare = _bare_tool_name_from_wire(server=explicit_server, wire=wire)
+
+    split_identity = split_wire_name(wire, server_keys) if wire and server_keys else None
+    if split_identity is not None:
+        return split_identity.server_key, split_identity.backend_tool_name
+
+    if (
+        explicit_server
+        and explicit_bare
+        and is_known_server_key(explicit_server, server_keys)
+        and (
+            not wire
+            or wire == wire_name_for(explicit_server, explicit_bare)
+            or wire == explicit_bare
+        )
+    ):
+        return explicit_server, explicit_bare
+
+    return "unknown", wire or "unknown"

@@ -2,6 +2,10 @@
   "server_keys": [
     "codebase-memory-mcp",
     "codebase-memory",
+    "code-review-graph",
+    "context-mode",
+    "codegraph_codegraph",
+    "codegraph",
     "graphify",
     "semble",
     "fff",

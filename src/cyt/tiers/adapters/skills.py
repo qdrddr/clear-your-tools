@@ -15,6 +15,8 @@ from cyt.skills.search import MatchedSkill
 from cyt.tiers.models import EntityTierState, SkillsTierPartition, Tier
 
 _SKILL_DOC_ENTITY_PREFIX = "skill:doc:"
+_GENERIC_SKILL_DOC_IDS = frozenset({"skill", "doc"})
+_NON_SKILL_SKILL_ENTITY_IDS = frozenset({"executor/execute"})
 
 _EPHEMERAL_SKILL_MARKERS = (
     "/tmp/",
@@ -62,6 +64,36 @@ def skill_doc_id_from_entity_id(entity_id: str) -> str | None:
         doc = text.removeprefix("skill:").strip()
         return doc or None
     return None
+
+
+def find_canonical_skill_path_for_doc_id(
+    doc_id: str,
+    existing_entity_ids: set[str],
+) -> str | None:
+    """Return a filesystem skill entity id matching *doc_id*, if one exists."""
+    target = doc_id.strip().casefold()
+    if not target:
+        return None
+    for entity_id in existing_entity_ids:
+        if entity_id.startswith(_SKILL_DOC_ENTITY_PREFIX):
+            continue
+        if entity_id in _NON_SKILL_SKILL_ENTITY_IDS:
+            continue
+        resolved = resolve_skill_doc_id(entity_id)
+        if resolved and resolved.casefold() == target:
+            return entity_id
+    return None
+
+
+def is_stale_skill_doc_entity(entity_id: str, existing_entity_ids: set[str]) -> bool:
+    """True for generic doc-id placeholders and duplicate skill:doc rows."""
+    doc_id = skill_doc_id_from_entity_id(entity_id)
+    if doc_id is None:
+        return False
+    if doc_id.casefold() in _GENERIC_SKILL_DOC_IDS:
+        return True
+    canonical = find_canonical_skill_path_for_doc_id(doc_id, existing_entity_ids)
+    return canonical is not None and canonical != entity_id
 
 
 def _looks_like_filesystem_path(text: str) -> bool:

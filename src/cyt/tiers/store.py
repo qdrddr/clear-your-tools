@@ -109,6 +109,7 @@ class TierStore:
         store = cls(db_path)
         if is_default_user_cyt_db(db_path, "tier_state.db"):
             store.purge_ephemeral_projects()
+            store.purge_stale_skill_doc_entities()
         return store
 
     def close(self) -> None:
@@ -586,6 +587,124 @@ class TierStore:
                     )
             self._conn.commit()
         return removed_projects
+
+    def _delete_skill_entity(self, project_id: int, entity_id: str) -> None:
+        from cyt.tiers.models import EntityKind
+
+        self._conn.execute(
+            "DELETE FROM entity_tier WHERE project_id = ? AND kind = ? AND entity_id = ?",
+            (project_id, EntityKind.SKILL, entity_id),
+        )
+        self._conn.execute(
+            "DELETE FROM entity_stats WHERE project_id = ? AND kind = ? AND entity_id = ?",
+            (project_id, EntityKind.SKILL, entity_id),
+        )
+
+    def _merge_skill_entity_stats_rows(
+        self,
+        project_id: int,
+        *,
+        source_id: str,
+        target_id: str,
+    ) -> None:
+        from cyt.tiers.models import EntityKind
+
+        source = self._conn.execute(
+            "SELECT candidates, injected, used, attempts, used_without_injection, optional_used, "
+            "shadow_hits, shadow_evaluations, last_seen_ms, requests_since_decay, "
+            "epoch_used, epoch_attempts "
+            "FROM entity_stats WHERE project_id = ? AND kind = ? AND entity_id = ?",
+            (project_id, EntityKind.SKILL, source_id),
+        ).fetchone()
+        if source is None:
+            return
+        target_row = self._conn.execute(
+            "SELECT last_seen_ms FROM entity_stats WHERE project_id = ? AND kind = ? AND entity_id = ?",
+            (project_id, EntityKind.SKILL, target_id),
+        ).fetchone()
+        merged_last_seen = int(source[8])
+        if target_row is not None:
+            merged_last_seen = max(merged_last_seen, int(target_row[0]))
+        self._conn.execute(
+            "UPDATE entity_stats SET "
+            "candidates = candidates + ?, injected = injected + ?, used = used + ?, "
+            "attempts = attempts + ?, used_without_injection = used_without_injection + ?, "
+            "optional_used = optional_used + ?, shadow_hits = shadow_hits + ?, "
+            "shadow_evaluations = shadow_evaluations + ?, last_seen_ms = ?, "
+            "requests_since_decay = requests_since_decay + ?, "
+            "epoch_used = epoch_used + ?, epoch_attempts = epoch_attempts + ? "
+            "WHERE project_id = ? AND kind = ? AND entity_id = ?",
+            (
+                source[0],
+                source[1],
+                source[2],
+                source[3],
+                source[4],
+                source[5],
+                source[6],
+                source[7],
+                merged_last_seen,
+                source[9],
+                source[10],
+                source[11],
+                project_id,
+                EntityKind.SKILL,
+                target_id,
+            ),
+        )
+
+    def purge_stale_skill_doc_entities(self) -> int:
+        """Remove generic skill:doc placeholders and merge duplicates onto path entities."""
+        from cyt.tiers.adapters.skills import (
+            _NON_SKILL_SKILL_ENTITY_IDS,
+            _SKILL_DOC_ENTITY_PREFIX,
+            find_canonical_skill_path_for_doc_id,
+            is_stale_skill_doc_entity,
+            skill_doc_id_from_entity_id,
+        )
+        from cyt.tiers.models import EntityKind
+
+        removed = 0
+        with self._lock:
+            project_rows = self._conn.execute("SELECT project_id FROM tier_project").fetchall()
+            for (project_id,) in project_rows:
+                pid = int(project_id)
+                rows = self._conn.execute(
+                    "SELECT entity_id FROM entity_tier WHERE project_id = ? AND kind = ?",
+                    (pid, EntityKind.SKILL),
+                ).fetchall()
+                entity_ids = {str(row[0]) for row in rows}
+
+                for doc_entity in sorted(entity_ids):
+                    if not doc_entity.startswith(_SKILL_DOC_ENTITY_PREFIX):
+                        continue
+                    if not is_stale_skill_doc_entity(doc_entity, entity_ids):
+                        continue
+                    doc_id = skill_doc_id_from_entity_id(doc_entity)
+                    canonical = (
+                        find_canonical_skill_path_for_doc_id(doc_id or "", entity_ids)
+                        if doc_id
+                        else None
+                    )
+                    if canonical:
+                        self._merge_skill_entity_stats_rows(
+                            pid,
+                            source_id=doc_entity,
+                            target_id=canonical,
+                        )
+                    self._delete_skill_entity(pid, doc_entity)
+                    entity_ids.discard(doc_entity)
+                    removed += 1
+
+                for artifact in _NON_SKILL_SKILL_ENTITY_IDS:
+                    if artifact not in entity_ids:
+                        continue
+                    self._delete_skill_entity(pid, artifact)
+                    entity_ids.discard(artifact)
+                    removed += 1
+
+            self._conn.commit()
+        return removed
 
     def status_summary(self, project: TierProject) -> dict[str, Any]:
         with self._lock:

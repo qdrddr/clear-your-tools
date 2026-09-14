@@ -601,6 +601,20 @@ def load_aggregator_config(
     )
 
 
+def load_known_mcp_server_keys(
+    *,
+    agent: str | None = None,
+    workspace_folder: Path | None = None,
+) -> list[str]:
+    """Return configured MCP server keys sorted longest-first for wire-name splitting."""
+    try:
+        config = load_aggregator_config(agent=agent, workspace_folder=workspace_folder)
+        keys = [str(key).strip() for key in config.mcp_servers if str(key).strip()]
+    except (OSError, ValueError, yaml.YAMLError, json.JSONDecodeError):
+        return []
+    return sorted(set(keys), key=len, reverse=True)
+
+
 _BASIC_STUB_RETAIN: RetainSpec = {
     "tool": ["name"],
     "required_properties": [],

@@ -1,0 +1,17 @@
+{
+  "generic_doc_ids": ["skill", "doc"],
+  "integration_scenarios": [
+    {
+      "id": "open_purges_stale_skill_doc_seed",
+      "description": "Opening the default user tier_state.db must purge generic skill:doc rows from polluted_seed.json."
+    },
+    {
+      "id": "open_merges_duplicate_skill_doc",
+      "description": "skill:doc:create-hook stats merge into canonical SKILL.md path entity before deletion."
+    },
+    {
+      "id": "open_purges_executor_execute_artifact",
+      "description": "executor/execute skill artifact rows are removed on open."
+    }
+  ]
+}

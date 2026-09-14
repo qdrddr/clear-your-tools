@@ -1,0 +1,71 @@
+{
+  "server_keys": [
+    "codebase-memory-mcp",
+    "codebase-memory",
+    "code-review-graph",
+    "context-mode",
+    "codegraph_codegraph",
+    "codegraph",
+    "graphify",
+    "jcodemunch",
+    "gitnexus",
+    "semble",
+    "fff",
+    "filesystem"
+  ],
+  "capture_tools": [
+    {
+      "id": "wrong_explicit_fields_correct_wire",
+      "catalog_tool": {
+        "name": "codebase-memory_search_graph",
+        "server_key": "search",
+        "tool_name": "graph",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "project": {"type": "string"},
+            "query": {"type": "string"}
+          }
+        }
+      },
+      "payload_tool_name": "MCP:codebase-memory_search_graph",
+      "tool_input": {"project": "clear-your-tools", "query": "BM25 ranking"},
+      "expected_mcp_server": "codebase-memory",
+      "expected_tool_name": "search_graph"
+    },
+    {
+      "id": "semble_find_related_wrong_explicit",
+      "catalog_tool": {
+        "name": "semble_find_related",
+        "server_key": "find",
+        "tool_name": "related",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "file_path": {"type": "string"},
+            "line": {"type": "integer"},
+            "repo": {"type": "string"}
+          }
+        }
+      },
+      "payload_tool_name": "MCP:semble_find_related",
+      "tool_input": {"file_path": "src/a.py", "line": 1, "repo": "/tmp/repo"},
+      "expected_mcp_server": "semble",
+      "expected_tool_name": "find_related"
+    }
+  ],
+  "integration_scenarios": [
+    {
+      "id": "open_purges_misparsed_seed",
+      "description": "Opening the default user tool_examples.db must purge misparsed identity rows from polluted_seed.json."
+    },
+    {
+      "id": "open_purges_orphan_examples",
+      "description": "Opening the default user tool_examples.db must delete orphan tool_example rows."
+    },
+    {
+      "id": "capture_uses_canonical_identity",
+      "description": "postToolUse capture must persist canonical mcp_server and tool_name when explicit fields are wrong."
+    }
+  ]
+}

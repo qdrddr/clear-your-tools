@@ -105,6 +105,12 @@ class ToolExamplesStore:
         if is_default_user_cyt_db(db_path, "tool_examples.db"):
             store.purge_ephemeral_projects()
             store.purge_invalid_identity_schemas()
+            from cyt_mcp.config import load_known_mcp_server_keys
+
+            server_keys = load_known_mcp_server_keys()
+            if server_keys:
+                store.purge_misparsed_identity_schemas(server_keys)
+            store.purge_orphan_examples()
         return store
 
     def close(self) -> None:
@@ -161,6 +167,36 @@ class ToolExamplesStore:
                 "DELETE FROM tool_input_schema "
                 "WHERE trim(mcp_server) = '' OR lower(trim(mcp_server)) = 'unknown' "
                 "OR trim(tool_name) = '' OR lower(trim(tool_name)) = 'unknown'",
+            )
+            self._conn.commit()
+            return int(cur.rowcount)
+
+    def purge_misparsed_identity_schemas(self, server_keys: list[str]) -> int:
+        """Delete schema rows whose (mcp_server, tool_name) fails wire-name validation."""
+        from cyt_mcp.tool_identity import is_canonical_schema_identity
+
+        removed = 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT schema_id, mcp_server, tool_name FROM tool_input_schema",
+            ).fetchall()
+            for schema_id, mcp_server, tool_name in rows:
+                if is_canonical_schema_identity(str(mcp_server), str(tool_name), server_keys):
+                    continue
+                self._conn.execute(
+                    "DELETE FROM tool_input_schema WHERE schema_id = ?",
+                    (int(schema_id),),
+                )
+                removed += 1
+            self._conn.commit()
+        return removed
+
+    def purge_orphan_examples(self) -> int:
+        """Delete tool_example rows whose schema_id no longer exists."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM tool_example "
+                "WHERE schema_id NOT IN (SELECT schema_id FROM tool_input_schema)",
             )
             self._conn.commit()
             return int(cur.rowcount)

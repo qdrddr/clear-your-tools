@@ -245,14 +245,29 @@ async def hook_tool_examples_record(request: Request) -> Response:
         )
 
     from cyt.tool_examples.identity import is_valid_tool_example_identity
+    from cyt_mcp.config import load_known_mcp_server_keys
+    from cyt_mcp.tool_identity import canonical_backend_identity, wire_name_for
 
-    if not is_valid_tool_example_identity(mcp_server.strip(), tool_name.strip()):
+    resolved_server = mcp_server.strip()
+    resolved_tool = tool_name.strip()
+    server_keys = load_known_mcp_server_keys()
+    if server_keys:
+        resolved_server, resolved_tool = canonical_backend_identity(
+            {
+                "name": wire_name_for(resolved_server, resolved_tool),
+                "server_key": resolved_server,
+                "tool_name": resolved_tool,
+            },
+            server_keys,
+        )
+
+    if not is_valid_tool_example_identity(resolved_server, resolved_tool):
         return PlainTextResponse("", status_code=204)
 
     record_tool_examples_capture(
         workspace=workspace,
-        mcp_server=mcp_server.strip(),
-        tool_name=tool_name.strip(),
+        mcp_server=resolved_server,
+        tool_name=resolved_tool,
         input_schema=input_schema,
         args=args,
         config=config,
@@ -313,19 +328,32 @@ def _tier_feedback_tool_used(
         bare_tool = payload.get("bare_tool_name")
         input_schema = payload.get("input_schema")
         from cyt.tool_examples.identity import is_valid_tool_example_identity
+        from cyt_mcp.config import load_known_mcp_server_keys
+        from cyt_mcp.tool_identity import canonical_backend_identity, wire_name_for
+
+        resolved_server = mcp_server.strip() if isinstance(mcp_server, str) else ""
+        resolved_tool = bare_tool.strip() if isinstance(bare_tool, str) else ""
+        server_keys = load_known_mcp_server_keys()
+        if server_keys and resolved_server and resolved_tool:
+            resolved_server, resolved_tool = canonical_backend_identity(
+                {
+                    "name": wire_name_for(resolved_server, resolved_tool),
+                    "server_key": resolved_server,
+                    "tool_name": resolved_tool,
+                },
+                server_keys,
+            )
 
         if (
-            isinstance(mcp_server, str)
-            and isinstance(bare_tool, str)
-            and isinstance(input_schema, dict)
-            and is_valid_tool_example_identity(mcp_server.strip(), bare_tool.strip())
+            isinstance(input_schema, dict)
+            and is_valid_tool_example_identity(resolved_server, resolved_tool)
         ):
             from cyt.tool_examples.record import record_tool_examples_capture
 
             record_tool_examples_capture(
                 workspace=workspace,
-                mcp_server=mcp_server.strip(),
-                tool_name=bare_tool.strip(),
+                mcp_server=resolved_server,
+                tool_name=resolved_tool,
                 input_schema=input_schema,
                 args=args_dict,
                 config=config,

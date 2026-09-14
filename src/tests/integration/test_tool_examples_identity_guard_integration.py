@@ -58,6 +58,12 @@ def _assert_post_tool_use_persists_valid_identity(
     log_path = tmp_path / "guard" / "session.jsonl"
     write_session_catalog_log(log_path, catalog_tool=scenario.catalog_tool)
     monkeypatch.setattr("cyt_client.tool_gate.session_log_path", lambda _payload: log_path)
+    from tests.support.tool_examples_misparsed_fixtures import load_server_keys
+
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda **_kwargs: list(load_server_keys()),
+    )
 
     capture = extract_post_tool_example_capture(
         {

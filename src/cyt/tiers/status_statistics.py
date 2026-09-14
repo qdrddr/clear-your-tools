@@ -136,18 +136,6 @@ def _tier_row_from_entities(
     effective_tokens = 0
     effective_tokens_known = 0
 
-    if tier == "T0" and kind in {"tool", "skill"}:
-        return {
-            "tier": tier,
-            "count": count,
-            "temp": 0,
-            "tokens": 0,
-            "tokens_known": count,
-            "effective_tokens": 0,
-            "effective_tokens_known": count,
-            "tokens_total": len(entities),
-        }
-
     for entity in entities:
         if entity.get("temporary") is True:
             temp += 1

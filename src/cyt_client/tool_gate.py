@@ -1128,15 +1128,40 @@ def _post_tool_call_succeeded(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _server_keys_from_catalogs(catalogs: dict[str, dict[str, Any]]) -> list[str]:
+    keys: set[str] = set()
+    for entry in catalogs.values():
+        tools = entry.get("tools")
+        if not isinstance(tools, list):
+            continue
+        for item in tools:
+            if not isinstance(item, dict):
+                continue
+            server_key = str(item.get("server_key") or "").strip()
+            if server_key:
+                keys.add(server_key)
+    return sorted(keys, key=len, reverse=True)
+
+
 def _resolve_mcp_server_and_tool_name(
     tool: dict[str, Any],
     catalog_tool_name: str,
+    *,
+    server_keys: list[str] | None = None,
 ) -> tuple[str, str]:
-    from cyt_mcp.tool_identity import resolve_backend_identity
+    from cyt_mcp.config import load_known_mcp_server_keys
+    from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
 
     merged = dict(tool)
     if not str(merged.get("name") or "").strip():
         merged["name"] = catalog_tool_name
+
+    keys = list(server_keys or [])
+    config_keys = load_known_mcp_server_keys()
+    if config_keys:
+        keys = sorted(set(keys) | set(config_keys), key=len, reverse=True)
+    if keys:
+        return canonical_backend_identity(merged, keys)
     return resolve_backend_identity(merged)
 
 
@@ -1184,6 +1209,18 @@ def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any]
     tool = _find_tool_in_catalog(catalogs, catalog, catalog_tool_name)
     if tool is None:
         return None
+    if catalog == "cyt_mcp":
+        from cyt_mcp.tool_identity import _bare_tool_name_from_wire
+
+        server_key = str(tool.get("server_key") or "").strip()
+        bare_tool = str(tool.get("tool_name") or "").strip()
+        wire_name = str(tool.get("name") or catalog_tool_name).strip()
+        if not server_key:
+            return None
+        if not bare_tool:
+            bare_tool = _bare_tool_name_from_wire(server=server_key, wire=wire_name)
+        if not bare_tool:
+            return None
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):
         schema = {}
@@ -1191,7 +1228,12 @@ def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any]
     ok, _reason = validate_json_schema(raw_args, schema)
     if not ok:
         return None
-    mcp_server, bare_tool_name = _resolve_mcp_server_and_tool_name(tool, catalog_tool_name)
+    server_keys = _server_keys_from_catalogs(catalogs)
+    mcp_server, bare_tool_name = _resolve_mcp_server_and_tool_name(
+        tool,
+        catalog_tool_name,
+        server_keys=server_keys,
+    )
     from cyt.tool_examples.identity import is_valid_tool_example_identity
 
     if not is_valid_tool_example_identity(mcp_server, bare_tool_name):

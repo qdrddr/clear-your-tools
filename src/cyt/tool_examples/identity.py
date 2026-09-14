@@ -19,10 +19,18 @@ def is_valid_tool_example_identity(mcp_server: str, tool_name: str) -> bool:
     )
 
 
-def resolve_mcp_server_and_tool(tool: dict[str, Any]) -> tuple[str, str]:
-    """Return backend identity from explicit catalog fields (server_key, tool_name)."""
-    from cyt_mcp.tool_identity import resolve_backend_identity
+def resolve_mcp_server_and_tool(
+    tool: dict[str, Any],
+    *,
+    server_keys: list[str] | None = None,
+) -> tuple[str, str]:
+    """Return canonical backend identity when server keys are available."""
+    from cyt_mcp.config import load_known_mcp_server_keys
+    from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
 
+    keys = server_keys if server_keys is not None else load_known_mcp_server_keys()
+    if keys:
+        return canonical_backend_identity(tool, keys)
     return resolve_backend_identity(tool)
 
 

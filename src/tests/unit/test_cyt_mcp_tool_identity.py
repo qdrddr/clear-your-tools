@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from cyt_mcp.tool_identity import (
     CytMcpToolIdentity,
+    canonical_backend_identity,
     enrich_tool_identity,
+    is_canonical_schema_identity,
     resolve_backend_identity,
     split_wire_name,
     wire_name_for,
@@ -82,3 +84,22 @@ def test_resolve_backend_identity_infers_bare_name_when_session_log_omits_tool_n
     assert resolve_backend_identity(
         {"name": "gitnexus_query", "server_key": "gitnexus"},
     ) == ("gitnexus", "query")
+
+
+def test_canonical_backend_identity_prefers_wire_split_over_wrong_explicit_fields() -> None:
+    server_keys = ["codebase-memory", "semble", "search"]
+    server, bare = canonical_backend_identity(
+        {
+            "name": "codebase-memory_search_graph",
+            "server_key": "search",
+            "tool_name": "graph",
+        },
+        server_keys,
+    )
+    assert (server, bare) == ("codebase-memory", "search_graph")
+
+
+def test_is_canonical_schema_identity_rejects_partial_split() -> None:
+    server_keys = ["codebase-memory", "semble", "fff"]
+    assert not is_canonical_schema_identity("search", "graph", server_keys)
+    assert is_canonical_schema_identity("codebase-memory", "search_graph", server_keys)

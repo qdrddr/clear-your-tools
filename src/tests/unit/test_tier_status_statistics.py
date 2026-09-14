@@ -40,7 +40,7 @@ def test_build_kind_tier_statistics_histogram_and_temp() -> None:
     assert rows[0]["temp"] == 0
     assert rows[0]["tokens"] == 0
     assert rows[0]["effective_tokens"] == 0
-    assert rows[0]["tokens_known"] == 1
+    assert rows[0]["tokens_known"] == 0
     assert rows[2]["count"] == 2
     assert rows[2]["temp"] == 1
     assert rows[3]["count"] == 1
@@ -133,11 +133,24 @@ def test_build_kind_tier_statistics_skill_tokens_from_source_path(tmp_path: Path
     assert stats["totals"]["effective_tokens"] == row["effective_tokens"]
 
 
-def test_build_kind_tier_statistics_skill_t0_zeros() -> None:
+def test_build_kind_tier_statistics_skill_t0_carried_tokens_effective_zero(
+    tmp_path: Path,
+) -> None:
+    skill_file = tmp_path / "dormant-skill" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("---\nname: dormant\n---\ndormant skill body content\n", encoding="utf-8")
+
     kind_block = {
         "histogram": {"T0": 1, "T1": 0, "T2": 0, "T3": 0, "T4": 0},
         "by_tier": {
-            "T0": [{"entity_id": "skill:dormant", "temporary": False, "stats": {}}],
+            "T0": [
+                {
+                    "entity_id": "skill:dormant",
+                    "temporary": False,
+                    "source_path": str(skill_file),
+                    "stats": {},
+                },
+            ],
             "T1": [],
             "T2": [],
             "T3": [],
@@ -146,7 +159,41 @@ def test_build_kind_tier_statistics_skill_t0_zeros() -> None:
     }
     stats = build_kind_tier_statistics(kind_block, kind="skill")
     row = stats["rows"][0]
-    assert row["tokens"] == 0
+    assert row["tokens"] > 0
+    assert row["effective_tokens"] == 0
+    assert row["tokens_known"] == 1
+    assert row["effective_tokens_known"] == 1
+
+
+def test_build_kind_tier_statistics_tool_t0_carried_tokens_effective_zero() -> None:
+    from cyt.tiers.tool_token_materialization import clear_carried_token_memo
+
+    clear_carried_token_memo()
+    catalog = [
+        {
+            "name": "cold_tool",
+            "cyt_catalog_source": "cyt_mcp",
+            "description": "A dormant tool.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    ]
+    kind_block = {
+        "histogram": {"T0": 1, "T1": 0, "T2": 0, "T3": 0, "T4": 0},
+        "by_tier": {
+            "T0": [{"entity_id": "cyt_mcp:cold_tool", "temporary": False, "stats": {}}],
+            "T1": [],
+            "T2": [],
+            "T3": [],
+            "T4": [],
+        },
+    }
+    stats = build_kind_tier_statistics(kind_block, kind="tool", catalog_tools=catalog)
+    row = stats["rows"][0]
+    assert row["tokens"] > 0
     assert row["effective_tokens"] == 0
     assert row["tokens_known"] == 1
     assert row["effective_tokens_known"] == 1

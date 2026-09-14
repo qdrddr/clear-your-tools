@@ -1,0 +1,15 @@
+{
+  "description": "Legacy pollution shape: generic skill:doc placeholders and duplicate doc-id rows.",
+  "stale_skill_doc_ids": [
+    "skill:doc:skill",
+    "skill:doc:doc"
+  ],
+  "duplicate_skill_doc": {
+    "doc_id": "create-hook",
+    "doc_entity_id": "skill:doc:create-hook",
+    "canonical_path_suffix": "create-hook/SKILL.md"
+  },
+  "artifact_skill_entity_ids": [
+    "executor/execute"
+  ]
+}

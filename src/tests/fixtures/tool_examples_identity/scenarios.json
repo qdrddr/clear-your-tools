@@ -56,6 +56,25 @@
       "tool_input": {"query": "auth"},
       "expected_mcp_server": null,
       "expected_tool_name": null
+    },
+    {
+      "id": "wrong_explicit_fields_use_canonical_wire_split",
+      "catalog_tool": {
+        "name": "codebase-memory_search_graph",
+        "server_key": "search",
+        "tool_name": "graph",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "project": {"type": "string"},
+            "query": {"type": "string"}
+          }
+        }
+      },
+      "payload_tool_name": "MCP:codebase-memory_search_graph",
+      "tool_input": {"project": "clear-your-tools", "query": "BM25 ranking"},
+      "expected_mcp_server": "codebase-memory",
+      "expected_tool_name": "search_graph"
     }
   ],
   "integration_scenarios": [

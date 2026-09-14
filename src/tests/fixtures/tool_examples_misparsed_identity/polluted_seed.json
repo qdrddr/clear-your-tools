@@ -1,0 +1,12 @@
+{
+  "description": "Legacy pollution shape: tool_input_schema rows with partial wire-name splits.",
+  "misparsed_schemas": [
+    {"mcp_server": "search", "tool_name": "graph"},
+    {"mcp_server": "find", "tool_name": "related"},
+    {"mcp_server": "codebase-memory_search", "tool_name": "graph"}
+  ],
+  "canonical_schemas": [
+    {"mcp_server": "codebase-memory", "tool_name": "search_graph"},
+    {"mcp_server": "semble", "tool_name": "find_related"}
+  ]
+}

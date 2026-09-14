@@ -64,6 +64,12 @@ def test_session_catalog_capture_identity_from_fixtures(
     log_path = tmp_path / "session.jsonl"
     write_session_catalog_log(log_path, catalog_tool=scenario.catalog_tool)
     monkeypatch.setattr("cyt_client.tool_gate.session_log_path", lambda _payload: log_path)
+    from tests.support.tool_examples_misparsed_fixtures import load_server_keys
+
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda **_kwargs: list(load_server_keys()),
+    )
     payload = {
         "hook_event_name": "postToolUse",
         "tool_name": scenario.payload_tool_name,
