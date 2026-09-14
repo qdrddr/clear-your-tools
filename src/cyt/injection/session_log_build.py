@@ -455,11 +455,26 @@ def _tool_record_core_for_catalog_bundle(
     *,
     catalog: CatalogKind,
 ) -> dict[str, Any]:
-    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    wire_name = str(tool.get("name") or "").strip()
+    bare_name = str(tool.get("tool_name") or "").strip()
+    if catalog == "cyt_mcp":
+        # Keep server-prefixed wire names so backends sharing a bare tool_name
+        # (e.g. graphify_query_graph vs codebase-memory_query_graph) stay distinct.
+        name = str(wire_name or bare_name).strip()
+    else:
+        name = str(bare_name or wire_name).strip()
+    schema = _tool_input_schema_for_catalog(tool, catalog=catalog)
     record: dict[str, Any] = {
         "name": name,
-        "input_schema": _tool_input_schema_for_catalog(tool, catalog=catalog),
+        "input_schema": schema,
     }
+    if catalog == "cyt_mcp":
+        server_key = str(tool.get("server_key") or "").strip()
+        if server_key:
+            record["server_key"] = server_key
+        bare = str(tool.get("tool_name") or "").strip()
+        if bare and bare != name:
+            record["tool_name"] = bare
     description = tool.get("description")
     if description is not None and str(description).strip():
         record["description"] = str(description).strip()

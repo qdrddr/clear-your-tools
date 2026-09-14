@@ -215,6 +215,39 @@ def test_build_tool_catalog_partition_hash_stable() -> None:
         assert tool["hash"] == catalog_tool_record_content_hash("cyt_mcp", tool)
 
 
+def test_build_tool_catalog_preserves_cyt_mcp_wire_names_for_shared_bare_tool_name() -> None:
+    from cyt.injection.session_log_build import build_tool_catalog_log_entry
+
+    tools = [
+        {
+            "name": "graphify_query_graph",
+            "tool_name": "query_graph",
+            "server_key": "graphify",
+            "input_schema": {
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+                "required": ["question"],
+            },
+        },
+        {
+            "name": "codebase-memory_query_graph",
+            "tool_name": "query_graph",
+            "server_key": "codebase-memory",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "query": {"type": "string"},
+                },
+                "required": ["project", "query"],
+            },
+        },
+    ]
+    entry = build_tool_catalog_log_entry("cyt_mcp", tools)
+    names = {tool["name"] for tool in entry["tools"]}
+    assert names == {"graphify_query_graph", "codebase-memory_query_graph"}
+
+
 def test_emit_tool_catalog_session_log_includes_per_tool_hash() -> None:
     from cyt.injection.tool_catalog_emit import emit_tool_catalog_session_log
 
@@ -237,7 +270,8 @@ def test_emit_tool_catalog_session_log_includes_per_tool_hash() -> None:
     ]
     assert len(catalog_entries) == 1
     tool = catalog_entries[0]["tools"][0]
-    assert tool["name"] == "index_status"
+    assert tool["name"] == "codebase-memory_index_status"
+    assert tool.get("tool_name") == "index_status"
     assert isinstance(tool.get("hash"), str) and tool["hash"]
 
 

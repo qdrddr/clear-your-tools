@@ -560,3 +560,54 @@ def test_validate_denies_grep_path_with_fixup_hint(
     assert validation.allowed is False
     assert "unknown property 'path'" in validation.reason
     assert "Use query (not path)" in validation.reason
+
+
+def test_validate_graphify_query_graph_uses_graphify_schema_not_codebase_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """graphify_query_graph and codebase-memory_query_graph share bare tool_name query_graph."""
+    log_path = tmp_path / "session.jsonl"
+    _write_multi_tool_session(
+        log_path,
+        [
+            {
+                "name": "graphify_query_graph",
+                "tool_name": "query_graph",
+                "server_key": "graphify",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                    },
+                    "required": ["question"],
+                },
+            },
+            {
+                "name": "codebase-memory_query_graph",
+                "tool_name": "query_graph",
+                "server_key": "codebase-memory",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "project": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
+                    "required": ["project", "query"],
+                },
+            },
+        ],
+    )
+    _patch_session_log(monkeypatch, log_path)
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "graphify_query_graph",
+            "tool_input": {
+                "question": "BM25 scoring catalog functions score_items",
+            },
+            "workspace_roots": ["/tmp/clear-your-tools"],
+        },
+    )
+    assert validation.allowed is True, validation.reason

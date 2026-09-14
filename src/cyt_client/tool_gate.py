@@ -678,6 +678,16 @@ def _normalize_property_aliases(args: dict[str, Any], schema: dict[str, Any]) ->
     return normalized
 
 
+def _cyt_mcp_catalog_tools(catalogs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    entry = catalogs.get("tool_catalog:cyt_mcp")
+    if entry is None:
+        return []
+    tools = entry.get("tools")
+    if not isinstance(tools, list):
+        return []
+    return [tool for tool in tools if isinstance(tool, dict)]
+
+
 def _resolve_cyt_mcp_tool_name_for_catalog(
     tool_name: str,
     catalogs: dict[str, dict[str, Any]],
@@ -687,10 +697,30 @@ def _resolve_cyt_mcp_tool_name_for_catalog(
         return tool_name
     if "_" not in tool_name:
         return tool_name
-    _prefix, _, suffix = tool_name.partition("_")
-    if suffix and _find_tool_in_catalog(catalogs, "cyt_mcp", suffix) is not None:
+    _, _, suffix = tool_name.partition("_")
+    if not suffix:
+        return tool_name
+
+    bare_matches = [
+        tool
+        for tool in _cyt_mcp_catalog_tools(catalogs)
+        if str(tool.get("name") or "").strip() == suffix
+    ]
+    if len(bare_matches) == 1:
         return suffix
-    return tool_name
+    if len(bare_matches) > 1:
+        prefix_matches = [
+            tool
+            for tool in bare_matches
+            if str(tool.get("server_key") or "").strip()
+            and tool_name.startswith(f"{tool['server_key']}_")
+        ]
+        if len(prefix_matches) == 1:
+            return str(prefix_matches[0].get("name") or suffix).strip() or suffix
+        return tool_name
+    if _find_tool_in_catalog(catalogs, "cyt_mcp", suffix) is None:
+        return tool_name
+    return suffix
 
 
 def _find_tool_in_catalog(
