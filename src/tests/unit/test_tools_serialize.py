@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cyt.tools.serialize import format_examples_block, minimize_json_single_quotes
+from cyt.tools.serialize import format_example_line, format_examples_block, minimize_json_single_quotes
 
 
 def test_minimize_json_single_quotes_example() -> None:
@@ -38,3 +38,13 @@ def test_format_examples_block_uses_single_quotes() -> None:
     assert block == (
         "<examples>\n- {'path':'/tmp/spec.md','source':'openapi-v2-spec'}\n</examples>"
     )
+
+
+def test_format_examples_block_zero_max_chars_disables_truncation() -> None:
+    long_repo = "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools"
+    block = format_examples_block(
+        [{"query": "BM25 ranking score", "repo": long_repo}],
+        max_chars=0,
+    )
+    assert long_repo in block
+    assert "..." not in block

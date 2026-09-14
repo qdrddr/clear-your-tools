@@ -44,12 +44,33 @@ def _swap_json_delimiter_quotes(compact: str) -> str:
     return "".join(out)
 
 
+def _truncate_string(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    if max_chars <= 3:
+        return "." * max_chars
+    return value[: max_chars - 3] + "..."
+
+
+def _truncate_payload_values(value: Any, max_chars: int) -> Any:
+    """Truncate string leaves in a payload; ``max_chars <= 0`` disables truncation."""
+    if max_chars <= 0:
+        return value
+    if isinstance(value, str):
+        return _truncate_string(value, max_chars)
+    if isinstance(value, dict):
+        return {key: _truncate_payload_values(item, max_chars) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_truncate_payload_values(item, max_chars) for item in value]
+    return value
+
+
 def format_example_line(payload: dict[str, Any], *, max_chars: int | None = None) -> str:
     """Serialize one successful tool-call payload as a dash-prefixed minimized JSON line."""
-    line = f"- {minimize_json_single_quotes(payload)}"
-    if max_chars is not None and len(line) > max_chars:
-        return line[: max_chars - 3] + "..."
-    return line
+    display = payload
+    if max_chars is not None and max_chars > 0:
+        display = _truncate_payload_values(payload, max_chars)
+    return f"- {minimize_json_single_quotes(display)}"
 
 
 def format_examples_block(

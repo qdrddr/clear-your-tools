@@ -197,11 +197,28 @@ def test_enrich_cross_schema_fallback(tmp_path: Path) -> None:
     assert "cyt_injection_examples" not in enriched[0]
 
 
-def test_format_example_line_truncates_long_payload() -> None:
+def test_format_example_line_truncates_long_string_values() -> None:
     long_path = "/" + ("segment/" * 30)
     line = format_example_line({"path": long_path}, max_chars=20)
+    assert line == f"- {{'path':'{long_path[:17]}...'}}"
+
+
+def test_format_example_line_truncates_each_key_independently() -> None:
+    payload = {
+        "query": "BM25 ranking scoring implementation",
+        "repo": "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools",
+    }
+    line = format_example_line(payload, max_chars=40)
     assert line.startswith("- ")
-    assert line.endswith("...")
+    assert "BM25 ranking scoring implementation" in line
+    assert "clear-your-tools" not in line
+    assert line.endswith("...'}")
+
+
+def test_format_example_line_skips_truncation_when_max_chars_zero() -> None:
+    long_path = "/" + ("segment/" * 30)
+    line = format_example_line({"path": long_path}, max_chars=0)
+    assert line == f"- {{'path':'{long_path}'}}"
 
 
 def test_enrich_prefers_diverse_high_usage_values(
