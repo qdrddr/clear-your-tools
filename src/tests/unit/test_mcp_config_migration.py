@@ -50,6 +50,39 @@ def test_resolve_stub_for_codex_agent() -> None:
     assert resolve_stub_name(raw, "codex") == "codex"
     retain = resolve_stub_retain(raw, "codex")
     assert "description" in retain.get("tool", [])
+    assert retain.get("required_properties") == ["name"]
+
+
+def test_upgrade_migrates_legacy_empty_required_properties_on_basic_codex() -> None:
+    raw = {
+        "pruning": {
+            "tools": {
+                "stubs": [
+                    {
+                        "name": "basic",
+                        "always": {
+                            "tool": ["name"],
+                            "required_properties": [],
+                            "optional_properties": [],
+                        },
+                    },
+                    {
+                        "name": "codex",
+                        "always": {
+                            "tool": ["name", "description"],
+                            "required_properties": [],
+                            "optional_properties": [],
+                        },
+                    },
+                ],
+            },
+        },
+    }
+    out = upgrade_mcp_config_dict(raw)
+    stubs = out["pruning"]["tools"]["stubs"]
+    by_name = {item["name"]: item["always"] for item in stubs}
+    assert by_name["basic"]["required_properties"] == ["name"]
+    assert by_name["codex"]["required_properties"] == ["name"]
 
 
 def test_repair_stale_mcp_config_agent_paths_replaces_pytest_tmp(tmp_path: Path) -> None:

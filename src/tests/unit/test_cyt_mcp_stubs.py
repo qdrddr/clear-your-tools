@@ -14,17 +14,41 @@ from cyt_mcp.search import (
     refresh_search_tool_schema,
     register_search_tool,
 )
-from cyt_mcp.stub_catalog import DEFAULT_STUBS
+from cyt_mcp.stub_catalog import DEFAULT_STUBS, resolve_stub_retain
 from cyt_mcp.stubs import StubListTransform, _stub_from_tool
 
 _BASIC_RETAIN = DEFAULT_STUBS[0]["always"]
+_EMPTY_REQUIRED_RETAIN = {
+    "tool": ["name"],
+    "required_properties": [],
+    "optional_properties": [],
+}
 
 
-def test_stub_minimal_schema() -> None:
-    tool = Tool.from_function(lambda path: path, name="filesystem_read_file")
+def test_stub_minimal_required_schema_strips_descriptions() -> None:
+    tool = Tool.from_function(
+        lambda query, path=None: (query, path),
+        name="fff_find_files",
+    )
     stub = _stub_from_tool(tool, retain=_BASIC_RETAIN)
     mcp = stub.to_mcp_tool()
+    schema = mcp.inputSchema
+    assert schema["required"] == ["query"]
+    assert schema["properties"]["query"] == {"type": "string"}
+    assert "description" not in schema["properties"]["query"]
+    assert "path" not in schema["properties"]
+
+
+def test_stub_empty_schema_when_required_properties_not_retained() -> None:
+    tool = Tool.from_function(lambda path: path, name="filesystem_read_file")
+    stub = _stub_from_tool(tool, retain=_EMPTY_REQUIRED_RETAIN)
+    mcp = stub.to_mcp_tool()
     assert mcp.inputSchema == {"type": "object", "properties": {}}
+
+
+def test_resolve_stub_retain_basic_includes_required_property_names() -> None:
+    retain = resolve_stub_retain({}, "cursor")
+    assert retain["required_properties"] == ["name"]
 
 
 def test_build_catalog_excludes_search_tool() -> None:

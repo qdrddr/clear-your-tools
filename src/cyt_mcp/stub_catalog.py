@@ -29,10 +29,10 @@ class StubDef(TypedDict, total=False):
 DEFAULT_STUBS: list[dict[str, Any]] = [
     {
         "name": "basic",
-        "description": "Tool name only — smallest stable wire surface.",
+        "description": "Tool name and required property names/types (no property descriptions).",
         "always": {
             "tool": ["name"],
-            "required_properties": [],
+            "required_properties": ["name"],
             "optional_properties": [],
         },
     },
@@ -47,10 +47,13 @@ DEFAULT_STUBS: list[dict[str, Any]] = [
     },
     {
         "name": "codex",
-        "description": "Tool name and tool description (OpenAI Responses API expects description on wire).",
+        "description": (
+            "Tool name, tool description, and required property names/types "
+            "(no property descriptions; OpenAI Responses API expects description on wire)."
+        ),
         "always": {
             "tool": ["name", "description"],
-            "required_properties": [],
+            "required_properties": ["name"],
             "optional_properties": [],
         },
     },

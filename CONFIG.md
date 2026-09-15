@@ -252,14 +252,19 @@ pruning:
       - name: basic
         always:
           tool: [name]
-          required_properties: []
+          required_properties: [name]
           optional_properties: []
       - name: codex
         always:
           tool: [name, description]
-          required_properties: []
+          required_properties: [name]
           optional_properties: []
 ```
+
+`required_properties: [name]` on a stub retains required parameter names and types only (no property
+descriptions, no optional properties). Tool `description` on the wire is controlled separately via
+`tool: [name]` vs `tool: [name, description]` (codex agent mapping). Legacy `basic`/`codex` stubs
+with `required_properties: []` are migrated to `[name]` on load.
 
 Legacy `mcp-aggregator.yaml` and `codex_stubs_include_description` are migrated automatically on
 load.

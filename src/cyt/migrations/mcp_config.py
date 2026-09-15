@@ -49,6 +49,45 @@ def _ensure_tools_block(cfg: dict[str, Any]) -> dict[str, Any]:
     return tools
 
 
+def _upgrade_basic_codex_stub_required_properties(tools: dict[str, Any]) -> bool:
+    """Set ``required_properties: [name]`` on basic/codex stubs still at legacy empty list."""
+    stubs = tools.get("stubs")
+    if not isinstance(stubs, list):
+        return False
+    changed = False
+    for item in stubs:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if name not in {"basic", "codex"}:
+            continue
+        always = item.get("always")
+        if not isinstance(always, dict):
+            always = {}
+            item["always"] = always
+        req = always.get("required_properties")
+        if req is None or req == []:
+            always["required_properties"] = ["name"]
+            changed = True
+    return changed
+
+
+def _basic_codex_stubs_need_required_properties_upgrade(tools: dict[str, Any]) -> bool:
+    stubs = tools.get("stubs")
+    if not isinstance(stubs, list):
+        return False
+    for item in stubs:
+        if not isinstance(item, dict) or item.get("name") not in {"basic", "codex"}:
+            continue
+        always = item.get("always")
+        if not isinstance(always, dict):
+            return True
+        req = always.get("required_properties")
+        if req is None or req == []:
+            return True
+    return False
+
+
 def upgrade_mcp_config_dict(cfg: dict[str, Any]) -> dict[str, Any]:
     """Migrate legacy aggregator keys to stub catalog shape in-memory."""
     result = copy.deepcopy(cfg)
@@ -60,6 +99,7 @@ def upgrade_mcp_config_dict(cfg: dict[str, Any]) -> dict[str, Any]:
         tools["stubs"] = copy.deepcopy(DEFAULT_STUBS)
     if "stub" not in tools:
         tools["stub"] = DEFAULT_STUB_NAME
+    _upgrade_basic_codex_stub_required_properties(tools)
 
     by_agent = tools.get("stub_by_agent")
     if not isinstance(by_agent, dict):
@@ -233,10 +273,12 @@ def maybe_migrate_mcp_config_file(path: Path) -> dict[str, Any] | None:
             return None
 
     raw = _load_yaml_dict(resolved)
+    tools_block = _ensure_tools_block(copy.deepcopy(raw))
     needs_upgrade = (
         "codex_stubs_include_description" in raw
         or resolved.name == LEGACY_MCP_CONFIG_NAME
-        or not isinstance(_ensure_tools_block(copy.deepcopy(raw)).get("stubs"), list)
+        or not isinstance(tools_block.get("stubs"), list)
+        or _basic_codex_stubs_need_required_properties_upgrade(tools_block)
     )
     if not needs_upgrade:
         return None
