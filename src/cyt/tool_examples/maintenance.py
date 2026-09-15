@@ -58,9 +58,7 @@ def run_tool_examples_maintenance(config: dict[str, Any]) -> None:
             min_captures=cfg.min_captures_per_tool,
         )
         store.cleanup_orphan_example_paths()
-        from cyt_mcp.config import load_known_mcp_server_keys
-
-        server_keys = load_known_mcp_server_keys()
+        server_keys = store._server_keys_for_identity_purge()
         if server_keys:
             store.purge_misparsed_identity_schemas(server_keys)
         store.purge_orphan_examples()

@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tool_examples.enrich import enrich_tools_with_examples
+from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 from cyt.tool_examples.store import ToolExamplesStore
 from cyt.tools.inject import format_tool_item
 from cyt.tools.serialize import format_example_line
+
+
+def _seed_workspace_mcp_config(root: Path, *, servers: dict[str, dict[str, str]]) -> None:
+    mcp_dir = root / ".agents" / "cyt" / "config" / "mcp"
+    mcp_dir.mkdir(parents=True)
+    (mcp_dir / "cursor.json").write_text(
+        json.dumps({"mcpServers": servers}),
+        encoding="utf-8",
+    )
 
 
 def _config(db_path: Path, workspace: Path) -> dict:
@@ -325,6 +337,91 @@ def test_format_tool_item_renders_examples_block(tmp_path: Path) -> None:
     assert "</examples>" in item
     assert "- {'source':'openapi-v2-spec'}" in item
     assert "Examples:" not in item
+
+
+def test_enrich_workspace_wire_name_uses_project_mcp_server_keys(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    _seed_workspace_mcp_config(root, servers={"semble": {"command": "semble"}})
+    db = tmp_path / "tool_examples.db"
+    config = _config(db, root)
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "repo": {"type": "string"},
+        },
+        "required": ["query", "repo"],
+    }
+    store = ToolExamplesStore.open(str(db))
+    try:
+        project_id = store.get_or_create_project(str(root))
+        store.upsert_capture(
+            project_id,
+            "semble",
+            "search",
+            schema,
+            {"query": "BM25 ranking", "repo": str(root)},
+        )
+    finally:
+        store.close()
+
+    tool = {
+        "name": "semble_search",
+        "input_schema": schema,
+    }
+    assert resolve_mcp_server_and_tool(tool, project_root=root) == ("semble", "search")
+    enriched = enrich_tools_with_examples([tool], "BM25 ranking", config)
+    examples = enriched[0]["cyt_injection_examples"]
+    assert len(examples) == 1
+    assert examples[0]["query"] == "BM25 ranking"
+
+
+def test_store_open_retains_workspace_server_captures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    _seed_workspace_mcp_config(root, servers={"semble": {"command": "semble"}})
+    monkeypatch.setattr(
+        "cyt.tool_examples.store.is_ephemeral_workspace_path",
+        lambda _path: False,
+    )
+    db = tmp_path / "tool_examples.db"
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+        "required": ["query"],
+    }
+    store = ToolExamplesStore.open(str(db))
+    project_id = store.get_or_create_project(str(root))
+    store.upsert_capture(
+        project_id,
+        "semble",
+        "search",
+        schema,
+        {"query": "BM25 ranking"},
+    )
+    store.close()
+
+    import cyt.tool_examples.store as store_module
+
+    with patch.object(store_module, "is_default_user_cyt_db", return_value=True):
+        ToolExamplesStore.open(str(db)).close()
+
+    store = ToolExamplesStore.open(str(db))
+    try:
+        captures = store.list_captures(
+            store.get_or_create_project(str(root)),
+            "semble",
+            "search",
+        )
+        assert len(captures) == 1
+    finally:
+        store.close()
 
 
 def test_enrich_noop_without_git_project(tmp_path: Path) -> None:

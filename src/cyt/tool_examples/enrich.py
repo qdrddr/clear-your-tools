@@ -72,6 +72,7 @@ def enrich_tools_with_examples(
                 tool,
                 query=query,
                 project_id=project_id,
+                project_root=str(project_root),
                 store=store,
                 cfg=cfg,
                 config=config,
@@ -115,6 +116,7 @@ def _enrich_single_tool(
     *,
     query: str,
     project_id: int,
+    project_root: str,
     store: ToolExamplesStore,
     cfg: ToolExamplesConfig,
     config: dict[str, Any],
@@ -123,7 +125,7 @@ def _enrich_single_tool(
     schema = _schema_from_tool(out)
     if not schema:
         return out
-    mcp_server, tool_name = resolve_mcp_server_and_tool(out)
+    mcp_server, tool_name = resolve_mcp_server_and_tool(out, project_root=project_root)
     schema_hash = content_hash(schema)
     captures = store.list_captures(
         project_id,

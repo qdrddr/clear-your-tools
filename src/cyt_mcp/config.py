@@ -605,14 +605,48 @@ def load_known_mcp_server_keys(
     *,
     agent: str | None = None,
     workspace_folder: Path | None = None,
+    project_root: Path | str | None = None,
 ) -> list[str]:
-    """Return configured MCP server keys sorted longest-first for wire-name splitting."""
+    """Return MCP server keys for wire-name splitting, sorted longest-first.
+
+    When *project_root* is set, return every backend server configured for that
+    git project (global user MCP defs plus ``.agents/cyt/config/mcp/<agent>.json``).
+    Examples use one project-scoped pool; this does not split user vs workspace origin.
+    """
+    resolved_agent = agent or "cursor"
     try:
+        if project_root is not None:
+            root = Path(project_root).expanduser().resolve()
+            if root.is_dir():
+                merged, _origins = _load_unified_mcp_servers(
+                    agent=resolved_agent,
+                    workspace_root=root,
+                    workspace_folder=workspace_folder or root,
+                )
+                keys = [str(key).strip() for key in merged if str(key).strip()]
+                return sorted(set(keys), key=len, reverse=True)
         config = load_aggregator_config(agent=agent, workspace_folder=workspace_folder)
         keys = [str(key).strip() for key in config.mcp_servers if str(key).strip()]
     except (OSError, ValueError, yaml.YAMLError, json.JSONDecodeError):
         return []
     return sorted(set(keys), key=len, reverse=True)
+
+
+def load_known_mcp_server_keys_for_projects(
+    project_roots: list[str | Path],
+    *,
+    agent: str | None = None,
+) -> list[str]:
+    """Union MCP server keys for all git projects stored in the examples DB."""
+    keys: set[str] = set()
+    for root in project_roots:
+        text = str(root or "").strip()
+        if not text:
+            continue
+        keys.update(load_known_mcp_server_keys(agent=agent, project_root=text))
+    if keys:
+        return sorted(keys, key=len, reverse=True)
+    return load_known_mcp_server_keys(agent=agent)
 
 
 _BASIC_STUB_RETAIN: RetainSpec = {

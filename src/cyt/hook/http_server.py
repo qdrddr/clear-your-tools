@@ -245,12 +245,16 @@ async def hook_tool_examples_record(request: Request) -> Response:
         )
 
     from cyt.tool_examples.identity import is_valid_tool_example_identity
+    from cyt.tiers.config import resolve_project_root_path
     from cyt_mcp.config import load_known_mcp_server_keys
     from cyt_mcp.tool_identity import canonical_backend_identity, wire_name_for
 
     resolved_server = mcp_server.strip()
     resolved_tool = tool_name.strip()
-    server_keys = load_known_mcp_server_keys()
+    project_root = resolve_project_root_path(workspace=workspace)
+    server_keys = load_known_mcp_server_keys(
+        project_root=str(project_root) if project_root is not None else None,
+    )
     if server_keys:
         resolved_server, resolved_tool = canonical_backend_identity(
             {
@@ -328,12 +332,16 @@ def _tier_feedback_tool_used(
         bare_tool = payload.get("bare_tool_name")
         input_schema = payload.get("input_schema")
         from cyt.tool_examples.identity import is_valid_tool_example_identity
+        from cyt.tiers.config import resolve_project_root_path
         from cyt_mcp.config import load_known_mcp_server_keys
         from cyt_mcp.tool_identity import canonical_backend_identity, wire_name_for
 
         resolved_server = mcp_server.strip() if isinstance(mcp_server, str) else ""
         resolved_tool = bare_tool.strip() if isinstance(bare_tool, str) else ""
-        server_keys = load_known_mcp_server_keys()
+        project_root = resolve_project_root_path(workspace=workspace)
+        server_keys = load_known_mcp_server_keys(
+            project_root=str(project_root) if project_root is not None else None,
+        )
         if server_keys and resolved_server and resolved_tool:
             resolved_server, resolved_tool = canonical_backend_identity(
                 {

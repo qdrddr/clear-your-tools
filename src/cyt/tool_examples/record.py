@@ -1,4 +1,8 @@
-"""Record successful tool captures into the examples store."""
+"""Record successful tool captures into the project-scoped examples store.
+
+Captures are keyed by git project root and backend ``(mcp_server, tool_name)``,
+regardless of whether the tool was injected from user or workspace MCP catalog scope.
+"""
 
 from __future__ import annotations
 

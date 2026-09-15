@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -42,12 +43,18 @@ def entangle_examples_with_schema(
 ) -> list[dict[str, Any]]:
     """Filter and trim examples so each matches the injected input_schema shape."""
     out: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for example in examples:
         if not isinstance(example, dict):
             continue
         projected = project_example_to_schema(example, schema)
-        if projected is not None:
-            out.append(projected)
+        if projected is None:
+            continue
+        key = json.dumps(projected, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(projected)
     return out
 
 

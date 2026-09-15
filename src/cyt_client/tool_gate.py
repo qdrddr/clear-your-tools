@@ -1148,6 +1148,7 @@ def _resolve_mcp_server_and_tool_name(
     catalog_tool_name: str,
     *,
     server_keys: list[str] | None = None,
+    project_root: str | None = None,
 ) -> tuple[str, str]:
     from cyt_mcp.config import load_known_mcp_server_keys
     from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
@@ -1157,7 +1158,7 @@ def _resolve_mcp_server_and_tool_name(
         merged["name"] = catalog_tool_name
 
     keys = list(server_keys or [])
-    config_keys = load_known_mcp_server_keys()
+    config_keys = load_known_mcp_server_keys(project_root=project_root)
     if config_keys:
         keys = sorted(set(keys) | set(config_keys), key=len, reverse=True)
     if keys:
@@ -1228,11 +1229,15 @@ def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any]
     ok, _reason = validate_json_schema(raw_args, schema)
     if not ok:
         return None
+    from cyt_client.rules_file import workspace_root_from_payload
+
     server_keys = _server_keys_from_catalogs(catalogs)
+    workspace = workspace_root_from_payload(payload)
     mcp_server, bare_tool_name = _resolve_mcp_server_and_tool_name(
         tool,
         catalog_tool_name,
         server_keys=server_keys,
+        project_root=str(workspace) if workspace is not None else None,
     )
     from cyt.tool_examples.identity import is_valid_tool_example_identity
 

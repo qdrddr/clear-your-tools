@@ -1,15 +1,15 @@
 {
   "ephemeral_workspace_paths": [
-    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-42/test_hook_permissions_changed_0",
+    "/private/var/folders/ab/cd/T/pytest-of-user/pytest-42/test_hook_permissions_changed_0",
     "/var/folders/xx/T/pytest-of-user/test0/repo",
     "/tmp/pytest-of-user/pytest-1/test_run_inject_preview_loads_0/repo"
   ],
   "ephemeral_skill_paths": [
-    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-1002/test_run_skill_read_intercept_1/.cursor/skills/demo/SKILL.md",
+    "/private/var/folders/ab/cd/T/pytest-of-user/pytest-1002/test_run_skill_read_intercept_1/.cursor/skills/demo/SKILL.md",
     "/var/folders/xx/T/pytest-of-user/test0/skills/create-hook.md",
     "/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/create-hook/SKILL.md",
-    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/tmpjh2fm0zj/skills/create-hook.md",
-    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/test0/.agents/skills/create-hook.md"
+    "/private/var/folders/ab/cd/T/tmpjh2fm0zj/skills/create-hook.md",
+    "/private/var/folders/ab/cd/T/pytest-of-user/test0/.agents/skills/create-hook.md"
   ],
   "persistent_skill_paths": [
     "/Users/example/.cursor/skills/create-hook/SKILL.md",

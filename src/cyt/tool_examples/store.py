@@ -105,9 +105,7 @@ class ToolExamplesStore:
         if is_default_user_cyt_db(db_path, "tool_examples.db"):
             store.purge_ephemeral_projects()
             store.purge_invalid_identity_schemas()
-            from cyt_mcp.config import load_known_mcp_server_keys
-
-            server_keys = load_known_mcp_server_keys()
+            server_keys = store._server_keys_for_identity_purge()
             if server_keys:
                 store.purge_misparsed_identity_schemas(server_keys)
             store.purge_orphan_examples()
@@ -116,6 +114,17 @@ class ToolExamplesStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def _server_keys_for_identity_purge(self) -> list[str]:
+        """Collect MCP server keys for every git project row in this database."""
+        from cyt_mcp.config import load_known_mcp_server_keys_for_projects
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT root_path FROM tool_example_project",
+            ).fetchall()
+        project_roots = [str(row[0]) for row in rows if str(row[0]).strip()]
+        return load_known_mcp_server_keys_for_projects(project_roots)
 
     def _table_has_column(self, table: str, column: str) -> bool:
         rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()

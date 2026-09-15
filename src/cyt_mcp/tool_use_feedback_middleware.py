@@ -16,7 +16,8 @@ from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
 from cyt_mcp.tier_feedback_push import schedule_tool_use_feedback
-from cyt_mcp.tool_identity import resolve_backend_identity
+from cyt_mcp.config import load_known_mcp_server_keys
+from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,23 @@ def _tool_call_succeeded(result: ToolResult) -> bool:
     return True
 
 
-def _resolve_tool_identity(cache: RuntimeToolCache, tool_name: str) -> tuple[str, str]:
+def _resolve_tool_identity(
+    cache: RuntimeToolCache,
+    tool_name: str,
+    *,
+    project_root: str | None = None,
+) -> tuple[str, str]:
+    server_keys = load_known_mcp_server_keys(
+        project_root=project_root,
+    )
     for entry in cache.snapshot():
         if str(entry.get("name") or "") != tool_name:
             continue
+        if server_keys:
+            return canonical_backend_identity(entry, server_keys)
         return resolve_backend_identity(entry)
+    if server_keys:
+        return canonical_backend_identity({"name": tool_name}, server_keys)
     return "unknown", tool_name.strip() or "unknown"
 
 
@@ -104,7 +117,16 @@ class ToolUseFeedbackMiddleware(Middleware):
             raise
         finally:
             if tool_name:
-                mcp_server, bare_tool = _resolve_tool_identity(self._cache, tool_name)
+                project_root = (
+                    str(self._config.workspace_root.expanduser().resolve())
+                    if self._config.workspace_root is not None
+                    else None
+                )
+                mcp_server, bare_tool = _resolve_tool_identity(
+                    self._cache,
+                    tool_name,
+                    project_root=project_root,
+                )
                 input_schema = _input_schema_for_tool(self._cache, tool_name)
                 catalog_hash = catalog_tools_content_hash(self._cache.snapshot())
                 schedule_tool_use_feedback(
