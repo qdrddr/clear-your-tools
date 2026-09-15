@@ -82,6 +82,39 @@ def test_format_tool_item_omits_empty_input_schema() -> None:
     assert "\n{'input_schema':{}}\n" not in item
 
 
+def test_format_tool_item_t2_without_required_uses_tx_tier() -> None:
+    tool = {
+        "name": "context-mode_ctx_doctor",
+        "description": "Diagnose context-mode installation.",
+        "cyt_injection_tier": "t2",
+        "input_schema": {"type": "object", "properties": {}},
+    }
+    item = format_tool_item(tool)
+    assert "tier='tx'" in item
+    assert "use `get-tool-definitions` with `{tool_name='context-mode_ctx_doctor'}`" in item
+    assert "input_schema" not in item
+
+
+def test_format_tool_item_t2_with_required_keeps_schema() -> None:
+    tool = {
+        "name": "context-mode_ctx_purge",
+        "description": "Purge indexed content.",
+        "cyt_injection_tier": "t2",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "confirm": {"type": "boolean"},
+            },
+            "required": ["confirm"],
+        },
+    }
+    item = format_tool_item(tool)
+    assert "tier='t2'" in item
+    assert "tier='tx'" not in item
+    assert "'confirm'" in item
+    assert "get-tool-definitions" not in item
+
+
 def test_format_tool_item_includes_non_empty_input_schema() -> None:
     tool = {
         "name": "demo",

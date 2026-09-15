@@ -18,6 +18,31 @@ def input_schema_properties(schema: dict[str, Any]) -> set[str]:
     return {str(key) for key in properties}
 
 
+def schema_required_property_names(schema: dict[str, Any]) -> list[str]:
+    """Return required property names that exist in *schema* properties."""
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return []
+    required_raw = schema.get("required")
+    if not isinstance(required_raw, list):
+        return []
+    return [str(name) for name in required_raw if str(name) in properties]
+
+
+def injection_tier_needs_definitions_lookup(
+    schema: dict[str, Any],
+    tier: str | None,
+) -> bool:
+    """True when a T2 tool has no callable required properties in its injected schema."""
+    if str(tier or "").strip().lower() != "t2":
+        return False
+    return len(schema_required_property_names(schema)) == 0
+
+
+def format_get_tool_definitions_hint(tool_name: str) -> str:
+    return f"use `get-tool-definitions` with `{{tool_name='{tool_name}'}}`"
+
+
 def project_example_to_schema(
     example: dict[str, Any],
     schema: dict[str, Any],

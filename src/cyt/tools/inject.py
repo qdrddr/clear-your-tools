@@ -7,7 +7,11 @@ from typing import Any
 
 from cyt.executor.tool_names import agent_visible_tool_name
 from cyt.indexer.tokens import count_tokens
-from cyt.tools.injection_schema import entangle_examples_with_schema
+from cyt.tools.injection_schema import (
+    entangle_examples_with_schema,
+    format_get_tool_definitions_hint,
+    injection_tier_needs_definitions_lookup,
+)
 from cyt.tools.serialize import format_examples_block, minimize_json_single_quotes
 
 _EXECUTOR_WORKSPACE_NOTE = (
@@ -136,8 +140,13 @@ def format_tool_item(
     schema = _tool_input_schema(tool)
     tier = tool.get("cyt_injection_tier")
     tier_attr = str(tier).strip().lower() if isinstance(tier, str) and tier.strip() else None
+    needs_definitions = injection_tier_needs_definitions_lookup(schema, tier_attr)
+    if needs_definitions:
+        tier_attr = "tx"
     lines = [_tool_open_tag(name, description, tier=tier_attr)]
-    if schema:
+    if needs_definitions:
+        lines.append(format_get_tool_definitions_hint(name))
+    elif schema:
         lines.append(minimize_json_single_quotes({"input_schema": schema}))
     if examples_block := _format_examples_block(tool):
         lines.append(examples_block)

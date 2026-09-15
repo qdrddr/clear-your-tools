@@ -850,54 +850,6 @@ def _validate_unlisted_mcp_tool(
     return _allow()
 
 
-def _schema_property_keys(schema: dict[str, Any]) -> list[str]:
-    properties = schema.get("properties")
-    if not isinstance(properties, dict):
-        return []
-    return sorted(str(key) for key in properties)
-
-
-def _log_pre_tool_validation(
-    *,
-    catalog: str,
-    tool_name: str,
-    tool: dict[str, Any] | None,
-    args: dict[str, Any] | None,
-    schema: dict[str, Any],
-    allowed: bool,
-    reason: str = "",
-) -> None:
-    from cyt_client.debug_session_log import agent_debug_log
-
-    raw_examples = tool.get("cyt_injection_examples") if isinstance(tool, dict) else None
-    example_count = len(raw_examples) if isinstance(raw_examples, list) else 0
-    arg_keys = sorted(str(key) for key in (args or {}))
-    schema_keys = _schema_property_keys(schema)
-    unknown_keys = [key for key in arg_keys if key not in schema_keys]
-    builtin_grep_keys = {"pattern", "path", "head_limit"}
-    generic_search_keys = {"query", "limit"}
-    agent_debug_log(
-        "tool_gate.py:_validate_gated_catalog_tool",
-        "preToolUse cyt_mcp validation",
-        {
-            "tool_name": tool_name,
-            "catalog": catalog,
-            "allowed": allowed,
-            "arg_keys": arg_keys,
-            "schema_keys": schema_keys,
-            "unknown_arg_keys": unknown_keys,
-            "required": schema.get("required") if isinstance(schema.get("required"), list) else [],
-            "tier": tool.get("cyt_injection_tier") if isinstance(tool, dict) else None,
-            "example_count": example_count,
-            "tool_in_catalog": tool is not None,
-            "matches_builtin_grep_shape": bool(arg_keys) and set(arg_keys) <= builtin_grep_keys | {"output_mode"},
-            "matches_generic_search_shape": "query" in arg_keys and "limit" in arg_keys,
-            "reason_head": reason.splitlines()[0] if reason else "",
-        },
-        hypothesis_id="H1-H5",
-    )
-
-
 def _validate_gated_catalog_tool(
     catalog: str,
     tool_name: str,
@@ -910,15 +862,6 @@ def _validate_gated_catalog_tool(
 ) -> PreToolValidation:
     tool = _find_tool_in_catalog(catalogs, catalog, tool_name)
     if tool is None:
-        _log_pre_tool_validation(
-            catalog=catalog,
-            tool_name=tool_name,
-            tool=None,
-            args=args,
-            schema={},
-            allowed=False,
-            reason="tool not in catalog",
-        )
         return _deny_missing_catalog_tool(
             catalog,
             tool_name,
@@ -931,15 +874,6 @@ def _validate_gated_catalog_tool(
         schema = {}
     raw_args = args if args is not None else {}
     ok, reason = validate_json_schema(raw_args, schema)
-    _log_pre_tool_validation(
-        catalog=catalog,
-        tool_name=tool_name,
-        tool=tool,
-        args=raw_args,
-        schema=schema,
-        allowed=ok,
-        reason=reason,
-    )
     if not ok:
         fixup = _schema_fixup_hint(raw_args, schema, payload)
         if fixup:
