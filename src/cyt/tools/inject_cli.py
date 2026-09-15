@@ -11,8 +11,12 @@ from typing import Any
 
 from cyt.config import load_config, tools_hook_sources
 from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+from cyt.pruners.token_stats import build_preview_token_stats, format_preview_token_summary_lines
 from cyt.pruners.tools_filter import filter_tools_for_query
+from cyt.tools.inject import injection_token_count
 from cyt.tools.master_catalog import get_master_tool_catalog
+from cyt_mcp.catalog_export import catalog_token_stats, frontend_payload_from_hook_tools
+from cyt_mcp.config import load_aggregator_config
 from cyt.tools.source_inject import (
     format_cloudflare_source_section,
     format_cyt_mcp_source_section,
@@ -156,6 +160,53 @@ def _full_definitions_for_tools(
     return out
 
 
+def _preview_token_stats(
+    *,
+    grouped: dict[str, list[dict[str, Any]]],
+    pruned_injection: str,
+    agent: str,
+    workspace: Path,
+) -> dict[str, int | float]:
+    workspace_paths = [str(workspace)]
+    full_by_source = {source: tools for source, tools in grouped.items() if tools}
+    full_sections = _format_sections(full_by_source, workspace_path=workspace)
+    full_injection = format_multi_source_agent_tools(
+        full_sections,
+        workspace_paths=workspace_paths,
+    )
+    tokens_in = injection_token_count(full_injection) if full_injection.strip() else 0
+    tokens_out = injection_token_count(pruned_injection) if pruned_injection.strip() else 0
+    if tokens_in == 0 and tokens_out == 0:
+        return {}
+
+    frontend_tool_count: int | None = None
+    frontend_tokens: int | None = None
+    cyt_mcp_tools = grouped.get("cyt_mcp") or []
+    if cyt_mcp_tools:
+        agg_config = load_aggregator_config(
+            agent=agent,
+            workspace_folder=workspace,
+        )
+        frontend_payload = frontend_payload_from_hook_tools(cyt_mcp_tools, config=agg_config)
+        frontend_stats = catalog_token_stats(frontend_payload["tools"])
+        frontend_tool_count = frontend_stats["tool_count"]
+        frontend_tokens = frontend_stats["tokens_compact_json"]
+
+    return build_preview_token_stats(
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        frontend_tool_count=frontend_tool_count,
+        frontend_tokens=frontend_tokens,
+    )
+
+
+def _print_preview_token_summary(token_stats: dict[str, int | float]) -> None:
+    if not token_stats:
+        return
+    for line in format_preview_token_summary_lines(token_stats):
+        print(line, file=sys.stderr, flush=True)
+
+
 def config_for_inject_preview(workspace: Path) -> dict[str, Any]:
     """Resolve hook config the same way the daemon does for a workspace root."""
     payload = {"cwd": str(workspace)}
@@ -188,6 +239,7 @@ def run_inject_preview(args: argparse.Namespace) -> int:
 
     pruned_by_source: dict[str, list[dict[str, Any]]] = {}
     prune_meta: dict[str, Any] = {}
+    agent = str(config.get("agent") or "cursor")
     for source, tools in grouped.items():
         if not tools:
             continue
@@ -196,11 +248,15 @@ def run_inject_preview(args: argparse.Namespace) -> int:
             args.query,
             config=config,
             for_hook=True,
+            log_token_counts=False,
         )
         prune_meta[source] = {
             "status": result.status,
             "tools_in": result.tools_in,
             "tools_out": result.tools_out,
+            "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out,
+            "tokens_saved": result.tokens_saved,
             "error": result.error,
         }
         if result.tools:
@@ -208,6 +264,12 @@ def run_inject_preview(args: argparse.Namespace) -> int:
 
     sections = _format_sections(pruned_by_source, workspace_path=workspace)
     injection = format_multi_source_agent_tools(sections, workspace_paths=[str(workspace)])
+    token_stats = _preview_token_stats(
+        grouped=grouped,
+        pruned_injection=injection,
+        agent=agent,
+        workspace=workspace,
+    )
 
     if args.json:
         payload: dict[str, Any] = {
@@ -220,12 +282,15 @@ def run_inject_preview(args: argparse.Namespace) -> int:
             "tools": pruned_by_source,
             "injection": injection,
         }
+        if token_stats:
+            payload["token_stats"] = token_stats
         if args.definitions and pruned_by_source.get("cyt_mcp"):
             payload["full_definitions"] = _full_definitions_for_tools(
                 pruned_by_source["cyt_mcp"],
-                agent=str(config.get("agent") or "cursor"),
+                agent=agent,
             )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        _print_preview_token_summary(token_stats)
         return 0
 
     if injection:
@@ -235,10 +300,11 @@ def run_inject_preview(args: argparse.Namespace) -> int:
     if args.definitions and pruned_by_source.get("cyt_mcp"):
         defs = _full_definitions_for_tools(
             pruned_by_source["cyt_mcp"],
-            agent=str(config.get("agent") or "cursor"),
+            agent=agent,
         )
         print("\n--- full definitions ---\n")
         print(json.dumps(defs, ensure_ascii=False, indent=2))
+    _print_preview_token_summary(token_stats)
     return 0 if injection else 1
 
 

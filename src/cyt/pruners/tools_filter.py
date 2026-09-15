@@ -52,6 +52,7 @@ from cyt.tiers.config import tiers_active
 from cyt.tiers.manager import NoOpTierManager, TierManager, get_tier_manager
 from cyt.tiers.models import ToolsTierApplyResult
 from cyt.tiers.shadow import schedule_tool_shadow_evaluation
+from cyt.pruners.token_stats import format_tool_token_line
 from cyt.tools.budget import tools_inject_allowed
 from cyt.tools.policy_context import prepare_hook_tool_pruning
 from cyt_core.types.prune import PruneResult
@@ -966,12 +967,7 @@ def _log_operator_message(msg: str) -> None:
 
 
 def _log_tool_token_counts(tokens_in: int, tokens_out: int | None) -> None:
-    msg = f"tool tokens (compact JSON): input={tokens_in}"
-    if tokens_out is not None:
-        saved = tokens_in - tokens_out
-        pct = (100.0 * saved / tokens_in) if tokens_in else 0.0
-        msg += f", output={tokens_out}, saved={saved} ({pct:.1f}%)"
-    _log_operator_message(msg)
+    _log_operator_message(format_tool_token_line(tokens_in, tokens_out))
 
 
 def _pass_through_prune_result(
@@ -1119,6 +1115,7 @@ def filter_tools_for_query(
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
+    log_token_counts: bool = True,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
@@ -1190,7 +1187,8 @@ def filter_tools_for_query(
             catalog_tools_in=catalog_tools_in,
             tokens_in=tokens_in,
         )
-    _log_tool_token_counts(tokens_in, None)
+    if log_token_counts:
+        _log_tool_token_counts(tokens_in, None)
 
     decomposed: dict[str, int] = {}
     decomposed_breakdown: dict[str, dict[str, int]] = {}
@@ -1293,7 +1291,8 @@ def filter_tools_for_query(
         )
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out
-    _log_tool_token_counts(tokens_in, tokens_out)
+    if log_token_counts:
+        _log_tool_token_counts(tokens_in, tokens_out)
     return PruneResult(
         tools=pruned,
         status="applied",

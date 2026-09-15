@@ -564,6 +564,35 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _emit_cursor_continue()
         return
 
+    # #region agent log
+    try:
+        import re
+
+        from cyt_client.debug_session_log import agent_debug_log
+
+        tool_names = re.findall(r"<tool name='([^']+)'", injection)
+        tools_with_examples = re.findall(
+            r"<tool name='([^']+)'[^>]*>[\s\S]*?<examples>",
+            injection,
+        )
+        agent_debug_log(
+            "cli.py:_handle_cursor_before_submit",
+            "beforeSubmitPrompt injection synced to rules file",
+            {
+                "injection_chars": len(injection),
+                "tool_count": len(tool_names),
+                "tools_with_examples": len(tools_with_examples),
+                "sample_tools": tool_names[:12],
+                "sample_tools_with_examples": tools_with_examples[:12],
+                "force_rules_refresh": force_rules_refresh,
+                "had_prior_rules": bool(prior_rules_injection.strip()),
+            },
+            hypothesis_id="H1-H2-H4",
+        )
+    except Exception:
+        pass
+    # #endregion
+
     _emit_cursor_hook_stdout(body)
 
 

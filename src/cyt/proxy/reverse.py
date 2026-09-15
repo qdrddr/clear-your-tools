@@ -471,18 +471,20 @@ def _debug_pruning_query_lines(pruning: dict[str, Any] | None) -> list[str]:
 
 
 def _format_tool_token_line(pruning: dict[str, Any]) -> str | None:
+    from cyt.pruners.token_stats import format_tool_token_arrow_line, format_tool_token_line
+
     tokens_in = pruning.get("tokens_in")
     if tokens_in is None:
         return None
     tokens_out = pruning.get("tokens_out")
     tokens_saved = pruning.get("tokens_saved")
     if tokens_out is not None and tokens_saved is not None:
-        pct = (100.0 * tokens_saved / tokens_in) if tokens_in else 0.0
-        return (
-            f"tool tokens (compact JSON): {tokens_in} -> {tokens_out} "
-            f"(saved {tokens_saved}, {pct:.1f}%)"
+        return format_tool_token_arrow_line(
+            int(tokens_in),
+            int(tokens_out),
+            tokens_saved=int(tokens_saved),
         )
-    return f"tool tokens (compact JSON): input={tokens_in}"
+    return format_tool_token_line(int(tokens_in), None)
 
 
 def _format_pruning_model_tokens_line(pruning_model_tokens: dict[str, Any]) -> str | None:

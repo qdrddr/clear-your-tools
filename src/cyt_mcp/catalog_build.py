@@ -15,6 +15,24 @@ from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
 from cyt_mcp.tool_identity import enrich_tool_identity
 
 
+def json_safe_value(value: Any) -> Any:
+    """Recursively convert MCP/Pydantic objects to JSON-serializable values."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe_value(item) for item in value]
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump(mode="json", exclude_none=True)
+        except TypeError:
+            dumped = model_dump(exclude_none=True)
+        return json_safe_value(dumped)
+    return str(value)
+
+
 def mcp_tool_to_catalog_dict(mcp_tool: McpWireTool) -> dict[str, Any]:
     schema_dict = dict(mcp_tool.inputSchema)
     entry: dict[str, Any] = {
@@ -48,7 +66,7 @@ def mcp_tool_to_search_index_entry(mcp_tool: McpWireTool) -> dict[str, Any]:
         entry["execution"] = mcp_tool.execution
     if mcp_tool.meta is not None:
         entry["meta"] = mcp_tool.meta
-    return entry
+    return json_safe_value(entry)
 
 
 def build_catalog_from_tools(

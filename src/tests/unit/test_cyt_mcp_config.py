@@ -175,6 +175,54 @@ def test_unified_load_workspace_overrides_user_on_name_conflict(
     assert config.server_origins["workspace-only"] == "workspace"
 
 
+def test_unified_load_user_scope_merges_workspace_from_project_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_mcp_dir = tmp_path / "user-mcp"
+    user_mcp_dir.mkdir()
+    user_defs = user_mcp_dir / "cursor.json"
+    user_defs.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo", "args": ["user"]},
+                    "global-only": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo", "args": ["workspace"]},
+                    "workspace-only": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    agg = tmp_path / "mcp-config.yaml"
+    agg.write_text("agent: cursor\n", encoding="utf-8")
+
+    monkeypatch.setattr("cyt_mcp.config.DEFAULT_MCP_DIR", user_mcp_dir)
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(agent="cursor", aggregator_path=agg)
+
+    assert config.catalog_scope == "user"
+    assert config.workspace_root == tmp_path.resolve()
+    assert set(config.mcp_servers) == {"fff", "global-only", "workspace-only"}
+    assert config.mcp_servers["fff"]["args"] == ["workspace"]
+    assert config.server_origins["fff"] == "workspace"
+    assert config.server_origins["global-only"] == "user"
+    assert config.server_origins["workspace-only"] == "workspace"
+
+
 def test_unified_load_user_only_without_workspace_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

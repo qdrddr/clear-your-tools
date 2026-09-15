@@ -11,14 +11,24 @@ from pathlib import Path
 from typing import Any, cast
 
 from cyt_mcp.aggregator import build_aggregator
-from cyt_mcp.catalog import catalog_json
+from cyt_mcp.catalog_export import (
+    backend_full_catalog,
+    backend_hook_catalog,
+    catalog_token_stats,
+    frontend_stubs,
+    tool_dicts_from_backend_payload,
+    tool_dicts_from_frontend_payload,
+)
 from cyt_mcp.config import AggregatorConfig, load_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import lookup_tool_definition
 from cyt_mcp.transport import refresh_runtime_cache
+from cyt.pruners.token_stats import format_catalog_token_line
 
 logger = logging.getLogger(__name__)
+
+CatalogSource = str
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -49,6 +59,22 @@ def _build_parser() -> argparse.ArgumentParser:
     catalog.add_argument("--agent", help="Agent harness")
     catalog.add_argument("--json", action="store_true", help="Print JSON to stdout")
     catalog.add_argument("--config", type=Path, default=None)
+    catalog.add_argument(
+        "--source",
+        choices=("backend", "frontend", "both"),
+        default="backend",
+        help="Export backend hook catalog, frontend stubs, or both (default: backend)",
+    )
+    catalog.add_argument(
+        "--full",
+        action="store_true",
+        help="Backend export uses full search_index definitions (outputSchema, meta, etc.)",
+    )
+    catalog.add_argument(
+        "--tokens",
+        action="store_true",
+        help="Print compact-JSON token summary to stderr",
+    )
 
     search = sub.add_parser("search", help="Look up a full backend tool definition")
     search.add_argument("tool_name", help="Backend cyt-mcp tool name")
@@ -72,12 +98,103 @@ async def _run_search(config: AggregatorConfig, tool_name: str) -> int:
     return 0
 
 
-async def _run_catalog(config: AggregatorConfig) -> int:
+def _print_catalog_token_lines(
+    *,
+    source: CatalogSource,
+    backend_payload: dict[str, Any] | None,
+    frontend_payload: dict[str, Any] | None,
+) -> None:
+    lines: list[str] = []
+    if source in {"backend", "both"} and backend_payload is not None:
+        backend_stats = catalog_token_stats(tool_dicts_from_backend_payload(backend_payload))
+        lines.append(
+            format_catalog_token_line(
+                "backend",
+                backend_stats["tool_count"],
+                backend_stats["tokens_compact_json"],
+            ),
+        )
+    if source in {"frontend", "both"} and frontend_payload is not None:
+        frontend_stats = catalog_token_stats(tool_dicts_from_frontend_payload(frontend_payload))
+        lines.append(
+            format_catalog_token_line(
+                "frontend",
+                frontend_stats["tool_count"],
+                frontend_stats["tokens_compact_json"],
+            ),
+        )
+    if not lines:
+        return
+    print("", file=sys.stderr, flush=True)
+    for line in lines:
+        print(line, file=sys.stderr, flush=True)
+    print("", file=sys.stderr, flush=True)
+
+
+def _catalog_export_payload(
+    *,
+    source: CatalogSource,
+    backend_full: bool,
+    cache: RuntimeToolCache,
+    config: AggregatorConfig,
+    frontend_payload: dict[str, Any],
+) -> dict[str, Any]:
+    backend_payload = (
+        backend_full_catalog(cache, config)
+        if backend_full
+        else backend_hook_catalog(cache, config)
+    )
+    if source == "backend":
+        return backend_payload
+    if source == "frontend":
+        return frontend_payload
+    return {
+        "agent": config.agent,
+        "backend": backend_payload,
+        "frontend": frontend_payload,
+        "degraded_servers": cache.degraded(),
+    }
+
+
+async def _run_catalog(config: AggregatorConfig, args: argparse.Namespace) -> int:
     cache = RuntimeToolCache()
     config_holder = ConfigHolder(config)
     server, _middleware = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
-    print(catalog_json(cache, agent=config.agent))
+
+    source = str(getattr(args, "source", "backend") or "backend")
+    backend_full = bool(getattr(args, "full", False))
+    show_tokens = bool(getattr(args, "tokens", False)) or source == "both"
+
+    backend_payload = (
+        backend_full_catalog(cache, config)
+        if backend_full
+        else backend_hook_catalog(cache, config)
+    )
+    frontend_payload = await frontend_stubs(server, cache, config)
+    payload = _catalog_export_payload(
+        source=source,
+        backend_full=backend_full,
+        cache=cache,
+        config=config,
+        frontend_payload=frontend_payload,
+    )
+
+    if show_tokens:
+        if source == "both":
+            _print_catalog_token_lines(
+                source=source,
+                backend_payload=backend_payload,
+                frontend_payload=frontend_payload,
+            )
+        elif source == "backend":
+            _print_catalog_token_lines(source=source, backend_payload=payload, frontend_payload=None)
+        else:
+            _print_catalog_token_lines(source=source, backend_payload=None, frontend_payload=payload)
+
+    use_json = bool(getattr(args, "json", False)) or not sys.stdout.isatty()
+    indent = 2 if use_json or sys.stdout.isatty() else None
+    print(json.dumps(payload, ensure_ascii=False, indent=indent))
     return 0
 
 
@@ -131,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "catalog":
             config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
-            return asyncio.run(_run_catalog(config))
+            return asyncio.run(_run_catalog(config, args))
 
         if args.command == "search":
             if not args.json:

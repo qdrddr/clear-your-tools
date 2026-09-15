@@ -530,6 +530,27 @@ def _resolve_workspace_root_for_scope(
         return None
 
 
+def _resolve_workspace_root_for_unified_load(
+    *,
+    catalog_scope: CatalogScope,
+    workspace_folder: Path | None,
+    aggregator_path: Path,
+) -> Path | None:
+    """Resolve workspace root for merging user + workspace MCP server defs."""
+    scoped = _resolve_workspace_root_for_scope(
+        catalog_scope,
+        workspace_folder=workspace_folder,
+        aggregator_path=aggregator_path,
+    )
+    if scoped is not None:
+        return scoped
+    if catalog_scope != "user":
+        return None
+    from cyt.hook.install_scope import detect_workspace_root
+
+    return detect_workspace_root(cwd=workspace_folder)
+
+
 def load_aggregator_config(
     *,
     agent: str | None = None,
@@ -562,8 +583,8 @@ def load_aggregator_config(
     catalog_scope = _infer_catalog_scope(raw, resolved_agg_path)
     if catalog_scope == "user":
         agent_path = _resolve_user_agent_mcp_path(agent_path, resolved_agent)
-    workspace_root = _resolve_workspace_root_for_scope(
-        catalog_scope,
+    workspace_root = _resolve_workspace_root_for_unified_load(
+        catalog_scope=catalog_scope,
         workspace_folder=effective_workspace,
         aggregator_path=resolved_agg_path,
     )
@@ -594,7 +615,7 @@ def load_aggregator_config(
         verify_only=verify_only,
         aggregator_path=resolved_agg_path,
         agent_mcp_path=agent_path,
-        catalog_scope="workspace" if workspace_root is not None else catalog_scope,
+        catalog_scope=catalog_scope,
         workspace_root=workspace_root,
         mcp_deny=mcp_deny,
         server_origins=server_origins,

@@ -171,6 +171,7 @@ sample.*
 .go-cache/
 .build/
 temp_*
+tmp_*
 postman/collections/cloudflare-ai-controls/**/examples/
 postman/environments/Cloudflare.environment.yaml
 chunk-your-skills/

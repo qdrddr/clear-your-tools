@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from cyt.config import load_config
+from cyt.tools.inject_cli import _preview_token_stats, _print_preview_token_summary
 from cyt.cyt_mcp.catalog import cyt_mcp_catalog_slug
 from cyt.cyt_mcp.catalog_disk import read_disk_catalog
 from cyt.hook.workspace_config import hook_workspace_from_config
@@ -68,6 +69,96 @@ def test_config_for_inject_preview_resolves_workspace_scoped_disk_catalog(
     assert catalog is not None
     assert len(catalog) == pack.scenario.expected_catalog_tool_count
     assert {tool["name"] for tool in catalog} == set(pack.scenario.expected_pruned_tool_names)
+
+
+def test_preview_token_stats_uses_agent_tools_xml_and_adjusts_for_frontend_stubs(
+    tmp_path: Path,
+) -> None:
+    workspace = (tmp_path / "project").resolve()
+    workspace.mkdir()
+    grouped = {
+        "cyt_mcp": [
+            {
+                "name": "fff_grep",
+                "description": "grep",
+                "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        ],
+    }
+    pruned_injection = "\n<agent-tools path='x'><cyt-mcp>demo</cyt-mcp></agent-tools>"
+    stats = _preview_token_stats(
+        grouped=grouped,
+        pruned_injection=pruned_injection,
+        agent="cursor",
+        workspace=workspace,
+    )
+    assert stats["tokens_in"] > stats["tokens_out"]
+    assert stats["tokens_out"] > 0
+    assert stats["frontend_tool_count"] == 2
+    assert stats["frontend_tokens"] > 0
+    assert stats["net_tokens_out"] == int(stats["tokens_out"]) + int(stats["frontend_tokens"])
+    assert stats["net_tokens_saved"] == int(stats["tokens_in"]) - int(stats["net_tokens_out"])
+
+
+def test_print_preview_token_summary_writes_to_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_preview_token_summary(
+        {
+            "tokens_in": 100,
+            "tokens_out": 20,
+            "tokens_saved": 80,
+            "savings_percent": 80.0,
+            "frontend_tool_count": 2,
+            "frontend_tokens": 10,
+            "net_tokens_out": 30,
+            "net_tokens_saved": 70,
+            "net_savings_percent": 70.0,
+        },
+    )
+    err = capsys.readouterr().err
+    assert "Tools before cleaning (tokens):" in err
+    assert "Tools after cleaning agent-tools (tokens):" in err
+    assert "frontend stubs (compact JSON):" in err
+    assert "Saved (tokens):" in err
+    assert "= 100-20+10" in err
+
+
+def test_run_inject_preview_defers_token_logging_to_stderr(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    monkeypatch.chdir(pack.workspace)
+
+    logged: list[tuple[int, int | None]] = []
+
+    def _capture_log(tokens_in: int, tokens_out: int | None) -> None:
+        logged.append((tokens_in, tokens_out))
+
+    monkeypatch.setattr(
+        "cyt.pruners.tools_filter._log_tool_token_counts",
+        _capture_log,
+    )
+
+    args = argparse.Namespace(
+        query=pack.scenario.query,
+        workspace=pack.workspace,
+        json=False,
+        definitions=False,
+        source=["cyt_mcp"],
+    )
+    code = run_inject_preview(args)
+    captured = capsys.readouterr()
+    assert code == 0
+    assert logged == []
+    assert captured.out.startswith("\n<agent-tools")
+    assert "Tools before cleaning (tokens):" in captured.err
+    assert "Tools after cleaning agent-tools (tokens):" in captured.err
+    assert "frontend stubs (compact JSON):" in captured.err
+    assert "Saved (tokens):" in captured.err
+    assert captured.out.find("<agent-tools") < len(captured.out)
 
 
 def test_run_inject_preview_loads_workspace_scoped_catalog(
