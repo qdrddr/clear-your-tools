@@ -11,12 +11,11 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import CallToolRequestParams
 
 from cyt_mcp.catalog import catalog_tools_content_hash
-from cyt_mcp.config import AggregatorConfig
+from cyt_mcp.config import AggregatorConfig, load_known_mcp_server_keys
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
 from cyt_mcp.tier_feedback_push import schedule_tool_use_feedback
-from cyt_mcp.config import load_known_mcp_server_keys
 from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
 
 logger = logging.getLogger(__name__)

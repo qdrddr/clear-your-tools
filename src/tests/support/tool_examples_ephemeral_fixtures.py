@@ -13,9 +13,7 @@ import pytest
 from cyt.config import load_config
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 
-FIXTURES_ROOT = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "tool_examples_ephemeral_guard"
-)
+FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tool_examples_ephemeral_guard"
 SCENARIOS_PATH = FIXTURES_ROOT / "scenarios.json"
 POLLUTED_SEED_PATH = FIXTURES_ROOT / "polluted_seed.json"
 
@@ -169,13 +167,35 @@ def allow_tool_examples_on_ephemeral_workspace(
         return
     if "skips_ephemeral" in request.node.name:
         return
+    if "ephemeral" in request.node.name:
+        return
+
+    def _never_ephemeral(_path: object) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "cyt.common.paths.is_ephemeral_workspace_path",
+        _never_ephemeral,
+    )
     monkeypatch.setattr(
         "cyt.tool_examples.record.is_ephemeral_workspace_path",
-        lambda _path: False,
+        _never_ephemeral,
     )
     monkeypatch.setattr(
         "cyt.tool_examples.enrich.is_ephemeral_workspace_path",
-        lambda _path: False,
+        _never_ephemeral,
+    )
+    monkeypatch.setattr(
+        "cyt.tool_examples.store.is_ephemeral_workspace_path",
+        _never_ephemeral,
+    )
+    monkeypatch.setattr(
+        "cyt.tiers.store.is_ephemeral_workspace_path",
+        _never_ephemeral,
+    )
+    monkeypatch.setattr(
+        "cyt.tiers.adapters.skills.is_ephemeral_workspace_path",
+        _never_ephemeral,
     )
 
 

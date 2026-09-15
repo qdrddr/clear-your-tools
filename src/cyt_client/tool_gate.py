@@ -1166,33 +1166,10 @@ def _resolve_mcp_server_and_tool_name(
     return resolve_backend_identity(merged)
 
 
-def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Return tier feedback when postToolUse reflects a successful gated MCP tool call."""
-    if not _post_tool_call_succeeded(payload):
-        return None
-    catalogs, inject_enabled, gate_active, hallucination_on = _load_gate_context(payload)
-    if inject_enabled is False and not hallucination_on:
-        return None
-    tool_name, args = _extract_tool_call(payload)
-    if not tool_name or not gate_active:
-        return None
-    if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=infer_harness_agent(payload)):
-        return None
-    catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
-    if catalog is None or catalog not in _GATED_CATALOGS:
-        return None
-    catalog_tool_name = tool_name
-    if _find_tool_in_catalog(catalogs, catalog, catalog_tool_name) is None:
-        return None
-    return {
-        "tool_name": tool_name,
-        "catalog": catalog,
-        "args": args if isinstance(args, dict) else {},
-    }
-
-
-def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Return capture payload when postToolUse reflects a successful gated MCP tool call."""
+def _matched_gated_tool_from_post_tool_payload(
+    payload: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any], str, str, str, Any] | None:
+    """Return catalogs, tool dict, catalog, tool name, catalog tool name, and args."""
     if not _post_tool_call_succeeded(payload):
         return None
     catalogs, inject_enabled, gate_active, hallucination_on = _load_gate_context(payload)
@@ -1210,18 +1187,57 @@ def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any]
     tool = _find_tool_in_catalog(catalogs, catalog, catalog_tool_name)
     if tool is None:
         return None
-    if catalog == "cyt_mcp":
-        from cyt_mcp.tool_identity import _bare_tool_name_from_wire
+    return catalogs, tool, catalog, tool_name, catalog_tool_name, args
 
-        server_key = str(tool.get("server_key") or "").strip()
-        bare_tool = str(tool.get("tool_name") or "").strip()
-        wire_name = str(tool.get("name") or catalog_tool_name).strip()
-        if not server_key:
-            return None
-        if not bare_tool:
-            bare_tool = _bare_tool_name_from_wire(server=server_key, wire=wire_name)
-        if not bare_tool:
-            return None
+
+def _bare_tool_name_for_example_capture(
+    *,
+    catalog: str,
+    tool: dict[str, Any],
+    catalog_tool_name: str,
+) -> str | None:
+    bare_tool = str(tool.get("tool_name") or "").strip()
+    if catalog != "cyt_mcp":
+        return bare_tool or catalog_tool_name
+    from cyt_mcp.tool_identity import _bare_tool_name_from_wire
+
+    server_key = str(tool.get("server_key") or "").strip()
+    wire_name = str(tool.get("name") or catalog_tool_name).strip()
+    if not server_key:
+        return None
+    if not bare_tool:
+        bare_tool = _bare_tool_name_from_wire(server=server_key, wire=wire_name)
+    return bare_tool or None
+
+
+def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return tier feedback when postToolUse reflects a successful gated MCP tool call."""
+    matched = _matched_gated_tool_from_post_tool_payload(payload)
+    if matched is None:
+        return None
+    _catalogs, _tool, catalog, tool_name, _catalog_tool_name, args = matched
+    return {
+        "tool_name": tool_name,
+        "catalog": catalog,
+        "args": args if isinstance(args, dict) else {},
+    }
+
+
+def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return capture payload when postToolUse reflects a successful gated MCP tool call."""
+    matched = _matched_gated_tool_from_post_tool_payload(payload)
+    if matched is None:
+        return None
+    catalogs, tool, catalog, _tool_name, catalog_tool_name, args = matched
+    if (
+        _bare_tool_name_for_example_capture(
+            catalog=catalog,
+            tool=tool,
+            catalog_tool_name=catalog_tool_name,
+        )
+        is None
+    ):
+        return None
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):
         schema = {}

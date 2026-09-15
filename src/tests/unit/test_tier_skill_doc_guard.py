@@ -16,7 +16,6 @@ from tests.support.tier_skill_doc_fixtures import (
     load_scenarios,
     read_skill_used,
     seed_polluted_skill_doc_db,
-    tier_skill_doc_guard_pack,
 )
 
 
@@ -77,7 +76,10 @@ def test_purge_stale_skill_doc_entities_merges_duplicate_stats(
     finally:
         store.close()
 
-    assert count_skill_entity(tier_skill_doc_guard_pack.user_tier_db_path, "skill:doc:create-hook") == 0
+    assert (
+        count_skill_entity(tier_skill_doc_guard_pack.user_tier_db_path, "skill:doc:create-hook")
+        == 0
+    )
     assert count_skill_entity(tier_skill_doc_guard_pack.user_tier_db_path, canonical) == 1
     assert read_skill_used(tier_skill_doc_guard_pack.user_tier_db_path, canonical) == 1.0
 
@@ -93,10 +95,13 @@ def test_open_purges_stale_skill_doc_on_user_db(
         seed=seed,
     )
     canonical = str(tier_skill_doc_guard_pack.canonical_skill_path.resolve())
-    with patch("cyt.tiers.store.is_default_user_cyt_db", return_value=True), patch.object(
-        TierStore,
-        "purge_ephemeral_projects",
-        return_value=0,
+    with (
+        patch("cyt.tiers.store.is_default_user_cyt_db", return_value=True),
+        patch.object(
+            TierStore,
+            "purge_ephemeral_projects",
+            return_value=0,
+        ),
     ):
         TierStore.open(str(tier_skill_doc_guard_pack.user_tier_db_path)).close()
 

@@ -123,7 +123,7 @@ class ToolExamplesStore:
             rows = self._conn.execute(
                 "SELECT root_path FROM tool_example_project",
             ).fetchall()
-        project_roots = [str(row[0]) for row in rows if str(row[0]).strip()]
+        project_roots: list[str | Path] = [Path(str(row[0])) for row in rows if str(row[0]).strip()]
         return load_known_mcp_server_keys_for_projects(project_roots)
 
     def _table_has_column(self, table: str, column: str) -> bool:

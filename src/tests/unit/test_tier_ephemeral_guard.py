@@ -15,7 +15,6 @@ from cyt.tiers.models import EntityKind
 from cyt.tiers.store import TierStore
 from tests.support.tier_ephemeral_guard_fixtures import (
     EphemeralGuardFixturePack,
-    clear_tier_manager_cache,
     count_ephemeral_tier_rows,
     load_polluted_seed,
     load_scenarios,

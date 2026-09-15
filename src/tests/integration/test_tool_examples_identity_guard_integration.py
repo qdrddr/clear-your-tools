@@ -53,7 +53,9 @@ def _assert_post_tool_use_persists_valid_identity(
 ) -> None:
     pack = materialize_identity_pack(tmp_path / "guard")
     scenario = next(
-        item for item in load_session_catalog_scenarios() if item.id == "wire_equals_bare_legacy_session_log"
+        item
+        for item in load_session_catalog_scenarios()
+        if item.id == "wire_equals_bare_legacy_session_log"
     )
     log_path = tmp_path / "guard" / "session.jsonl"
     write_session_catalog_log(log_path, catalog_tool=scenario.catalog_tool)
@@ -104,7 +106,9 @@ def _assert_open_purges_invalid_identity_seed(tmp_path: Path) -> None:
         real_project_root=pack.workspace,
         seed=seed,
     )
-    assert count_invalid_identity_schemas(pack.user_examples_db_path) >= len(seed["invalid_schemas"])
+    assert count_invalid_identity_schemas(pack.user_examples_db_path) >= len(
+        seed["invalid_schemas"],
+    )
 
     with patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True):
         ToolExamplesStore.open(str(pack.user_examples_db_path)).close()

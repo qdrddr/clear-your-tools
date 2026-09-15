@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier, TierProject
 from cyt.tiers.store import _SCHEMA_VERSION, TierStore
@@ -50,9 +51,7 @@ def test_v2_store_migrates_attempts_column(tmp_path: Path) -> None:
 
 def test_open_purges_ephemeral_entity_rows_under_real_project(tmp_path: Path) -> None:
     db_path = tmp_path / "tier_state.db"
-    ephemeral_id = (
-        "/private/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/demo/SKILL.md"
-    )
+    ephemeral_id = "/private/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/demo/SKILL.md"
     store = TierStore(str(db_path))
     try:
         project_id = store.get_or_create_project(str(tmp_path))
@@ -66,19 +65,18 @@ def test_open_purges_ephemeral_entity_rows_under_real_project(tmp_path: Path) ->
     finally:
         store.close()
 
-    reopened = TierStore.open(str(db_path))
-    try:
-        project = TierProject(project_id=project_id, root_path=tmp_path.resolve())
-        assert reopened.load_entity_states(project) == {}
-    finally:
-        reopened.close()
+    with patch("cyt.tiers.store.is_default_user_cyt_db", return_value=True):
+        reopened = TierStore.open(str(db_path))
+        try:
+            project = TierProject(project_id=project_id, root_path=tmp_path.resolve())
+            assert reopened.load_entity_states(project) == {}
+        finally:
+            reopened.close()
 
 
 def test_upsert_entity_state_skips_ephemeral_entity_id(tmp_path: Path) -> None:
     db_path = tmp_path / "tier_state.db"
-    ephemeral_id = (
-        "/private/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/demo/SKILL.md"
-    )
+    ephemeral_id = "/private/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/demo/SKILL.md"
     store = TierStore.open(str(db_path))
     try:
         project_id = store.get_or_create_project(str(tmp_path))

@@ -21,7 +21,6 @@ from tests.support.tool_examples_identity_fixtures import (
     load_scenarios,
     load_session_catalog_scenarios,
     seed_polluted_identity_db,
-    tool_examples_identity_pack,
     write_session_catalog_log,
 )
 
@@ -115,7 +114,9 @@ def test_record_skips_invalid_identity(
         )
         is None
     )
-    assert count_invalid_identity_schemas(tool_examples_identity_pack.user_examples_db_path) == before
+    assert (
+        count_invalid_identity_schemas(tool_examples_identity_pack.user_examples_db_path) == before
+    )
 
 
 def test_upsert_capture_rejects_invalid_identity(store: ToolExamplesStore, tmp_path: Path) -> None:
@@ -148,7 +149,9 @@ def test_purge_invalid_identity_schemas_removes_polluted_seed(
     try:
         removed = store.purge_invalid_identity_schemas()
         assert removed >= len(seed["invalid_schemas"])
-        assert count_invalid_identity_schemas(tool_examples_identity_pack.user_examples_db_path) == 0
+        assert (
+            count_invalid_identity_schemas(tool_examples_identity_pack.user_examples_db_path) == 0
+        )
     finally:
         store.close()
 

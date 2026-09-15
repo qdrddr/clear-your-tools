@@ -244,8 +244,8 @@ async def hook_tool_examples_record(request: Request) -> Response:
             status_code=400,
         )
 
-    from cyt.tool_examples.identity import is_valid_tool_example_identity
     from cyt.tiers.config import resolve_project_root_path
+    from cyt.tool_examples.identity import is_valid_tool_example_identity
     from cyt_mcp.config import load_known_mcp_server_keys
     from cyt_mcp.tool_identity import canonical_backend_identity, wire_name_for
 
@@ -331,8 +331,8 @@ def _tier_feedback_tool_used(
         mcp_server = payload.get("mcp_server")
         bare_tool = payload.get("bare_tool_name")
         input_schema = payload.get("input_schema")
-        from cyt.tool_examples.identity import is_valid_tool_example_identity
         from cyt.tiers.config import resolve_project_root_path
+        from cyt.tool_examples.identity import is_valid_tool_example_identity
         from cyt_mcp.config import load_known_mcp_server_keys
         from cyt_mcp.tool_identity import canonical_backend_identity, wire_name_for
 
@@ -352,9 +352,9 @@ def _tier_feedback_tool_used(
                 server_keys,
             )
 
-        if (
-            isinstance(input_schema, dict)
-            and is_valid_tool_example_identity(resolved_server, resolved_tool)
+        if isinstance(input_schema, dict) and is_valid_tool_example_identity(
+            resolved_server,
+            resolved_tool,
         ):
             from cyt.tool_examples.record import record_tool_examples_capture
 

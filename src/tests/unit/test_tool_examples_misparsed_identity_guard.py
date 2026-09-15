@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 
 from cyt.tool_examples.store import ToolExamplesStore
-from cyt_mcp.tool_identity import canonical_backend_identity, is_canonical_schema_identity
 from cyt_client.tool_gate import extract_post_tool_example_capture
+from cyt_mcp.tool_identity import canonical_backend_identity, is_canonical_schema_identity
 from tests.support.tool_examples_misparsed_fixtures import (
     CaptureToolScenario,
     ToolExamplesMisparsedPack,
@@ -20,7 +20,6 @@ from tests.support.tool_examples_misparsed_fixtures import (
     load_polluted_seed,
     load_server_keys,
     seed_polluted_misparsed_db,
-    tool_examples_misparsed_pack,
     write_capture_session_log,
 )
 
@@ -165,9 +164,12 @@ def test_open_purges_misparsed_and_orphans_on_user_db(
         real_project_root=tool_examples_misparsed_pack.workspace,
         seed=seed,
     )
-    with patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True), patch(
-        "cyt_mcp.config.load_known_mcp_server_keys",
-        return_value=server_keys,
+    with (
+        patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True),
+        patch(
+            "cyt_mcp.config.load_known_mcp_server_keys",
+            return_value=server_keys,
+        ),
     ):
         ToolExamplesStore.open(str(tool_examples_misparsed_pack.user_examples_db_path)).close()
 

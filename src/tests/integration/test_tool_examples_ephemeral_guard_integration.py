@@ -11,10 +11,8 @@ import pytest
 from cyt.tools.inject_cli import run_inject_preview
 from tests.support.inject_preview_fixtures import (
     InjectPreviewFixturePack,
-    disk_catalog_inject_preview_pack,
 )
 from tests.support.tool_examples_ephemeral_fixtures import (
-    ToolExamplesGuardPack,
     ToolExamplesIntegrationScenario,
     count_ephemeral_tool_example_projects,
     load_integration_scenarios,

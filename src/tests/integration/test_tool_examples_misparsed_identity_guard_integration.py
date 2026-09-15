@@ -61,9 +61,12 @@ def _assert_open_purges_misparsed_seed(tmp_path: Path) -> None:
         seed["misparsed_schemas"],
     )
 
-    with patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True), patch(
-        "cyt_mcp.config.load_known_mcp_server_keys",
-        return_value=server_keys,
+    with (
+        patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True),
+        patch(
+            "cyt_mcp.config.load_known_mcp_server_keys",
+            return_value=server_keys,
+        ),
     ):
         ToolExamplesStore.open(str(pack.user_examples_db_path)).close()
 
@@ -81,9 +84,12 @@ def _assert_open_purges_orphan_examples(tmp_path: Path) -> None:
     )
     assert count_orphan_examples(pack.user_examples_db_path) >= 2
 
-    with patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True), patch(
-        "cyt_mcp.config.load_known_mcp_server_keys",
-        return_value=server_keys,
+    with (
+        patch("cyt.tool_examples.store.is_default_user_cyt_db", return_value=True),
+        patch(
+            "cyt_mcp.config.load_known_mcp_server_keys",
+            return_value=server_keys,
+        ),
     ):
         ToolExamplesStore.open(str(pack.user_examples_db_path)).close()
 

@@ -10,11 +10,10 @@ from cyt.hook.permissions_react import react_to_permissions_changed
 from cyt.skills.agent_interceptor import run_skill_read_intercept
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.search import MatchedSkill
-from cyt.tiers.manager import _managers, get_tier_manager
+from cyt.tiers.manager import TierManager, _managers, get_tier_manager
 from tests.support.tier_ephemeral_guard_fixtures import (
     EphemeralGuardFixturePack,
     IntegrationScenario,
-    clear_tier_manager_cache,
     count_ephemeral_tier_rows,
     load_integration_scenarios,
     load_polluted_seed,
@@ -128,7 +127,7 @@ def _assert_cached_manager_reconcile_cleans_user_db(
     _managers.clear()
     with patch("cyt.tiers.store.is_default_user_cyt_db", return_value=True):
         manager = get_tier_manager(pack.config, workspace=pack.real_repo_root)
-        assert not manager.is_noop
+        assert isinstance(manager, TierManager)
         manager._states[("skill", ephemeral_id)] = stale_ephemeral_skill_state(ephemeral_id)
         manager.flush_pending(force=True)
 

@@ -14,7 +14,9 @@ from cyt.config import load_config
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt_mcp.tool_identity import is_canonical_schema_identity
 
-FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tool_examples_misparsed_identity"
+FIXTURES_ROOT = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "tool_examples_misparsed_identity"
+)
 SCENARIOS_PATH = FIXTURES_ROOT / "scenarios.json"
 POLLUTED_SEED_PATH = FIXTURES_ROOT / "polluted_seed.json"
 

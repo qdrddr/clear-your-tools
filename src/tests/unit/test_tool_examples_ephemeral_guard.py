@@ -17,7 +17,6 @@ from tests.support.tool_examples_ephemeral_fixtures import (
     load_polluted_seed,
     load_scenarios,
     seed_polluted_tool_examples_db,
-    tool_examples_guard_pack,
 )
 
 _SCHEMA = {"type": "object", "properties": {"search_query": {"type": "string"}}}
@@ -104,8 +103,7 @@ def test_open_purges_polluted_seed_on_user_db(
         ToolExamplesStore.open(str(tool_examples_guard_pack.user_examples_db_path)).close()
 
     assert (
-        count_ephemeral_tool_example_projects(tool_examples_guard_pack.user_examples_db_path)
-        == 0
+        count_ephemeral_tool_example_projects(tool_examples_guard_pack.user_examples_db_path) == 0
     )
 
 
@@ -119,10 +117,9 @@ def test_open_does_not_purge_isolated_test_db(
         seed=seed,
     )
     ToolExamplesStore.open(str(tool_examples_guard_pack.user_examples_db_path)).close()
-    assert (
-        count_ephemeral_tool_example_projects(tool_examples_guard_pack.user_examples_db_path)
-        >= len(seed["ephemeral_projects"])
-    )
+    assert count_ephemeral_tool_example_projects(
+        tool_examples_guard_pack.user_examples_db_path,
+    ) >= len(seed["ephemeral_projects"])
 
 
 def test_enrich_skips_ephemeral_workspace_without_touching_user_db(
@@ -141,6 +138,5 @@ def test_enrich_skips_ephemeral_workspace_without_touching_user_db(
     )
     assert enriched == [tool]
     assert (
-        count_ephemeral_tool_example_projects(tool_examples_guard_pack.user_examples_db_path)
-        == 0
+        count_ephemeral_tool_example_projects(tool_examples_guard_pack.user_examples_db_path) == 0
     )
