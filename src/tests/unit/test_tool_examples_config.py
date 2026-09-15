@@ -37,6 +37,9 @@ def test_tool_examples_config_defaults() -> None:
     assert cfg.max_captures_per_tool == 50
     assert cfg.min_captures_per_tool == 5
     assert cfg.max_age_days == 90
+    assert cfg.min_per_schema_hash == 5
+    assert cfg.min_historical_per_path == 20
+    assert cfg.vacuum_after_maintenance is True
     assert len(cfg.redact_key_patterns) >= 1
     assert cfg.ranking.pipeline == "inherit"
     assert cfg.ranking.rrf_k == 60

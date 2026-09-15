@@ -152,6 +152,10 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             json_output=bool(args.json),
         )
 
+    from cyt.tiers.maintenance import maybe_run_tier_maintenance_on_stats_query
+
+    maybe_run_tier_maintenance_on_stats_query(config)
+
     manager = get_tier_manager(config, workspace=project_root)
     status = manager.status(config, agent=status_agent)
     status_payload = {

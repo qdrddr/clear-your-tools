@@ -1,0 +1,42 @@
+{
+  "enrichment_query": "search repository graph",
+  "tool": {
+    "name": "semble_search",
+    "server_key": "semble",
+    "tool_name": "search",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "Search query"},
+        "repo": {"type": "string", "description": "Repository id"}
+      }
+    }
+  },
+  "captures": [
+    {
+      "schema_variant": "v1_query_only",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Search query"}
+        }
+      },
+      "args": {"query": "graph traversal"},
+      "inject_example_key": "query",
+      "inject_example_value": "graph traversal"
+    },
+    {
+      "schema_variant": "v2_query_repo",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Search query"},
+          "repo": {"type": "string", "description": "Repository"}
+        }
+      },
+      "args": {"query": "symbol lookup", "repo": "owner/repo"},
+      "inject_example_key": "repo",
+      "inject_example_value": "owner/repo"
+    }
+  ]
+}

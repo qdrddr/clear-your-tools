@@ -67,6 +67,50 @@ def _examples_config(db_path: Path, workspace: Path) -> dict:
     )
 
 
+def test_maintenance_keeps_schema_hash_diversity_for_enrich(
+    project_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Retention must preserve distinct schema_hash captures needed for enrichment."""
+    from cyt.db.maintenance import run_cyt_db_maintenance
+    from tests.support.db_maintenance_fixtures import (
+        build_examples_retention_config,
+        count_unique_schema_hashes,
+        load_scenarios,
+        load_tool_examples_seed,
+        seed_schema_hash_diversity,
+    )
+
+    db = tmp_path / "tool_examples.db"
+    scenario = load_scenarios()["tool_examples"]["schema_hash_diversity"]
+    seed = load_tool_examples_seed()
+    config = build_examples_retention_config(project_root, db, scenario["retention"])
+
+    store = ToolExamplesStore.open(str(db))
+    try:
+        seed_schema_hash_diversity(store, project_root=project_root, scenario=scenario)
+    finally:
+        store.close()
+
+    run_cyt_db_maintenance(config, vacuum=False)
+    assert count_unique_schema_hashes(db) >= scenario["expected"]["min_unique_schema_hashes"]
+
+    for capture in seed["captures"]:
+        record_tool_examples_capture(
+            workspace=project_root,
+            mcp_server=str(scenario["mcp_server"]),
+            tool_name=str(scenario["tool_name"]),
+            input_schema=capture["schema"],
+            args=capture["args"],
+            config=config,
+        )
+
+    tool = dict(seed["tool"])
+    tool["input_schema"] = seed["captures"][0]["schema"]
+    enriched = enrich_tools_with_examples([tool], str(seed["enrichment_query"]), config)
+    assert enriched[0]["cyt_injection_examples"]
+
+
 def test_maintenance_then_enrich_still_serves_examples(project_root: Path, tmp_path: Path) -> None:
     """Retention maintenance must not delete all examples needed for injection."""
     from cyt.tool_examples.maintenance import run_tool_examples_maintenance

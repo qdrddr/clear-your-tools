@@ -408,26 +408,55 @@ class ToolExamplesStore:
                 )
             self._conn.commit()
 
-    def prune_stale_examples(self, *, cutoff_ms: int, min_per_path: int) -> None:
+    def prune_stale_examples(
+        self,
+        *,
+        cutoff_ms: int,
+        min_per_path: int,
+        min_historical_per_path: int = 0,
+    ) -> int:
+        """Delete stale example rows while preserving recent and historical floors."""
+        removed = 0
         with self._lock:
             paths = self._conn.execute(
                 "SELECT DISTINCT schema_id, json_path FROM tool_example",
             ).fetchall()
             for schema_id, json_path in paths:
-                count = self._conn.execute(
-                    "SELECT COUNT(*) FROM tool_example WHERE schema_id = ? AND json_path = ?",
+                rows = self._conn.execute(
+                    "SELECT id, timestamp_ms FROM tool_example "
+                    "WHERE schema_id = ? AND json_path = ? "
+                    "ORDER BY timestamp_ms DESC",
                     (schema_id, json_path),
-                ).fetchone()[0]
-                if int(count) <= min_per_path:
+                ).fetchall()
+                if len(rows) <= min_per_path:
                     continue
-                self._conn.execute(
-                    "DELETE FROM tool_example WHERE schema_id = ? AND json_path = ? AND timestamp_ms < ?",
-                    (schema_id, json_path, cutoff_ms),
-                )
+                stale = [row for row in rows if int(row[1]) < cutoff_ms]
+                if not stale:
+                    continue
+                keep_historical = min(min_historical_per_path, len(stale))
+                historical_ids = {
+                    int(row[0]) for row in stale[-keep_historical:]
+                } if keep_historical > 0 else set()
+                recent_ids = {int(row[0]) for row in rows if int(row[1]) >= cutoff_ms}
+                protected = recent_ids | historical_ids
+                max_deletable = max(0, len(rows) - min_per_path)
+                delete_ids: list[int] = []
+                for row in stale:
+                    row_id = int(row[0])
+                    if row_id in protected:
+                        continue
+                    if len(delete_ids) >= max_deletable:
+                        break
+                    delete_ids.append(row_id)
+                for row_id in delete_ids:
+                    self._conn.execute("DELETE FROM tool_example WHERE id = ?", (row_id,))
+                    removed += 1
             self._conn.commit()
+        return removed
 
-    def enforce_example_path_limit(self, *, max_per_path: int, min_per_path: int) -> None:
+    def enforce_example_path_limit(self, *, max_per_path: int, min_per_path: int) -> int:
         """Keep at most max_per_path distinct values per (schema_id, json_path)."""
+        removed = 0
         with self._lock:
             paths = self._conn.execute(
                 "SELECT DISTINCT schema_id, json_path FROM tool_example",
@@ -448,31 +477,152 @@ class ToolExamplesStore:
                 ).fetchall()
                 for (row_id,) in rows:
                     self._conn.execute("DELETE FROM tool_example WHERE id = ?", (row_id,))
+                    removed += 1
             self._conn.commit()
+        return removed
 
-    def enforce_capture_retention(self, *, max_captures: int, min_captures: int) -> None:
+    def count_stale_examples(
+        self,
+        *,
+        cutoff_ms: int,
+        min_per_path: int,
+        min_historical_per_path: int = 0,
+    ) -> int:
+        total = 0
+        with self._lock:
+            paths = self._conn.execute(
+                "SELECT DISTINCT schema_id, json_path FROM tool_example",
+            ).fetchall()
+            for schema_id, json_path in paths:
+                rows = self._conn.execute(
+                    "SELECT id, timestamp_ms FROM tool_example "
+                    "WHERE schema_id = ? AND json_path = ? "
+                    "ORDER BY timestamp_ms DESC",
+                    (schema_id, json_path),
+                ).fetchall()
+                if len(rows) <= min_per_path:
+                    continue
+                stale = [row for row in rows if int(row[1]) < cutoff_ms]
+                if not stale:
+                    continue
+                keep_historical = min(min_historical_per_path, len(stale))
+                historical_ids = {
+                    int(row[0]) for row in stale[-keep_historical:]
+                } if keep_historical > 0 else set()
+                recent_ids = {int(row[0]) for row in rows if int(row[1]) >= cutoff_ms}
+                protected = recent_ids | historical_ids
+                max_deletable = max(0, len(rows) - min_per_path)
+                delete_count = 0
+                for row in stale:
+                    if int(row[0]) in protected:
+                        continue
+                    if delete_count >= max_deletable:
+                        break
+                    delete_count += 1
+                total += delete_count
+        return total
+
+    def count_capture_retention_removable(
+        self,
+        *,
+        max_captures: int,
+        min_captures: int,
+        min_per_schema_hash: int = 1,
+    ) -> int:
+        total = 0
         with self._lock:
             groups = self._conn.execute(
                 "SELECT project_id, mcp_server, tool_name, COUNT(*) "
                 "FROM tool_input_schema GROUP BY project_id, mcp_server, tool_name",
             ).fetchall()
             for project_id, mcp_server, tool_name, count in groups:
-                total = int(count)
-                if total <= max_captures:
-                    continue
-                to_delete = total - max(max_captures, min_captures)
                 rows = self._conn.execute(
-                    "SELECT schema_id FROM tool_input_schema "
+                    "SELECT schema_id, schema_hash, last_seen_ms FROM tool_input_schema "
                     "WHERE project_id = ? AND mcp_server = ? AND tool_name = ? "
-                    "ORDER BY last_seen_ms ASC LIMIT ?",
-                    (project_id, mcp_server, tool_name, to_delete),
+                    "ORDER BY last_seen_ms DESC",
+                    (project_id, mcp_server, tool_name),
                 ).fetchall()
-                for (schema_id,) in rows:
+                protected: set[int] = set()
+                by_hash: dict[str, list[tuple[int, int]]] = {}
+                for schema_id, schema_hash, last_seen_ms in rows:
+                    by_hash.setdefault(str(schema_hash), []).append(
+                        (int(schema_id), int(last_seen_ms)),
+                    )
+                for hash_rows in by_hash.values():
+                    hash_rows.sort(key=lambda item: item[1], reverse=True)
+                    for schema_id, _last_seen in hash_rows[: max(min_per_schema_hash, 1)]:
+                        protected.add(schema_id)
+                target = max(max_captures, min_captures)
+                total_count = int(count)
+                if total_count <= target:
+                    continue
+                evict_candidates = sorted(
+                    (
+                        (int(last_seen_ms), int(schema_id))
+                        for schema_id, _schema_hash, last_seen_ms in rows
+                        if int(schema_id) not in protected
+                    ),
+                    key=lambda item: item[0],
+                )
+                total += min(len(evict_candidates), total_count - target)
+        return total
+
+    def enforce_capture_retention(
+        self,
+        *,
+        max_captures: int,
+        min_captures: int,
+        min_per_schema_hash: int = 1,
+    ) -> int:
+        """Cap captures per tool while preserving schema_hash diversity."""
+        removed = 0
+        with self._lock:
+            groups = self._conn.execute(
+                "SELECT project_id, mcp_server, tool_name, COUNT(*) "
+                "FROM tool_input_schema GROUP BY project_id, mcp_server, tool_name",
+            ).fetchall()
+            for project_id, mcp_server, tool_name, count in groups:
+                rows = self._conn.execute(
+                    "SELECT schema_id, schema_hash, last_seen_ms FROM tool_input_schema "
+                    "WHERE project_id = ? AND mcp_server = ? AND tool_name = ? "
+                    "ORDER BY last_seen_ms DESC",
+                    (project_id, mcp_server, tool_name),
+                ).fetchall()
+                protected: set[int] = set()
+                by_hash: dict[str, list[tuple[int, int]]] = {}
+                for schema_id, schema_hash, last_seen_ms in rows:
+                    by_hash.setdefault(str(schema_hash), []).append(
+                        (int(schema_id), int(last_seen_ms)),
+                    )
+                for hash_rows in by_hash.values():
+                    hash_rows.sort(key=lambda item: item[1], reverse=True)
+                    for schema_id, _last_seen in hash_rows[: max(min_per_schema_hash, 1)]:
+                        protected.add(schema_id)
+
+                total = int(count)
+                target = max(max_captures, min_captures)
+                if total <= target:
+                    continue
+                evict_candidates = [
+                    (int(schema_id), int(last_seen_ms))
+                    for schema_id, _schema_hash, last_seen_ms in rows
+                    if int(schema_id) not in protected
+                ]
+                evict_candidates.sort(key=lambda item: item[1])
+                to_delete = total - target
+                for schema_id, _last_seen in evict_candidates[:to_delete]:
                     self._conn.execute(
                         "DELETE FROM tool_input_schema WHERE schema_id = ?",
                         (schema_id,),
                     )
+                    removed += 1
             self._conn.commit()
+        return removed
+
+    def vacuum(self) -> None:
+        """Rebuild the database file and reclaim space freed by deletes."""
+        with self._lock:
+            self._conn.execute("VACUUM")
 
     def cleanup_orphan_example_paths(self) -> None:
         from cyt.tool_examples.maintenance import valid_paths_for_capture

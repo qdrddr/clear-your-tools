@@ -84,11 +84,11 @@ def _scheduler_loop(*, config: dict[str, Any]) -> None:
             _last_flush_start == 0.0 or now - _last_flush_start >= interval
         ):
             _last_flush_start = now
-            _start_flush_job()
+            _start_flush_job(config)
         _stop_event.wait(timeout=0.1)
 
 
-def _start_flush_job() -> None:
+def _start_flush_job(config: dict[str, Any]) -> None:
     global _flush_in_progress
 
     _flush_in_progress = True
@@ -99,6 +99,9 @@ def _start_flush_job() -> None:
             from cyt.tiers.manager import flush_all_tier_managers
 
             flush_all_tier_managers(force=False)
+            from cyt.tiers.maintenance import schedule_tier_state_maintenance_if_due
+
+            schedule_tier_state_maintenance_if_due(config)
         except Exception as exc:
             logger.warning("tier statistics disk flush failed: %s", exc)
         finally:

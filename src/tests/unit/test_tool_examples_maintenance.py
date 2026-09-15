@@ -12,6 +12,7 @@ from cyt.tool_examples.maintenance import (
     valid_paths_for_capture,
 )
 from cyt.tool_examples.store import ToolExamplesStore
+from tests.support.db_maintenance_fixtures import load_scenarios, seed_schema_hash_diversity
 
 
 def test_valid_paths_for_capture_merges_schema_and_args() -> None:
@@ -49,6 +50,7 @@ def test_run_tool_examples_maintenance_prunes_old_examples(tmp_path: Path) -> No
                     "retention": {
                         "max_per_path": 20,
                         "min_per_path": 1,
+                        "min_historical_per_path": 0,
                         "max_captures_per_tool": 50,
                         "min_captures_per_tool": 1,
                         "max_age_days": 1,
@@ -77,12 +79,13 @@ def test_run_tool_examples_maintenance_prunes_old_examples(tmp_path: Path) -> No
     finally:
         store.close()
 
-    run_tool_examples_maintenance(config)
+    result = run_tool_examples_maintenance(config)
 
     store = ToolExamplesStore.open(str(db))
     try:
         rows = store.list_examples_for_path([schema_id], "inputSchema.properties.query", limit=20)
-        assert len(rows) <= 1
+        assert len(rows) == 1
+        assert result.deleted.get("tool_example_stale", 0) >= 3
     finally:
         store.close()
 
@@ -90,6 +93,67 @@ def test_run_tool_examples_maintenance_prunes_old_examples(tmp_path: Path) -> No
 def test_schedule_tool_examples_maintenance_noop_when_disabled(tmp_path: Path) -> None:
     config = {"tools": {"examples": {"enabled": False}}}
     schedule_tool_examples_maintenance(config)
+
+
+def test_prune_stale_examples_keeps_min_per_path_and_historical(tmp_path: Path) -> None:
+    db = tmp_path / "tool_examples.db"
+    store = ToolExamplesStore(str(db))
+    try:
+        project_id = store.get_or_create_project(str(tmp_path / "repo"))
+        schema = {"type": "object", "properties": {"query": {"type": "string"}}}
+        schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"query": "seed"})
+        now_ms = int(time.time() * 1000)
+        stale_ms = now_ms - 10 * 86400 * 1000
+        with store._lock:
+            for idx in range(5):
+                store._conn.execute(
+                    "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        schema_id,
+                        "inputSchema.properties.query",
+                        f'"v{idx}"',
+                        "string",
+                        stale_ms + idx,
+                    ),
+                )
+            store._conn.commit()
+
+        removed = store.prune_stale_examples(
+            cutoff_ms=now_ms - 86400 * 1000,
+            min_per_path=3,
+            min_historical_per_path=1,
+        )
+        rows = store.list_examples_for_path([schema_id], "inputSchema.properties.query", limit=10)
+        assert len(rows) == 3
+        assert removed == 3
+    finally:
+        store.close()
+
+
+def test_enforce_capture_retention_preserves_schema_hash_floor(tmp_path: Path) -> None:
+    scenario = load_scenarios()["tool_examples"]["schema_hash_diversity"]
+    db = tmp_path / "tool_examples.db"
+    root = tmp_path / "repo"
+    root.mkdir()
+    store = ToolExamplesStore(str(db))
+    try:
+        seed_schema_hash_diversity(store, project_root=root, scenario=scenario)
+        retention = scenario["retention"]
+        removed = store.enforce_capture_retention(
+            max_captures=int(retention["max_captures_per_tool"]),
+            min_captures=int(retention["min_captures_per_tool"]),
+            min_per_schema_hash=int(retention["min_per_schema_hash"]),
+        )
+        remaining = store._conn.execute(
+            "SELECT schema_hash, COUNT(*) FROM tool_input_schema GROUP BY schema_hash",
+        ).fetchall()
+        assert removed >= 5
+        assert len(remaining) >= scenario["expected"]["min_unique_schema_hashes"]
+        for _hash, count in remaining:
+            assert int(count) >= retention["min_per_schema_hash"]
+    finally:
+        store.close()
 
 
 def test_run_maintenance_enforces_path_limit(tmp_path: Path) -> None:

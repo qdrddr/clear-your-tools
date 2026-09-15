@@ -37,6 +37,14 @@ def _inject_argv(argv: list[str]) -> list[str] | None:
     return argv[1:]
 
 
+def _db_argv(argv: list[str]) -> list[str] | None:
+    if not argv:
+        return None
+    if argv[0] != "db":
+        return None
+    return argv[1:]
+
+
 def main(argv: list[str] | None = None) -> None:
     """Route *argv* (default ``sys.argv[1:]``) to the appropriate CYT CLI handler."""
     cli_argv = sys.argv[1:] if argv is None else argv
@@ -53,6 +61,12 @@ def main(argv: list[str] | None = None) -> None:
         from cyt.tiers.cli import main as tiers_main
 
         sys.exit(tiers_main(tiers_argv))
+
+    db_argv = _db_argv(cli_argv)
+    if db_argv is not None:
+        from cyt.db.cli import main as db_main
+
+        sys.exit(db_main(db_argv))
 
     inject_argv = _inject_argv(cli_argv)
     if inject_argv is not None:

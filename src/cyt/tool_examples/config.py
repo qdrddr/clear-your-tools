@@ -36,6 +36,9 @@ class ToolExamplesConfig:
     max_captures_per_tool: int
     min_captures_per_tool: int
     max_age_days: int
+    min_per_schema_hash: int
+    min_historical_per_path: int
+    vacuum_after_maintenance: bool
     redact_key_patterns: tuple[re.Pattern[str], ...]
     ranking: ExampleRankingConfig
 
@@ -134,6 +137,9 @@ def tool_examples_config(cfg: dict[str, Any]) -> ToolExamplesConfig:
         max_captures_per_tool=_int(retention_dict.get("max_captures_per_tool"), 50),
         min_captures_per_tool=_int(retention_dict.get("min_captures_per_tool"), 5),
         max_age_days=_int(retention_dict.get("max_age_days"), 90),
+        min_per_schema_hash=_int(retention_dict.get("min_per_schema_hash"), 5),
+        min_historical_per_path=_int(retention_dict.get("min_historical_per_path"), 20),
+        vacuum_after_maintenance=_bool(retention_dict.get("vacuum_after_maintenance"), True),
         redact_key_patterns=_compile_redact_patterns(block.get("redact_key_patterns")),
         ranking=_ranking_config(inject_dict),
     )

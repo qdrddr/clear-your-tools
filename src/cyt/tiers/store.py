@@ -706,6 +706,271 @@ class TierStore:
             self._conn.commit()
         return removed
 
+    _STAT_COUNTER_COLUMNS = (
+        "candidates",
+        "injected",
+        "used",
+        "attempts",
+        "used_without_injection",
+        "optional_used",
+        "shadow_hits",
+        "shadow_evaluations",
+        "epoch_used",
+        "epoch_attempts",
+    )
+
+    def apply_stat_decay(self, *, request_half_life: float) -> int:
+        """Apply request-based decay to persisted entity_stats (same math as runtime)."""
+        from cyt.tiers.scores import decay_factor
+
+        updated = 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT project_id, kind, entity_id, pipeline, candidates, injected, used, "
+                "attempts, used_without_injection, optional_used, shadow_hits, "
+                "shadow_evaluations, requests_since_decay, epoch_used, epoch_attempts "
+                "FROM entity_stats WHERE requests_since_decay > 0",
+            ).fetchall()
+            for row in rows:
+                requests_since = int(row[12])
+                factor = decay_factor(
+                    requests_since=requests_since,
+                    half_life=request_half_life,
+                )
+                if factor >= 1.0:
+                    continue
+                values = [float(row[idx]) * factor for idx in range(4, 12)]
+                values.extend([float(row[13]) * factor, float(row[14]) * factor])
+                self._conn.execute(
+                    "UPDATE entity_stats SET "
+                    "candidates=?, injected=?, used=?, attempts=?, "
+                    "used_without_injection=?, optional_used=?, shadow_hits=?, "
+                    "shadow_evaluations=?, requests_since_decay=0, "
+                    "epoch_used=?, epoch_attempts=? "
+                    "WHERE project_id=? AND kind=? AND entity_id=? AND pipeline=?",
+                    (
+                        *values,
+                        int(row[0]),
+                        str(row[1]),
+                        str(row[2]),
+                        str(row[3]),
+                    ),
+                )
+                updated += 1
+            self._conn.commit()
+        return updated
+
+    @staticmethod
+    def _counters_below_floor(values: tuple[float, ...], *, counter_floor: float) -> bool:
+        for value in values:
+            if float(value) >= counter_floor:
+                return False
+        return True
+
+    def prune_dormant_entities(
+        self,
+        *,
+        idle_cutoff_ms: int,
+        counter_floor: float,
+        max_effective_tier: int = int(Tier.COLD),
+    ) -> int:
+        """Delete cold entities idle beyond cutoff with negligible counters."""
+        removed = 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.project_id, s.kind, s.entity_id, s.pipeline, "
+                "s.candidates, s.injected, s.used, s.attempts, "
+                "s.used_without_injection, s.optional_used, s.shadow_hits, "
+                "s.shadow_evaluations, s.last_seen_ms, s.epoch_used, s.epoch_attempts, "
+                "t.effective_tier "
+                "FROM entity_stats s "
+                "LEFT JOIN entity_tier t "
+                "ON s.project_id = t.project_id AND s.kind = t.kind AND s.entity_id = t.entity_id",
+            ).fetchall()
+            for row in rows:
+                last_seen_ms = int(row[12])
+                effective_tier = int(row[15]) if row[15] is not None else int(Tier.ACTIVE)
+                if last_seen_ms >= idle_cutoff_ms:
+                    continue
+                if effective_tier > max_effective_tier:
+                    continue
+                counters = (
+                    float(row[4]),
+                    float(row[5]),
+                    float(row[6]),
+                    float(row[7]),
+                    float(row[8]),
+                    float(row[9]),
+                    float(row[10]),
+                    float(row[11]),
+                    float(row[13]),
+                    float(row[14]),
+                )
+                if not self._counters_below_floor(counters, counter_floor=counter_floor):
+                    continue
+                pid = int(row[0])
+                kind = str(row[1])
+                entity_id = str(row[2])
+                self._conn.execute(
+                    "DELETE FROM entity_tier WHERE project_id=? AND kind=? AND entity_id=?",
+                    (pid, kind, entity_id),
+                )
+                self._conn.execute(
+                    "DELETE FROM entity_stats WHERE project_id=? AND kind=? AND entity_id=?",
+                    (pid, kind, entity_id),
+                )
+                removed += 1
+            self._conn.commit()
+        return removed
+
+    def purge_stale_catalog_tool_entities(
+        self,
+        *,
+        allowed_sources: frozenset[str],
+        catalog_entity_ids: frozenset[str] | None = None,
+    ) -> int:
+        """Delete tool rows outside allowed catalog sources or the tracked hook catalog."""
+        from cyt.tiers.adapters.tools import entity_id_catalog_source
+        from cyt.tiers.models import EntityKind
+
+        removed = 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT project_id, entity_id FROM entity_stats WHERE kind = ?",
+                (EntityKind.TOOL,),
+            ).fetchall()
+            for project_id, entity_id in rows:
+                eid = str(entity_id)
+                source = entity_id_catalog_source(eid)
+                if source not in allowed_sources:
+                    stale = True
+                elif catalog_entity_ids is not None and eid not in catalog_entity_ids:
+                    stale = True
+                else:
+                    stale = False
+                if not stale:
+                    continue
+                pid = int(project_id)
+                self._conn.execute(
+                    "DELETE FROM entity_tier WHERE project_id=? AND kind=? AND entity_id=?",
+                    (pid, EntityKind.TOOL, eid),
+                )
+                self._conn.execute(
+                    "DELETE FROM entity_stats WHERE project_id=? AND kind=? AND entity_id=?",
+                    (pid, EntityKind.TOOL, eid),
+                )
+                removed += 1
+            self._conn.commit()
+        return removed
+
+    def prune_epoch_log(
+        self,
+        *,
+        max_age_ms: int,
+        max_entries: int,
+    ) -> int:
+        """Delete epoch_log rows older than max age and beyond per-project entry cap."""
+        removed = 0
+        with self._lock:
+            if max_age_ms > 0:
+                cur = self._conn.execute(
+                    "DELETE FROM epoch_log WHERE ts_ms < ?",
+                    (max_age_ms,),
+                )
+                removed += int(cur.rowcount)
+
+            project_rows = self._conn.execute(
+                "SELECT DISTINCT project_id FROM epoch_log",
+            ).fetchall()
+            for (project_id,) in project_rows:
+                pid = int(project_id)
+                count = self._conn.execute(
+                    "SELECT COUNT(*) FROM epoch_log WHERE project_id = ?",
+                    (pid,),
+                ).fetchone()[0]
+                excess = int(count) - max(max_entries, 0)
+                if excess <= 0:
+                    continue
+                old_rows = self._conn.execute(
+                    "SELECT id FROM epoch_log WHERE project_id = ? "
+                    "ORDER BY ts_ms ASC LIMIT ?",
+                    (pid, excess),
+                ).fetchall()
+                for (row_id,) in old_rows:
+                    self._conn.execute("DELETE FROM epoch_log WHERE id = ?", (int(row_id),))
+                    removed += 1
+            self._conn.commit()
+        return removed
+
+    def vacuum(self) -> None:
+        """Rebuild the database file and reclaim space freed by deletes."""
+        with self._lock:
+            self._conn.execute("VACUUM")
+
+    def count_stats_needing_decay(self) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM entity_stats WHERE requests_since_decay > 0",
+            ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def count_dormant_entities(
+        self,
+        *,
+        idle_cutoff_ms: int,
+        counter_floor: float,
+        max_effective_tier: int = int(Tier.COLD),
+    ) -> int:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.candidates, s.injected, s.used, s.attempts, "
+                "s.used_without_injection, s.optional_used, s.shadow_hits, "
+                "s.shadow_evaluations, s.last_seen_ms, s.epoch_used, s.epoch_attempts, "
+                "t.effective_tier "
+                "FROM entity_stats s "
+                "LEFT JOIN entity_tier t "
+                "ON s.project_id = t.project_id AND s.kind = t.kind AND s.entity_id = t.entity_id",
+            ).fetchall()
+        count = 0
+        for row in rows:
+            last_seen_ms = int(row[8])
+            effective_tier = int(row[11]) if row[11] is not None else int(Tier.ACTIVE)
+            if last_seen_ms >= idle_cutoff_ms:
+                continue
+            if effective_tier > max_effective_tier:
+                continue
+            counters = (
+                float(row[0]),
+                float(row[1]),
+                float(row[2]),
+                float(row[3]),
+                float(row[4]),
+                float(row[5]),
+                float(row[6]),
+                float(row[7]),
+                float(row[9]),
+                float(row[10]),
+            )
+            if self._counters_below_floor(counters, counter_floor=counter_floor):
+                count += 1
+        return count
+
+    def count_epoch_log_prunable(self, *, max_age_ms: int, max_entries: int) -> int:
+        with self._lock:
+            age_count = self._conn.execute(
+                "SELECT COUNT(*) FROM epoch_log WHERE ts_ms < ?",
+                (max_age_ms,),
+            ).fetchone()[0]
+            excess = 0
+            project_rows = self._conn.execute(
+                "SELECT project_id, COUNT(*) FROM epoch_log GROUP BY project_id",
+            ).fetchall()
+            for _project_id, count in project_rows:
+                over = int(count) - max(max_entries, 0)
+                if over > 0:
+                    excess += over
+        return int(age_count) + excess
+
     def status_summary(self, project: TierProject) -> dict[str, Any]:
         with self._lock:
             rows = self._conn.execute(

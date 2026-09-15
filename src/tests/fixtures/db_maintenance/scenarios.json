@@ -1,0 +1,179 @@
+{
+  "tool_examples": {
+    "schema_hash_diversity": {
+      "description": "Maintenance must keep at least one capture per unique schema_hash while enforcing per-tool caps.",
+      "mcp_server": "semble",
+      "tool_name": "search",
+      "schema_variants": [
+        {
+          "id": "v1_query_only",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "query": {"type": "string", "description": "Search query"}
+            }
+          },
+          "capture_count": 4
+        },
+        {
+          "id": "v2_query_repo",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "query": {"type": "string", "description": "Search query"},
+              "repo": {"type": "string", "description": "Repository"}
+            }
+          },
+          "capture_count": 4
+        }
+      ],
+      "retention": {
+        "max_captures_per_tool": 3,
+        "min_captures_per_tool": 1,
+        "min_per_schema_hash": 1,
+        "max_per_path": 20,
+        "min_per_path": 1,
+        "min_historical_per_path": 0,
+        "max_age_days": 365,
+        "vacuum_after_maintenance": false
+      },
+      "expected": {
+        "min_unique_schema_hashes": 2,
+        "max_total_captures": 3
+      }
+    },
+    "historical_floor": {
+      "description": "Age pruning must keep min_per_path rows and min_historical_per_path stale samples.",
+      "mcp_server": "ctx",
+      "tool_name": "search",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      },
+      "stale_example_count": 6,
+      "retention": {
+        "max_per_path": 20,
+        "min_per_path": 3,
+        "min_historical_per_path": 1,
+        "max_captures_per_tool": 50,
+        "min_captures_per_tool": 1,
+        "max_age_days": 1,
+        "vacuum_after_maintenance": false
+      },
+      "expected": {
+        "remaining_examples": 3,
+        "min_removed": 3
+      }
+    }
+  },
+  "tier_state": {
+    "decay_and_prune": {
+      "description": "Offline decay shrinks counters; dormant cold entities are removed.",
+      "entities": [
+        {
+          "entity_id": "cyt_mcp:decay_target",
+          "kind": "tool",
+          "effective_tier": "ACTIVE",
+          "candidates": 100.0,
+          "requests_since_decay": 150
+        },
+        {
+          "entity_id": "cyt_mcp:dormant_old",
+          "kind": "tool",
+          "effective_tier": "COLD",
+          "candidates": 0.005,
+          "last_seen_days_ago": 200
+        },
+        {
+          "entity_id": "cyt_mcp:hot_idle",
+          "kind": "tool",
+          "effective_tier": "HOT",
+          "candidates": 0.005,
+          "last_seen_days_ago": 200
+        }
+      ],
+      "retention": {
+        "enabled": true,
+        "apply_decay_on_maintenance": true,
+        "request_half_life": 100,
+        "entity_max_idle_days": 180,
+        "entity_counter_floor": 0.01,
+        "epoch_log_max_entries": 200,
+        "epoch_log_max_age_days": 90,
+        "vacuum_after_maintenance": false
+      },
+      "expected": {
+        "decayed_entity_id": "cyt_mcp:decay_target",
+        "removed_entity_ids": ["cyt_mcp:dormant_old"],
+        "kept_entity_ids": ["cyt_mcp:decay_target", "cyt_mcp:hot_idle"]
+      }
+    },
+    "epoch_log_cap": {
+      "description": "epoch_log rows older than max age or beyond per-project cap are deleted.",
+      "epoch_log_count": 8,
+      "retention": {
+        "enabled": true,
+        "epoch_log_max_entries": 3,
+        "epoch_log_max_age_days": 2,
+        "vacuum_after_maintenance": false
+      },
+      "expected": {
+        "max_remaining": 3
+      }
+    },
+    "stale_catalog_source": {
+      "description": "Tool entities from disallowed catalog sources are purged.",
+      "entities": [
+        {
+          "entity_id": "unknown:orphan_tool",
+          "kind": "tool",
+          "effective_tier": "ACTIVE",
+          "candidates": 5.0
+        },
+        {
+          "entity_id": "cyt_mcp:tracked_tool",
+          "kind": "tool",
+          "effective_tier": "ACTIVE",
+          "candidates": 5.0
+        }
+      ],
+      "expected": {
+        "removed_entity_ids": ["unknown:orphan_tool"],
+        "kept_entity_ids": ["cyt_mcp:tracked_tool"]
+      }
+    },
+    "stale_catalog_entity_id": {
+      "description": "Tracked-source tools absent from the loaded hook catalog are purged.",
+      "entities": [
+        {
+          "entity_id": "cyt_mcp:removed_from_catalog",
+          "kind": "tool",
+          "effective_tier": "ACTIVE",
+          "candidates": 3.0
+        },
+        {
+          "entity_id": "cyt_mcp:still_tracked",
+          "kind": "tool",
+          "effective_tier": "ACTIVE",
+          "candidates": 3.0
+        }
+      ],
+      "catalog_entity_ids": ["cyt_mcp:still_tracked"],
+      "expected": {
+        "removed_entity_ids": ["cyt_mcp:removed_from_catalog"],
+        "kept_entity_ids": ["cyt_mcp:still_tracked"]
+      }
+    }
+  },
+  "unified": {
+    "both_databases": {
+      "description": "Unified cyt db maintenance runs tool_examples and tier_state retention together.",
+      "expected_sections": ["tool_examples", "tier_state"]
+    }
+  }
+}

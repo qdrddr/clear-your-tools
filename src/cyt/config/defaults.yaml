@@ -457,10 +457,13 @@ tools:
         diversity_threshold: 0.6
     retention:
       max_per_path: 20
-      min_per_path: 3
+      min_per_path: 5
       max_captures_per_tool: 50
       min_captures_per_tool: 5
       max_age_days: 90
+      min_per_schema_hash: 5
+      min_historical_per_path: 20
+      vacuum_after_maintenance: true
     redact_key_patterns:
       - "(?i)(password|secret|token|api[_-]?key|authorization)"
   tiers:
@@ -471,6 +474,15 @@ tools:
     database:
       path: ~/.config/cyt/tier_state.db
       disk_flush_seconds: 900
+    retention:
+      enabled: true
+      maintenance_interval_seconds: 3600
+      apply_decay_on_maintenance: true
+      entity_max_idle_days: 180
+      entity_counter_floor: 0.01
+      epoch_log_max_entries: 200
+      epoch_log_max_age_days: 90
+      vacuum_after_maintenance: true
     statistics:
       request_half_life: 100
     cache_epoch:
