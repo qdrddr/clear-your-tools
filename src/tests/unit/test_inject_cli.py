@@ -109,6 +109,7 @@ def test_print_preview_token_summary_writes_to_stderr(
             "tokens_out": 20,
             "tokens_saved": 80,
             "savings_percent": 80.0,
+            "tool_count_in": 50,
             "frontend_tool_count": 2,
             "frontend_tokens": 10,
             "net_tokens_out": 30,
@@ -117,9 +118,10 @@ def test_print_preview_token_summary_writes_to_stderr(
         },
     )
     err = capsys.readouterr().err
-    assert "Tools before cleaning (tokens):" in err
-    assert "Tools after cleaning agent-tools (tokens):" in err
-    assert "frontend stubs (compact JSON):" in err
+    assert "Tools before cleaning (compact JSON):" in err
+    assert "tools=" in err
+    assert "Tools after cleaning agent-tools (compact JSON):" in err
+    assert "Frontend stubs (compact JSON):" in err
     assert "Saved (tokens):" in err
     assert "= 100-20+10" in err
 
@@ -154,9 +156,10 @@ def test_run_inject_preview_defers_token_logging_to_stderr(
     assert code == 0
     assert logged == []
     assert captured.out.startswith("\n<agent-tools")
-    assert "Tools before cleaning (tokens):" in captured.err
-    assert "Tools after cleaning agent-tools (tokens):" in captured.err
-    assert "frontend stubs (compact JSON):" in captured.err
+    assert "Tools before cleaning (compact JSON):" in captured.err
+    assert "tools=" in captured.err
+    assert "Tools after cleaning agent-tools (compact JSON):" in captured.err
+    assert "Frontend stubs (compact JSON):" in captured.err
     assert "Saved (tokens):" in captured.err
     assert captured.out.find("<agent-tools") < len(captured.out)
 

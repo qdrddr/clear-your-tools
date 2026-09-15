@@ -27,11 +27,24 @@ def format_tool_token_arrow_line(
     )
 
 
-def format_agent_tools_token_lines(tokens_in: int, tokens_out: int | None = None) -> list[str]:
+def format_agent_tools_token_lines(
+    tokens_in: int,
+    tokens_out: int | None = None,
+    *,
+    tool_count: int | None = None,
+) -> list[str]:
     """Format token counts for the full ``<agent-tools>`` rulefile / additionalContext block."""
-    lines = [f"\nTools before cleaning (tokens): {tokens_in}"]
+    if tool_count is not None:
+        before = (
+            f"\nTools before cleaning (compact JSON): tools={tool_count}, tokens={tokens_in}"
+        )
+    else:
+        before = f"\nTools before cleaning (tokens): {tokens_in}"
+    lines = [before]
     if tokens_out is not None:
-        lines.append(f"Tools after cleaning agent-tools (tokens): {tokens_out}")
+        lines.append(
+            f"Tools after cleaning agent-tools (compact JSON): tokens={tokens_out}"
+        )
     return lines
 
 
@@ -40,7 +53,7 @@ def format_catalog_token_line(label: str, tool_count: int, tokens: int) -> str:
 
 
 def format_frontend_stub_line(tool_count: int, tokens: int) -> str:
-    return f"frontend stubs (compact JSON): tools={tool_count}, tokens={tokens}"
+    return f"Frontend stubs (compact JSON): tools={tool_count}, tokens={tokens}"
 
 
 def format_saved_tokens_line(
@@ -64,6 +77,7 @@ def build_preview_token_stats(
     *,
     tokens_in: int,
     tokens_out: int,
+    tool_count_in: int | None = None,
     frontend_tool_count: int | None = None,
     frontend_tokens: int | None = None,
 ) -> dict[str, int | float]:
@@ -74,6 +88,8 @@ def build_preview_token_stats(
         "tokens_saved": saved,
         "savings_percent": savings_percent(tokens_in, saved),
     }
+    if tool_count_in is not None:
+        stats["tool_count_in"] = tool_count_in
     if frontend_tool_count is not None and frontend_tokens is not None:
         net_output = tokens_out + frontend_tokens
         net_saved = tokens_in - net_output
@@ -86,9 +102,11 @@ def build_preview_token_stats(
 
 
 def format_preview_token_summary_lines(stats: dict[str, int | float]) -> list[str]:
+    tool_count_in = stats.get("tool_count_in")
     lines = format_agent_tools_token_lines(
         int(stats["tokens_in"]),
         int(stats["tokens_out"]),
+        tool_count=int(tool_count_in) if tool_count_in is not None else None,
     )
     if "frontend_tokens" in stats:
         lines.append(

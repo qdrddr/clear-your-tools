@@ -179,6 +179,8 @@ def _preview_token_stats(
     if tokens_in == 0 and tokens_out == 0:
         return {}
 
+    tool_count_in = sum(len(tools) for tools in full_by_source.values())
+
     frontend_tool_count: int | None = None
     frontend_tokens: int | None = None
     cyt_mcp_tools = grouped.get("cyt_mcp") or []
@@ -195,6 +197,7 @@ def _preview_token_stats(
     return build_preview_token_stats(
         tokens_in=tokens_in,
         tokens_out=tokens_out,
+        tool_count_in=tool_count_in,
         frontend_tool_count=frontend_tool_count,
         frontend_tokens=frontend_tokens,
     )
