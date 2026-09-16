@@ -77,7 +77,8 @@ def resolve_tracked_catalog_entity_ids(
     from cyt.tools.master_catalog import get_master_tool_catalog
 
     catalog = get_master_tool_catalog(config, blocking=blocking)
-    if catalog is None:
+    # Empty list means SWR miss / rebuild in flight — not "zero tracked tools".
+    if catalog is None or not catalog:
         return None
     ids = {
         entity_id

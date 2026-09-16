@@ -307,7 +307,7 @@ class TierManager:
 
         scoped = self._workspace_scoped_config(config)
         allowed = configured_tool_catalog_sources(scoped)
-        catalog_entity_ids = resolve_tracked_catalog_entity_ids(scoped)
+        catalog_entity_ids = resolve_tracked_catalog_entity_ids(scoped, blocking=True)
         scope_key = (allowed, catalog_entity_ids)
         if self._purged_tool_scope == scope_key:
             return
