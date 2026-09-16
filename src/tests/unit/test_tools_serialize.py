@@ -55,6 +55,18 @@ def test_format_examples_block_uses_single_quotes() -> None:
     )
 
 
+def test_format_examples_block_dedupes_exact_rendered_lines() -> None:
+    block = format_examples_block(
+        [
+            {"pattern": "BM25", "project": "clear-your-tools"},
+            {"pattern": "BM25", "project": "clear-your-tools"},
+            {"pattern": "bm25", "project": "clear-your-tools"},
+        ],
+    )
+    assert block.count("- {'pattern':'BM25','project':'clear-your-tools'}") == 1
+    assert "- {'pattern':'bm25','project':'clear-your-tools'}" in block
+
+
 def test_format_examples_block_zero_max_chars_disables_truncation() -> None:
     long_repo = "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools"
     block = format_examples_block(

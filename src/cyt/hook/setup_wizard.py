@@ -1506,7 +1506,8 @@ def _write_json_object(path: Path, data: dict[str, Any]) -> None:
     if path.name == "hooks.json":
         from cyt.hook.debug_hooks_audit import log_hooks_json_mutation
 
-        hooks_section = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+        raw_hooks = data.get("hooks")
+        hooks_section = raw_hooks if isinstance(raw_hooks, dict) else {}
         log_hooks_json_mutation(
             path,
             action="write_json_object",

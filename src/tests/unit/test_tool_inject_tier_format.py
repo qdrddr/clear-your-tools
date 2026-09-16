@@ -75,6 +75,29 @@ def test_format_tool_item_omits_examples_when_list_empty() -> None:
     assert "</examples>" not in item
 
 
+def test_format_tool_item_dedupes_examples_with_input_schema_only() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "pattern": {"type": "string"},
+            "project": {"type": "string"},
+        },
+        "required": ["pattern", "project"],
+    }
+    tool = {
+        "name": "codebase-memory_search_code",
+        "inputSchema": schema,
+        "cyt_injection_examples": [
+            {"pattern": "BM25", "project": "clear-your-tools"},
+            {"pattern": "BM25", "project": "clear-your-tools"},
+            {"pattern": "bm25", "project": "clear-your-tools"},
+        ],
+    }
+    item = format_tool_item(tool)
+    assert item.count("- {'pattern':'BM25','project':'clear-your-tools'}") == 1
+    assert "- {'pattern':'bm25','project':'clear-your-tools'}" in item
+
+
 def test_format_tool_item_renders_examples_block() -> None:
     tool = _sample_tool(with_schema=True)
     tool["cyt_injection_examples"] = [

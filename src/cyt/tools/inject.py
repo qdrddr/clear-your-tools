@@ -7,6 +7,7 @@ from typing import Any
 
 from cyt.executor.tool_names import agent_visible_tool_name
 from cyt.indexer.tokens import count_tokens
+from cyt.tiers.tool_token_materialization import input_schema_from_tool
 from cyt.tools.injection_schema import (
     entangle_examples_with_schema,
     format_get_tool_definitions_hint,
@@ -98,10 +99,7 @@ def _tool_open_tag(name: str, description: str, *, tier: str | None = None) -> s
 
 
 def _tool_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
-    schema = tool.get("input_schema")
-    if schema is None:
-        schema = tool.get("parameters")
-    return dict(schema) if isinstance(schema, dict) else {}
+    return input_schema_from_tool(tool)
 
 
 def _tool_injection_examples(tool: dict[str, Any]) -> tuple[list[dict[str, Any]], int | None]:

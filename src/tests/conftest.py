@@ -175,6 +175,33 @@ def _isolate_cyt_mcp_user_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.fixture(autouse=True)
+def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep hook install/uninstall tests from mutating developer agent config files."""
+    import cyt.hook.setup_wizard as hook_setup
+    import cyt_client.pairing as cyt_client_pairing
+
+    root = tmp_path / "isolated-agent-hooks"
+    isolated_cursor = root / "cursor" / "hooks.json"
+    isolated_claude = root / "claude" / "settings.json"
+    isolated_codex = root / "codex" / "hooks.json"
+    for parent in (isolated_cursor, isolated_claude, isolated_codex):
+        parent.parent.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", isolated_cursor)
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", isolated_claude)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", isolated_codex)
+    monkeypatch.setattr(
+        cyt_client_pairing,
+        "_AGENT_HOOK_PATHS",
+        {
+            "cursor": isolated_cursor,
+            "claude": isolated_claude,
+            "codex": isolated_codex,
+        },
+    )
+
+
+@pytest.fixture(autouse=True)
 def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
     from cyt.cloudflare.catalog import clear_cloudflare_catalog_cache

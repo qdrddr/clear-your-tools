@@ -93,11 +93,16 @@ def format_examples_block(
     Returns an empty string when there are no non-empty example payloads so
     callers omit the ``<examples>`` tag entirely for that tool.
     """
-    lines = [
-        format_example_line(payload, max_chars=max_chars)
-        for payload in examples
-        if isinstance(payload, dict) and payload
-    ]
+    lines: list[str] = []
+    seen_lines: set[str] = set()
+    for payload in examples:
+        if not isinstance(payload, dict) or not payload:
+            continue
+        line = format_example_line(payload, max_chars=max_chars)
+        if line in seen_lines:
+            continue
+        seen_lines.add(line)
+        lines.append(line)
     if not lines:
         return ""
     return "\n".join(["<examples>", *lines, "</examples>"])
