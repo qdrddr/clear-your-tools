@@ -438,3 +438,28 @@ def test_enrich_noop_without_git_project(tmp_path: Path) -> None:
     }
     enriched = enrich_tools_with_examples([tool], "hello", config)
     assert enriched[0]["input_schema"]["properties"]["q"]["description"] == "Q"
+
+
+def test_enrich_loads_mcp_server_keys_once(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    db = tmp_path / "tool_examples.db"
+    config = _config(db, root)
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+        "required": ["query"],
+    }
+    tools = [
+        {"name": "codebase-memory_search_graph", "input_schema": schema},
+        {"name": "semble_search", "input_schema": schema},
+        {"name": "graphify_query_graph", "input_schema": schema},
+    ]
+    with patch(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        return_value=["codebase-memory", "semble", "graphify"],
+    ) as load_keys:
+        enriched = enrich_tools_with_examples(tools, "BM25 ranking", config)
+    assert len(enriched) == 3
+    load_keys.assert_called_once()

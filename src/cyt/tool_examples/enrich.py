@@ -66,15 +66,20 @@ def enrich_tools_with_examples(
     store = ToolExamplesStore.open(cfg.db_path)
     try:
         project_id = store.get_or_create_project(str(project_root))
+        project_root_str = str(project_root)
+        from cyt_mcp.config import load_known_mcp_server_keys
+
+        server_keys = load_known_mcp_server_keys(project_root=project_root_str)
         return [
             _enrich_single_tool(
                 tool,
                 query=query,
                 project_id=project_id,
-                project_root=str(project_root),
+                project_root=project_root_str,
                 store=store,
                 cfg=cfg,
                 config=config,
+                server_keys=server_keys,
             )
             for tool in tools
         ]
@@ -121,12 +126,17 @@ def _enrich_single_tool(
     store: ToolExamplesStore,
     cfg: ToolExamplesConfig,
     config: dict[str, Any],
+    server_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     out = copy.deepcopy(tool)
     schema = _schema_from_tool(out)
     if not schema:
         return out
-    mcp_server, tool_name = resolve_mcp_server_and_tool(out, project_root=project_root)
+    mcp_server, tool_name = resolve_mcp_server_and_tool(
+        out,
+        server_keys=server_keys,
+        project_root=project_root,
+    )
     schema_hash = content_hash(schema)
     captures = store.list_captures(
         project_id,
