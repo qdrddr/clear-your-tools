@@ -1,0 +1,358 @@
+{
+  "rows": [
+    {
+      "id": "t0_excluded_from_prune_pool",
+      "tier": "t0",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "any",
+      "prune_outcome": "excluded",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_excluded"
+    },
+    {
+      "id": "t1_dropped_by_pruning",
+      "tier": "t1",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "any",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "parameterless empty backend schema",
+      "prune_decoy_tool_ref": "dual_tool_empty"
+    },
+    {
+      "id": "t1_survived_description_only",
+      "tier": "t1",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "any",
+      "prune_outcome": "survived",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "expected": "description_only"
+    },
+    {
+      "id": "t1_survived_pre_exposed_dedup",
+      "tier": "t1",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "any",
+      "prune_outcome": "survived",
+      "pre_existed": true,
+      "injected_property_keys": [],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t2_empty_dropped_by_pruning",
+      "tier": "t2",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "destructive confirm purge scope",
+      "prune_decoy_tool_ref": "dual_tool_purge"
+    },
+    {
+      "id": "t2_empty_survived_explicit_empty_schema",
+      "tier": "t2",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "survived",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "expected": "explicit_empty_schema"
+    },
+    {
+      "id": "t2_empty_survived_pre_exposed_dedup",
+      "tier": "t2",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "survived",
+      "pre_existed": true,
+      "injected_property_keys": [],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t2_required_dropped_by_pruning",
+      "tier": "t2",
+      "tool_ref": "dual_tool_purge",
+      "backend_profile": "required",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "optional verbose boolean repo doctor",
+      "prune_decoy_tool_ref": "dual_tool_optional_only"
+    },
+    {
+      "id": "t2_required_survived_all_required_in_schema",
+      "tier": "t2",
+      "tool_ref": "dual_tool_purge",
+      "backend_profile": "required",
+      "prune_outcome": "survived",
+      "pre_existed": false,
+      "injected_property_keys": ["confirm"],
+      "expected": "required_schema",
+      "expected_keys": ["confirm"]
+    },
+    {
+      "id": "t2_required_survived_pre_exposed_dedup",
+      "tier": "t2",
+      "tool_ref": "dual_tool_purge",
+      "backend_profile": "required",
+      "prune_outcome": "survived",
+      "pre_existed": true,
+      "injected_property_keys": ["confirm"],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t2_optional_only_dropped_by_pruning",
+      "tier": "t2",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "required search query properties only",
+      "prune_decoy_tool_ref": "dual_tool_required_only"
+    },
+    {
+      "id": "t2_optional_only_survived_hint",
+      "tier": "t2",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "survived",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "expected": "hint"
+    },
+    {
+      "id": "t2_optional_only_survived_pre_exposed_dedup",
+      "tier": "t2",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "survived",
+      "pre_existed": true,
+      "injected_property_keys": [],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t3_empty_dropped_by_pruning",
+      "tier": "t3",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "required optional query limit properties",
+      "prune_decoy_tool_ref": "dual_tool_required_optional"
+    },
+    {
+      "id": "t3_empty_survived_explicit_empty_schema",
+      "tier": "t3",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "survived",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "expected": "explicit_empty_schema"
+    },
+    {
+      "id": "t3_empty_survived_pre_exposed_dedup",
+      "tier": "t3",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "survived",
+      "pre_existed": true,
+      "injected_property_keys": [],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t3_required_only_dropped_by_pruning",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_only",
+      "backend_profile": "required_only",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "parameterless empty backend schema",
+      "prune_decoy_tool_ref": "dual_tool_empty"
+    },
+    {
+      "id": "t3_required_only_survived_all_required_in_schema",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_only",
+      "backend_profile": "required_only",
+      "prune_outcome": "survived",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "apply_ensure_merge": true,
+      "expected": "required_schema",
+      "expected_keys": ["search_query"]
+    },
+    {
+      "id": "t3_required_only_survived_pre_exposed_dedup",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_only",
+      "backend_profile": "required_only",
+      "prune_outcome": "survived",
+      "pre_existed": true,
+      "injected_property_keys": ["search_query"],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t3_required_optional_dropped_by_pruning",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "destructive confirm purge scope",
+      "prune_decoy_tool_ref": "dual_tool_purge"
+    },
+    {
+      "id": "t3_required_optional_survived_optionals_pruned",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "survived_optionals_pruned",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "apply_ensure_merge": true,
+      "expected": "required_schema",
+      "expected_keys": ["query"]
+    },
+    {
+      "id": "t3_required_optional_survived_optionals_pruned_pre_exposed_dedup",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "survived_optionals_pruned",
+      "pre_existed": true,
+      "injected_property_keys": ["query"],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t3_required_optional_survived_props_remain",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "survived_props_remain",
+      "pre_existed": false,
+      "injected_property_keys": ["query", "limit"],
+      "expected": "required_and_optional_schema",
+      "expected_keys": ["query", "limit"]
+    },
+    {
+      "id": "t3_required_optional_survived_props_remain_pre_exposed_dedup",
+      "tier": "t3",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "survived_props_remain",
+      "pre_existed": true,
+      "injected_property_keys": ["query", "limit"],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t3_optional_only_dropped_by_pruning",
+      "tier": "t3",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "dropped",
+      "pre_existed": null,
+      "injected_property_keys": [],
+      "expected": "absent_prune",
+      "prune_query": "required search query properties only",
+      "prune_decoy_tool_ref": "dual_tool_required_only"
+    },
+    {
+      "id": "t3_optional_only_survived_all_props_pruned_hint",
+      "tier": "t3",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "survived_all_props_pruned",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "expected": "hint"
+    },
+    {
+      "id": "t3_optional_only_survived_all_props_pruned_pre_exposed_dedup",
+      "tier": "t3",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "survived_all_props_pruned",
+      "pre_existed": true,
+      "injected_property_keys": [],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t3_optional_only_survived_props_remain",
+      "tier": "t3",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "survived_props_remain",
+      "pre_existed": false,
+      "injected_property_keys": ["repo"],
+      "expected": "optional_only_schema",
+      "expected_keys": ["repo"]
+    },
+    {
+      "id": "t3_optional_only_survived_props_remain_pre_exposed_dedup",
+      "tier": "t3",
+      "tool_ref": "dual_tool_optional_only",
+      "backend_profile": "optional_only",
+      "prune_outcome": "survived_props_remain",
+      "pre_existed": true,
+      "injected_property_keys": ["repo"],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t4_empty_bypassed_explicit_empty_schema",
+      "tier": "t4",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "bypassed",
+      "pre_existed": false,
+      "injected_property_keys": [],
+      "expected": "explicit_empty_schema"
+    },
+    {
+      "id": "t4_empty_bypassed_pre_exposed_dedup",
+      "tier": "t4",
+      "tool_ref": "dual_tool_empty",
+      "backend_profile": "empty",
+      "prune_outcome": "bypassed",
+      "pre_existed": true,
+      "injected_property_keys": [],
+      "expected": "absent_dedup"
+    },
+    {
+      "id": "t4_any_bypassed_full_backend_schema",
+      "tier": "t4",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "bypassed",
+      "pre_existed": false,
+      "injected_property_keys": ["query", "limit"],
+      "expected": "full_backend_schema",
+      "expected_keys": ["query", "limit"]
+    },
+    {
+      "id": "t4_any_bypassed_pre_exposed_dedup",
+      "tier": "t4",
+      "tool_ref": "dual_tool_required_optional",
+      "backend_profile": "required_optional",
+      "prune_outcome": "bypassed",
+      "pre_existed": true,
+      "injected_property_keys": ["query", "limit"],
+      "expected": "absent_dedup"
+    }
+  ]
+}

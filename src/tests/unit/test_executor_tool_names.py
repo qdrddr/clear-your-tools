@@ -82,7 +82,20 @@ def test_format_tool_item_omits_empty_input_schema() -> None:
     assert "\n{'input_schema':{}}\n" not in item
 
 
-def test_format_tool_item_t2_without_required_stays_t2() -> None:
+def test_format_tool_item_t2_backend_empty_emits_explicit_empty_schema() -> None:
+    tool = {
+        "name": "gitnexus_tool_map",
+        "description": "Map tools in the repo.",
+        "cyt_injection_tier": "t2",
+        "input_schema": {"type": "object", "properties": {}},
+        "cyt_backend_input_schema": {"type": "object", "properties": {}},
+    }
+    item = format_tool_item(tool)
+    assert "'input_schema':{'type':'object','properties':{}}" in item
+    assert "get-tool-definitions" not in item
+
+
+def test_format_tool_item_t2_without_required_uses_get_tool_definitions_hint() -> None:
     from cyt.tools.inject import format_tools_grouped_by_tier
 
     tool = {
@@ -90,11 +103,15 @@ def test_format_tool_item_t2_without_required_stays_t2() -> None:
         "description": "Diagnose context-mode installation.",
         "cyt_injection_tier": "t2",
         "input_schema": {"type": "object", "properties": {}},
+        "cyt_backend_input_schema": {
+            "type": "object",
+            "properties": {"verbose": {"type": "boolean"}},
+        },
     }
     item = format_tool_item(tool)
     assert "tier='" not in item
-    assert "get-tool-definitions" not in item
-    assert "'properties':{}" in item
+    assert "Use `get-tool-definitions` with {'tool_name':'context-mode_ctx_doctor'}" in item
+    assert "input_schema" not in item
     block = format_tools_grouped_by_tier([tool])
     assert "<tier_t2>" in block
     assert "<tier_tx>" not in block

@@ -80,6 +80,34 @@ def test_skill_token_counts_order_by_tier(tmp_path: Path) -> None:
     assert eff_t3 == eff_t4 == carried
 
 
+def test_carried_skill_token_count_ignores_stale_cached_value(tmp_path: Path) -> None:
+    clear_carried_token_memo()
+    skill_file = tmp_path / "demo-skill" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(_sample_skill_markdown(), encoding="utf-8")
+    entity = _entity_for_markdown(_sample_skill_markdown(), source_path=str(skill_file))
+    fresh = carried_skill_token_count(entity)
+    assert fresh is not None and fresh > 0
+    clear_carried_token_memo()
+    entity["token_count"] = 1
+    assert carried_skill_token_count(entity) == fresh
+
+
+def test_effective_never_exceeds_carried_for_sample_skill(tmp_path: Path) -> None:
+    clear_carried_token_memo()
+    skill_file = tmp_path / "demo-skill" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(_sample_skill_markdown(), encoding="utf-8")
+    entity = _entity_for_markdown(_sample_skill_markdown(), source_path=str(skill_file))
+    carried = carried_skill_token_count(entity)
+    assert carried is not None
+    for tier in ("T1", "T2", "T3", "T4"):
+        effective = effective_skill_token_count(entity, tier)
+        assert effective is not None
+        assert effective <= carried
+    assert effective_skill_token_count(entity, "T3") == effective_skill_token_count(entity, "T4") == carried
+
+
 def test_carried_equals_effective_at_t4(tmp_path: Path) -> None:
     clear_carried_token_memo()
     skill_file = tmp_path / "demo-skill" / "SKILL.md"

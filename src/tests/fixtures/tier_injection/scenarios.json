@@ -13,7 +13,9 @@
       "t3=optional props pruned",
       "t2=required props only",
       "t1=description only",
-      "t0=dormant"
+      "t0=dormant",
+      "parameterless tools emit explicit empty properties",
+      "call get-tool-definitions when all optionals were pruned away"
     ],
     "skill": [
       "Skill tiers are grouped in <tier_tN>",

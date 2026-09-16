@@ -1,0 +1,63 @@
+{
+  "tools": [
+    {
+      "name": "dual_tool_empty",
+      "description": "Parameterless tool with an empty backend schema.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "dual_tool_required_only",
+      "description": "Backend schema with required properties only.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "search_query": {"type": "string"}
+        },
+        "required": ["search_query"]
+      }
+    },
+    {
+      "name": "dual_tool_required_optional",
+      "description": "Backend schema with required and optional properties.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "limit": {"type": "integer"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "dual_tool_optional_only",
+      "description": "Backend schema with optional properties only.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "verbose": {"type": "boolean"},
+          "repo": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "dual_tool_purge",
+      "description": "Destructive tool with a required confirm flag.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "confirm": {"type": "boolean"},
+          "scope": {"type": "string"}
+        },
+        "required": ["confirm"]
+      }
+    }
+  ]
+}

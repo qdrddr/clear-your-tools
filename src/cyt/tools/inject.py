@@ -10,7 +10,14 @@ from typing import Any
 from cyt.executor.tool_names import agent_visible_tool_name
 from cyt.indexer.tokens import count_tokens
 from cyt.tiers.tool_token_materialization import input_schema_from_tool
-from cyt.tools.injection_schema import entangle_examples_with_schema
+from cyt.tools.injection_schema import (
+    backend_schema_from_tool,
+    backend_schema_is_empty,
+    entangle_examples_with_schema,
+    explicit_empty_object_schema,
+    format_get_tool_definitions_hint,
+    injection_needs_definitions_lookup,
+)
 from cyt.tools.serialize import format_examples_block, minimize_json_single_quotes
 
 _EXECUTOR_WORKSPACE_NOTE = (
@@ -216,9 +223,19 @@ def format_tool_item(
     if include_tool_description:
         description = str(tool.get("description", "") or "").strip()
     schema = _tool_input_schema(tool)
+    tier = tool.get("cyt_injection_tier")
+    tier_label = str(tier).strip().lower() if isinstance(tier, str) and tier.strip() else None
+    backend = backend_schema_from_tool(tool)
+    needs_definitions = injection_needs_definitions_lookup(tool)
     lines = [_tool_open_tag(name, description)]
-    if schema:
+    if needs_definitions:
+        lines.append(format_get_tool_definitions_hint(name))
+    elif schema:
         lines.append(minimize_json_single_quotes({"input_schema": schema}))
+    elif tier_label in {"t2", "t3", "t4"} and backend_schema_is_empty(backend):
+        lines.append(
+            minimize_json_single_quotes({"input_schema": explicit_empty_object_schema()}),
+        )
     if examples_block := _format_examples_block(tool):
         lines.append(examples_block)
     lines.append("</tool>")

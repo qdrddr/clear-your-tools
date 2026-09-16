@@ -301,11 +301,13 @@ def _tier_label_for_pipeline(tier: Tier) -> str:
 
 def prepare_tool_for_tier_pipeline(tool: dict[str, Any], tier: Tier) -> dict[str, Any]:
     """Shape tool payload entering BM25: T1 description-only, T2 required props, T3 full schema."""
-    from cyt.tiers.tool_token_materialization import _tool_for_tier
+    from cyt.tiers.tool_token_materialization import stamp_tool_dual_schema
 
-    if tier in {Tier.DORMANT, Tier.EXTRA_HOT}:
-        return copy.deepcopy(tool)
-    return _tool_for_tier(tool, _tier_label_for_pipeline(tier))
+    if tier == Tier.DORMANT:
+        return stamp_tool_dual_schema(tool, "T0")
+    if tier == Tier.EXTRA_HOT:
+        return stamp_tool_dual_schema(tool, "T4")
+    return stamp_tool_dual_schema(tool, _tier_label_for_pipeline(tier))
 
 
 def prepare_tools_for_tier_pipeline(
@@ -347,7 +349,7 @@ def apply_tool_tiers(
             excluded_t0.append(entity_id)
             continue
         if tier == Tier.EXTRA_HOT:
-            t4_direct.append(copy.deepcopy(tool))
+            t4_direct.append(prepare_tool_for_tier_pipeline(tool, Tier.EXTRA_HOT))
             policy_overrides[tool_name] = "always_include"
             continue
         eligible.append(tool)

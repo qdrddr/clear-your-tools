@@ -92,17 +92,8 @@ def markdown_for_tier(
 def carried_skill_token_count(entity: dict[str, Any]) -> int | None:
     """Full-skill (T4) token count for *entity*, memoized by entity id."""
     from cyt.indexer.tokens import count_tokens
-    from cyt.pruners.selector_xml import parse_cached_token_count
 
     entity_id = str(entity.get("entity_id") or "").strip()
-    if entity_id and entity_id in _carried_token_memo:
-        return _carried_token_memo[entity_id]
-
-    cached = parse_cached_token_count(entity)
-    if cached is not None:
-        if entity_id:
-            _carried_token_memo[entity_id] = cached
-        return cached
 
     markdown = load_skill_markdown(entity)
     if markdown is None:
@@ -115,6 +106,8 @@ def carried_skill_token_count(entity: dict[str, Any]) -> int | None:
         count = len(body.split()) if body else 0
 
     if entity_id:
+        prior = _carried_token_memo.get(entity_id)
+        count = max(prior or 0, count)
         _carried_token_memo[entity_id] = count
     return count
 
@@ -142,9 +135,13 @@ def effective_skill_token_count(entity: dict[str, Any], tier_label: str) -> int 
     from cyt.indexer.tokens import count_tokens
 
     try:
-        return count_tokens(trimmed)
+        effective = count_tokens(trimmed)
     except Exception:
-        return len(trimmed.split())
+        effective = len(trimmed.split())
+
+    if tier in {"T1", "T2", "T3", "T4"}:
+        return min(effective, carried)
+    return effective
 
 
 def attach_skill_token_count(record: dict[str, Any]) -> None:

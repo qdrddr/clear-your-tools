@@ -8,6 +8,21 @@ from typing import Any
 TableRowFormatter = Callable[[list[str], list[int]], str]
 
 _TIER_LABELS = tuple(f"T{i}" for i in range(5))
+_EFFECTIVE_BOUND_TIERS = frozenset({"T1", "T2", "T3", "T4"})
+
+
+def _bounded_effective_tokens(
+    *,
+    tier: str,
+    carried: int | None,
+    effective: int | None,
+) -> int | None:
+    """Ensure tier-scoped effective counts never exceed carried (T4) tokens."""
+    if effective is None:
+        return None
+    if tier in _EFFECTIVE_BOUND_TIERS and carried is not None:
+        return min(effective, carried)
+    return effective
 
 
 def format_compact_tokens(tokens: int) -> str:
@@ -38,12 +53,6 @@ def _carried_tool_tokens(
     *,
     catalog_by_entity_id: dict[str, dict[str, Any]],
 ) -> int | None:
-    raw = entity.get("token_count")
-    if isinstance(raw, int) and raw >= 0:
-        return raw
-    if isinstance(raw, float) and raw >= 0:
-        return int(raw)
-
     entity_id = str(entity.get("entity_id") or "").strip()
     catalog_tool = catalog_by_entity_id.get(entity_id)
     if catalog_tool is None:
@@ -149,6 +158,7 @@ def _tier_row_from_entities(
         else:
             carried = _skill_carried_tokens(entity)
             effective = _effective_skill_tokens(entity, tier=tier)
+        effective = _bounded_effective_tokens(tier=tier, carried=carried, effective=effective)
         if carried is not None:
             tokens += carried
             tokens_known += 1

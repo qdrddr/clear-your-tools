@@ -83,11 +83,75 @@ def test_format_tools_grouped_by_tier_t2_without_required_stays_t2() -> None:
     tool = _sample_tool(with_schema=False)
     tool["name"] = "ctx_doctor"
     tool["cyt_injection_tier"] = "t2"
+    tool["cyt_backend_input_schema"] = {
+        "type": "object",
+        "properties": {"verbose": {"type": "boolean"}},
+    }
     block = format_tools_grouped_by_tier([tool])
     assert "<tier_t2>" in block
     assert "</tier_t2>" in block
     assert "<tier_tx>" not in block
     assert "tier='" not in block
+    assert "get-tool-definitions" in block
+
+
+def test_format_tool_item_t3_backend_empty_emits_explicit_empty_schema() -> None:
+    tool = _sample_tool(with_schema=False, name="gitnexus_list_repos")
+    tool["cyt_injection_tier"] = "t3"
+    tool["cyt_backend_input_schema"] = {"type": "object", "properties": {}}
+    item = format_tool_item(tool)
+    assert "'input_schema':{'type':'object','properties':{}}" in item
+    assert "get-tool-definitions" not in item
+
+
+def test_format_tool_item_t4_backend_empty_emits_explicit_empty_schema() -> None:
+    tool = _sample_tool(with_schema=False, name="gitnexus_tool_map")
+    tool["cyt_injection_tier"] = "t4"
+    tool["cyt_backend_input_schema"] = {"type": "object", "properties": {}}
+    item = format_tool_item(tool)
+    assert "'input_schema':{'type':'object','properties':{}}" in item
+    assert "get-tool-definitions" not in item
+
+
+def test_format_tool_item_t3_optional_only_pruned_empty_uses_hint() -> None:
+    tool = {
+        "name": "gitnexus_context",
+        "description": "360-degree symbol view.",
+        "cyt_injection_tier": "t3",
+        "input_schema": {"type": "object", "properties": {}},
+        "cyt_backend_input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string"},
+                "repo": {"type": "string"},
+            },
+        },
+    }
+    item = format_tool_item(tool)
+    assert "Use `get-tool-definitions` with {'tool_name':'gitnexus_context'}" in item
+    assert "'symbol'" not in item
+
+
+def test_format_tool_item_t4_never_uses_hint() -> None:
+    tool = {
+        "name": "gitnexus_context",
+        "description": "360-degree symbol view.",
+        "cyt_injection_tier": "t4",
+        "input_schema": {
+            "type": "object",
+            "properties": {"symbol": {"type": "string"}},
+        },
+        "cyt_backend_input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string"},
+                "repo": {"type": "string"},
+            },
+        },
+    }
+    item = format_tool_item(tool)
+    assert "get-tool-definitions" not in item
+    assert "'symbol'" in item
 
 
 def test_format_tools_grouped_by_tier_skips_tools_without_tier() -> None:

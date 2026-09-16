@@ -106,6 +106,7 @@ def build_master_tools(
         for tool in tools:
             stamped = copy.deepcopy(tool)
             stamped["cyt_catalog_source"] = source
+            stamped.pop("token_count", None)
             stamped["token_count"] = carried_tool_token_count(stamped)
             merged.append(stamped)
     return merged

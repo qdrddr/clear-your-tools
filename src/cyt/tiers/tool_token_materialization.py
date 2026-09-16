@@ -8,6 +8,8 @@ from typing import Any
 _CARRIED_TIER = "T4"
 _carried_token_memo: dict[str, int] = {}
 
+CYT_BACKEND_INPUT_SCHEMA = "cyt_backend_input_schema"
+
 
 def clear_carried_token_memo() -> None:
     """Reset memo used by :func:`carried_tool_token_count` (tests)."""
@@ -56,13 +58,19 @@ def _is_mcpc_tool(tool: dict[str, Any]) -> bool:
     return bool(str(tool.get("mcpc_session") or "").strip())
 
 
-def _tool_for_tier(tool: dict[str, Any], tier_label: str) -> dict[str, Any]:
-    tier_schema = schema_for_tier(input_schema_from_tool(tool), tier_label)
+def stamp_tool_dual_schema(tool: dict[str, Any], tier_label: str) -> dict[str, Any]:
+    """Stamp ``cyt_backend_input_schema`` and tier-scoped ``input_schema`` on *tool*."""
+    backend = input_schema_from_tool(tool)
     tool_copy = copy.deepcopy(tool)
-    tool_copy["input_schema"] = tier_schema
+    tool_copy[CYT_BACKEND_INPUT_SCHEMA] = copy.deepcopy(backend)
+    tool_copy["input_schema"] = schema_for_tier(backend, tier_label)
     tool_copy.pop("inputSchema", None)
     tool_copy.pop("parameters", None)
     return tool_copy
+
+
+def _tool_for_tier(tool: dict[str, Any], tier_label: str) -> dict[str, Any]:
+    return stamp_tool_dual_schema(tool, tier_label)
 
 
 def materialize_tool_text(tool: dict[str, Any], tier_label: str) -> str:
@@ -88,22 +96,16 @@ def materialize_tool_text(tool: dict[str, Any], tier_label: str) -> str:
 def carried_tool_token_count(tool: dict[str, Any]) -> int:
     """Full-schema (T4) token count for *tool*, memoized by entity id."""
     from cyt.indexer.tokens import count_tokens
-    from cyt.pruners.selector_xml import parse_cached_token_count
     from cyt.tiers.adapters.tools import tool_entity_id
 
     key = tool_entity_id(tool) or str(tool.get("name") or "").strip()
-    if key and key in _carried_token_memo:
-        return _carried_token_memo[key]
-
-    cached = parse_cached_token_count(tool)
-    if cached is not None:
-        if key:
-            _carried_token_memo[key] = cached
-        return cached
 
     text = materialize_tool_text(tool, _CARRIED_TIER)
     count = count_tokens(text) if text.strip() else 0
+
     if key:
+        prior = _carried_token_memo.get(key)
+        count = max(prior or 0, count)
         _carried_token_memo[key] = count
     return count
 
@@ -117,7 +119,10 @@ def effective_tool_token_count(tool: dict[str, Any], tier_label: str) -> int:
     from cyt.indexer.tokens import count_tokens
 
     text = materialize_tool_text(tool, tier)
-    return count_tokens(text) if text.strip() else 0
+    count = count_tokens(text) if text.strip() else 0
+    if tier in {"T1", "T2", "T3", "T4"}:
+        return min(count, carried_tool_token_count(tool))
+    return count
 
 
 def catalog_tools_by_entity_id(

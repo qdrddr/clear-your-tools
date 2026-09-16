@@ -1,0 +1,211 @@
+{
+  "stamp_cases": [
+    {
+      "id": "t1_empty_tier_schema",
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "COLD",
+      "backend_property_keys": ["query", "limit"],
+      "tier_scoped_property_keys": []
+    },
+    {
+      "id": "t2_required_only_trim",
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "ACTIVE",
+      "backend_property_keys": ["query", "limit"],
+      "tier_scoped_property_keys": ["query"]
+    },
+    {
+      "id": "t3_full_backend",
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "HOT",
+      "backend_property_keys": ["query", "limit"],
+      "tier_scoped_property_keys": ["query", "limit"]
+    },
+    {
+      "id": "t4_full_backend",
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "EXTRA_HOT",
+      "backend_property_keys": ["query", "limit"],
+      "tier_scoped_property_keys": ["query", "limit"]
+    },
+    {
+      "id": "t0_stamps_backend",
+      "tool_ref": "dual_tool_empty",
+      "tier": "DORMANT",
+      "backend_property_keys": [],
+      "tier_scoped_property_keys": []
+    }
+  ],
+  "hint_cases": [
+    {
+      "id": "t2_backend_empty",
+      "tool_ref": "dual_tool_empty",
+      "tier": "t2",
+      "injected_property_keys": [],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": true
+    },
+    {
+      "id": "t2_optional_only",
+      "tool_ref": "dual_tool_optional_only",
+      "tier": "t2",
+      "injected_property_keys": [],
+      "expects_hint": true,
+      "expects_explicit_empty_schema": false
+    },
+    {
+      "id": "t2_required",
+      "tool_ref": "dual_tool_purge",
+      "tier": "t2",
+      "injected_property_keys": ["confirm"],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": false
+    },
+    {
+      "id": "t3_backend_empty",
+      "tool_ref": "dual_tool_empty",
+      "tier": "t3",
+      "injected_property_keys": [],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": true
+    },
+    {
+      "id": "t3_optional_only_pruned",
+      "tool_ref": "dual_tool_optional_only",
+      "tier": "t3",
+      "injected_property_keys": [],
+      "expects_hint": true,
+      "expects_explicit_empty_schema": false
+    },
+    {
+      "id": "t3_optional_only_survivor",
+      "tool_ref": "dual_tool_optional_only",
+      "tier": "t3",
+      "injected_property_keys": ["repo"],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": false
+    },
+    {
+      "id": "t3_required_only",
+      "tool_ref": "dual_tool_required_only",
+      "tier": "t3",
+      "injected_property_keys": [],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": false
+    },
+    {
+      "id": "t3_required_optional_pruned",
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "t3",
+      "injected_property_keys": [],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": false,
+      "expects_required_keys": ["query"]
+    },
+    {
+      "id": "t4_never_hints",
+      "tool_ref": "dual_tool_optional_only",
+      "tier": "t4",
+      "injected_property_keys": ["verbose"],
+      "expects_hint": false,
+      "expects_explicit_empty_schema": false
+    }
+  ],
+  "ensure_merge_cases": [
+    {
+      "id": "t2_restores_required",
+      "tool_ref": "dual_tool_purge",
+      "tier": "t2",
+      "injected_property_keys": [],
+      "expected_property_keys": ["confirm"]
+    },
+    {
+      "id": "t3_restores_required",
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "t3",
+      "injected_property_keys": [],
+      "expected_property_keys": ["query"]
+    }
+  ],
+  "integration": [
+    {
+      "id": "live_t2_optional_only_hint",
+      "query": "dual optional verbose boolean doctor",
+      "tool_tiers": {
+        "cyt_mcp:dual_tool_optional_only": "ACTIVE",
+        "cyt_mcp:dual_tool_empty": "DORMANT",
+        "cyt_mcp:dual_tool_purge": "DORMANT"
+      },
+      "must_include_tools": ["dual_tool_optional_only"],
+      "expected_stamped_tiers": {
+        "dual_tool_optional_only": "t2"
+      },
+      "expected_has_backend_schema": ["dual_tool_optional_only"],
+      "expected_injection": {
+        "dual_tool_optional_only": {
+          "hint": true
+        }
+      }
+    },
+    {
+      "id": "live_t3_empty_explicit_schema",
+      "query": "dual parameterless empty schema",
+      "tool_tiers": {
+        "cyt_mcp:dual_tool_empty": "HOT",
+        "cyt_mcp:dual_tool_optional_only": "DORMANT",
+        "cyt_mcp:dual_tool_purge": "DORMANT"
+      },
+      "must_include_tools": ["dual_tool_empty"],
+      "expected_stamped_tiers": {
+        "dual_tool_empty": "t3"
+      },
+      "expected_has_backend_schema": ["dual_tool_empty"],
+      "expected_injection": {
+        "dual_tool_empty": {
+          "explicit_empty_schema": true
+        }
+      }
+    },
+    {
+      "id": "live_t2_required_merge",
+      "query": "dual purge confirm destructive scope",
+      "tool_tiers": {
+        "cyt_mcp:dual_tool_purge": "ACTIVE",
+        "cyt_mcp:dual_tool_optional_only": "DORMANT",
+        "cyt_mcp:dual_tool_empty": "DORMANT"
+      },
+      "must_include_tools": ["dual_tool_purge"],
+      "expected_stamped_tiers": {
+        "dual_tool_purge": "t2"
+      },
+      "expected_has_backend_schema": ["dual_tool_purge"],
+      "expected_injection": {
+        "dual_tool_purge": {
+          "required_keys": ["confirm"]
+        }
+      }
+    },
+    {
+      "id": "live_t4_direct_preserves_backend",
+      "query": "dual required optional query limit",
+      "tool_tiers": {
+        "cyt_mcp:dual_tool_required_optional": "EXTRA_HOT",
+        "cyt_mcp:dual_tool_empty": "DORMANT",
+        "cyt_mcp:dual_tool_optional_only": "DORMANT",
+        "cyt_mcp:dual_tool_purge": "DORMANT",
+        "cyt_mcp:dual_tool_required_only": "DORMANT"
+      },
+      "must_include_tools": ["dual_tool_required_optional"],
+      "expected_stamped_tiers": {
+        "dual_tool_required_optional": "t4"
+      },
+      "expected_has_backend_schema": ["dual_tool_required_optional"],
+      "expected_injection": {
+        "dual_tool_required_optional": {
+          "required_keys": ["query"],
+          "optional_keys": ["limit"]
+        }
+      }
+    }
+  ]
+}

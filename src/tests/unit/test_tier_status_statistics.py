@@ -91,12 +91,13 @@ def test_build_kind_tier_statistics_tool_tokens_from_catalog() -> None:
     }
     stats = build_kind_tier_statistics(kind_block, kind="tool", catalog_tools=catalog)
     row = stats["rows"][2]
-    assert row["tokens"] == 999
     assert row["tokens_known"] == 1
     assert row["effective_tokens_known"] == 1
+    assert row["tokens"] > 0
+    assert row["tokens"] != 999
     assert row["effective_tokens"] > 0
-    assert row["effective_tokens"] < row["tokens"]
-    assert stats["totals"]["tokens"] == 999
+    assert row["effective_tokens"] <= row["tokens"]
+    assert stats["totals"]["tokens"] == row["tokens"]
     assert stats["totals"]["effective_tokens"] == row["effective_tokens"]
 
 
@@ -197,6 +198,86 @@ def test_build_kind_tier_statistics_tool_t0_carried_tokens_effective_zero() -> N
     assert row["effective_tokens"] == 0
     assert row["tokens_known"] == 1
     assert row["effective_tokens_known"] == 1
+
+
+def test_build_kind_tier_statistics_effective_never_exceeds_tokens_for_t1_t4(
+    tmp_path: Path,
+) -> None:
+    from cyt.tiers.tool_token_materialization import clear_carried_token_memo
+
+    clear_carried_token_memo()
+    skill_file = tmp_path / "demo-skill" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(
+        "---\nname: demo\n---\n# Overview\n\nSkill body for tier stats.\n",
+        encoding="utf-8",
+    )
+    catalog = [
+        {
+            "name": "search",
+            "cyt_catalog_source": "cyt_mcp",
+            "description": "Search the codebase.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        },
+    ]
+    kind_blocks = {
+        "tool": {
+            "histogram": {"T0": 0, "T1": 1, "T2": 1, "T3": 1, "T4": 0},
+            "by_tier": {
+                "T0": [],
+                "T1": [{"entity_id": "cyt_mcp:search", "temporary": False, "stats": {}}],
+                "T2": [
+                    {
+                        "entity_id": "cyt_mcp:search",
+                        "temporary": False,
+                        "stats": {},
+                        "token_count": 1,
+                    },
+                ],
+                "T3": [{"entity_id": "cyt_mcp:search", "temporary": False, "stats": {}}],
+                "T4": [],
+            },
+        },
+        "skill": {
+            "histogram": {"T0": 0, "T1": 0, "T2": 1, "T3": 0, "T4": 0},
+            "by_tier": {
+                "T0": [],
+                "T1": [],
+                "T2": [
+                    {
+                        "entity_id": "skill:demo",
+                        "temporary": False,
+                        "source_path": str(skill_file),
+                        "stats": {},
+                        "token_count": 1,
+                    },
+                ],
+                "T3": [],
+                "T4": [],
+            },
+        },
+    }
+    for kind, block in kind_blocks.items():
+        stats = build_kind_tier_statistics(
+            block,
+            kind=kind,
+            catalog_tools=catalog if kind == "tool" else None,
+        )
+        for row in stats["rows"]:
+            if row["tier"] not in {"T1", "T2", "T3", "T4"}:
+                continue
+            if row["count"] <= 0:
+                continue
+            assert row["effective_tokens"] <= row["tokens"], (
+                f"{kind} {row['tier']}: effective={row['effective_tokens']} > tokens={row['tokens']}"
+            )
 
 
 def test_build_kind_tier_statistics_unknown_tokens() -> None:
