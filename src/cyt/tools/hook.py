@@ -102,7 +102,7 @@ def _partition_tools_by_source(
 
 
 def _format_session_text(payload: dict[str, Any], ctx: PreExposureContext) -> str:
-    if bypass_injection_pre_exposure(payload):
+    if bypass_injection_pre_exposure(payload, ctx):
         return ""
     parts = [ctx.combined_text]
     rules = payload.get("cyt_rules_injection")

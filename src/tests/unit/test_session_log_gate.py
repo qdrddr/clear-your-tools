@@ -143,6 +143,61 @@ def test_matching_hash_after_skinny_log_skips_reinjection() -> None:
     assert mode == "skip"
 
 
+def test_prompt_promotion_pass_injects_full_on_fourth_invocation() -> None:
+    index = SessionLogIndex(
+        entries=(
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:fff_grep",
+                "hash": "hash-v1",
+                "full": False,
+                "name": "fff_grep",
+                "catalog": "cyt_mcp",
+            },
+        ),
+    )
+    mode = resolve_injection_mode(
+        key="tool:cyt_mcp:fff_grep",
+        current_hash="hash-v1",
+        index=index,
+        session_text="<agent-tools><tool name='fff_grep'>already there</tool></agent-tools>",
+        formatted_skinny="<tool name='fff_grep'>skinny</tool>",
+        formatted_full="<tool name='fff_grep'>full</tool>",
+    )
+    assert mode == "full"
+
+
+def test_post_promotion_skips_fifth_invocation() -> None:
+    index = SessionLogIndex(
+        entries=(
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {"kind": "session_state", "key": "session_state:inject", "tools_inject_enabled": True},
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:fff_grep",
+                "hash": "hash-v1",
+                "full": True,
+                "name": "fff_grep",
+                "catalog": "cyt_mcp",
+            },
+        ),
+    )
+    mode = resolve_injection_mode(
+        key="tool:cyt_mcp:fff_grep",
+        current_hash="hash-v1",
+        index=index,
+        session_text="",
+        formatted_skinny="<tool name='fff_grep'>skinny</tool>",
+        formatted_full="<tool name='fff_grep'>full</tool>",
+    )
+    assert mode == "skip"
+
+
 def test_post_compaction_index_allows_reinject() -> None:
     entries: list[dict[str, Any]] = [
         {

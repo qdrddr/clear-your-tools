@@ -175,7 +175,28 @@ def rules_injection_needs_format_refresh(body: str) -> bool:
     return False
 
 
-def read_prior_rules_injection_for_hook(workspace: Path) -> tuple[str, bool]:
+def _session_log_has_injection_items(payload: dict[str, Any]) -> bool:
+    from cyt_client.sessions import (
+        entries_after_latest_compaction,
+        read_session_log_file,
+        session_log_path,
+    )
+
+    path = session_log_path(payload)
+    if path is None or not path.is_file():
+        return False
+    _agent, entries = read_session_log_file(path)
+    sliced = entries_after_latest_compaction(entries)
+    return any(
+        entry.get("kind") in {"tool", "skill", "resource"}
+        for entry in sliced
+    )
+
+
+def read_prior_rules_injection_for_hook(
+    workspace: Path,
+    payload: dict[str, Any] | None = None,
+) -> tuple[str, bool]:
     """Return prior rules body for the hook and whether pre-exposure should be bypassed."""
     body = read_cursor_rules_injection(workspace)
     if (
@@ -183,7 +204,8 @@ def read_prior_rules_injection_for_hook(workspace: Path) -> tuple[str, bool]:
         or is_rules_placeholder_body(body)
         or rules_injection_needs_format_refresh(body)
     ):
-        return "", True
+        force_refresh = not (payload is not None and _session_log_has_injection_items(payload))
+        return "", force_refresh
     return body, False
 
 

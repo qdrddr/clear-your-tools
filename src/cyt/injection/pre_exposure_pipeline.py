@@ -21,10 +21,48 @@ from cyt.injection.session_gate import (
     gate_tools_for_session,
 )
 from cyt.injection.session_log import SessionLogIndex
-from cyt.injection.session_log_build import CatalogKind, tool_item_key
+from cyt.injection.session_log_build import CatalogKind, tool_item_key, tool_item_legacy_keys
 from cyt.resources.inject import MatchedResource
 from cyt.skills.search import MatchedSkill
 from cyt.tools.mcpc_prune import split_mcpc_prune_result
+
+
+def _tool_preserves_full_injection(
+    tool: dict[str, Any],
+    *,
+    full_flags: dict[str, bool],
+    catalog_kind: CatalogKind,
+) -> bool:
+    key = tool_item_key(tool, catalog=catalog_kind)
+    if full_flags.get(key):
+        return True
+    for alias in tool_item_legacy_keys(tool, catalog=catalog_kind):
+        if full_flags.get(alias):
+            return True
+    return False
+
+
+def _filter_pre_exposed_tools_preserving_full(
+    tools: list[dict[str, Any]],
+    session_text: str,
+    *,
+    full_flags: dict[str, bool],
+    catalog_kind: CatalogKind,
+) -> list[dict[str, Any]]:
+    if not session_text.strip():
+        return list(tools)
+    kept: list[dict[str, Any]] = []
+    for tool in tools:
+        if _tool_preserves_full_injection(tool, full_flags=full_flags, catalog_kind=catalog_kind):
+            kept.append(tool)
+            continue
+        subset = filter_pre_exposed_tools(
+            [tool],
+            session_text,
+            include_tool_description=True,
+        )
+        kept.extend(subset)
+    return kept
 
 
 def _catalog_kind_for_source_id(source_id: str) -> CatalogKind:
@@ -49,7 +87,7 @@ def gate_and_filter_tools(
     payload: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str] | None]:
     """Session gate (b) plus verbatim filter on combined corpus."""
-    refresh_rules = payload is not None and bypass_injection_pre_exposure(payload)
+    refresh_rules = payload is not None and bypass_injection_pre_exposure(payload, ctx)
     index = SessionLogIndex(entries=()) if refresh_rules else ctx.index
     session_text = "" if refresh_rules else ctx.payload_text
     combined_text = "" if refresh_rules else ctx.combined_text
@@ -59,38 +97,45 @@ def gate_and_filter_tools(
     use_mcpc = source_id == "mcpc" or (source_id is None and uses_mcpc_tool_catalog(config))
     if use_mcpc:
         working_tools, surviving_instruction_sessions = split_mcpc_prune_result(tools)
-        session_gated, log_entries, _full_flags = gate_tools_for_session(
+        session_gated, log_entries, full_flags = gate_tools_for_session(
             working_tools,
             config=config,
             session_text=session_text,
             index=index,
             catalog_tools=catalog_tools,
         )
-        payload_gated = filter_pre_exposed_tools(
+        payload_gated = _filter_pre_exposed_tools_preserving_full(
             session_gated,
             session_text,
-            include_tool_description=True,
+            full_flags=full_flags,
+            catalog_kind="mcpc",
         )
         gated = filter_pre_exposed_mcpc_tools(payload_gated, combined_text)
         catalog_kind: CatalogKind = "mcpc"
     else:
-        session_gated, log_entries, _full_flags = gate_tools_for_session(
+        session_gated, log_entries, full_flags = gate_tools_for_session(
             working_tools,
             config=config,
             session_text=session_text,
             index=index,
             catalog_tools=catalog_tools,
         )
-        payload_gated = filter_pre_exposed_tools(
-            session_gated,
-            session_text,
-            include_tool_description=True,
-        )
-        gated = filter_pre_exposed_tools(payload_gated, combined_text)
         if source_id:
             catalog_kind = _catalog_kind_for_source_id(source_id)
         else:
             catalog_kind = "mcpc" if uses_mcpc_tool_catalog(config) else "executor"
+        payload_gated = _filter_pre_exposed_tools_preserving_full(
+            session_gated,
+            session_text,
+            full_flags=full_flags,
+            catalog_kind=catalog_kind,
+        )
+        gated = _filter_pre_exposed_tools_preserving_full(
+            payload_gated,
+            combined_text,
+            full_flags=full_flags,
+            catalog_kind=catalog_kind,
+        )
 
     gated_keys = {tool_item_key(tool, catalog=catalog_kind) for tool in gated}
     filtered_logs = [entry for entry in log_entries if str(entry.get("key") or "") in gated_keys]

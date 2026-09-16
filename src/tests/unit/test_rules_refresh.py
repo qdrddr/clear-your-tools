@@ -5,6 +5,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from cyt.injection.pre_exposure_context import PreExposureContext
 from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
 from cyt.injection.rules_refresh import bypass_injection_pre_exposure
@@ -111,6 +113,22 @@ def test_bypass_injection_pre_exposure_from_payload_flag() -> None:
     assert bypass_injection_pre_exposure({"cyt_force_rules_refresh": False}) is False
 
 
+def test_bypass_injection_pre_exposure_skipped_when_session_has_tools() -> None:
+    ctx = PreExposureContext.from_entries(
+        payload_text="follow-up",
+        entries=[
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:demo_tool",
+                "hash": "abc",
+                "full": False,
+                "name": "demo_tool",
+            },
+        ],
+    )
+    assert bypass_injection_pre_exposure({"cyt_force_rules_refresh": True}, ctx) is False
+
+
 def test_gate_and_filter_tools_bypasses_pre_exposure_when_rules_refresh() -> None:
     tool = _sample_tool()
     fragment = format_tool_item(tool)
@@ -146,6 +164,31 @@ def test_read_prior_rules_injection_for_hook_placeholder(tmp_path: Path) -> None
     injection, force_refresh = read_prior_rules_injection_for_hook(workspace)
     assert injection == ""
     assert force_refresh is True
+
+
+def test_read_prior_rules_injection_for_hook_placeholder_with_session_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = Path(tmp_path)
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text(build_rules_mdc_placeholder(), encoding="utf-8")
+    payload = {
+        "conversation_id": "conv-placeholder-session",
+        "workspace_roots": [str(workspace)],
+    }
+
+    def _fake_has_items(_payload: dict) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "cyt_client.rules_file._session_log_has_injection_items",
+        _fake_has_items,
+    )
+    injection, force_refresh = read_prior_rules_injection_for_hook(workspace, payload)
+    assert injection == ""
+    assert force_refresh is False
 
 
 def test_read_prior_rules_injection_for_hook_legacy_format(tmp_path: Path) -> None:

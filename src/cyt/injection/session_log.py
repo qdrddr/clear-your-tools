@@ -87,6 +87,15 @@ class SessionLogIndex:
                 return True
         return False
 
+    def hook_invocation_count(self) -> int:
+        """Prior hook responses that persisted session_state:inject (one per UserPromptSubmit)."""
+        return sum(
+            1
+            for entry in self.entries
+            if entry.get("kind") == "session_state"
+            and str(entry.get("key") or "") == "session_state:inject"
+        )
+
 
 def resolve_injection_mode(
     *,
@@ -97,6 +106,7 @@ def resolve_injection_mode(
     formatted_skinny: str,
     formatted_full: str,
     key_aliases: tuple[str, ...] = (),
+    hook_invocation_count: int | None = None,
 ) -> InjectionMode:
     corpus = index.verbatim_corpus()
     combined_text = session_text
@@ -106,15 +116,34 @@ def resolve_injection_mode(
     if index.has_satisfied_full(key, current_hash, aliases=key_aliases):
         return "skip"
 
+    latest = index.latest_hash(key, aliases=key_aliases)
+    count = index.count_key(key, aliases=key_aliases)
+    invocation = (
+        hook_invocation_count + 1
+        if hook_invocation_count is not None
+        else index.hook_invocation_count() + 1
+    )
+    promotion_pass = invocation == FULL_PROMOTION_THRESHOLD + 1
+    post_promotion = invocation > FULL_PROMOTION_THRESHOLD + 1
+
+    if (
+        promotion_pass
+        and count >= 1
+        and latest is not None
+        and latest == current_hash
+    ):
+        return "full"
+
+    if post_promotion and count >= 1 and latest is not None and latest == current_hash:
+        return "skip"
+
     for fragment in (formatted_skinny, formatted_full):
         if fragment.strip() and is_pre_exposed(fragment, combined_text):
             return "skip"
 
-    latest = index.latest_hash(key, aliases=key_aliases)
     if latest is not None and latest != current_hash:
         return "full"
 
-    count = index.count_key(key, aliases=key_aliases)
     if count >= FULL_PROMOTION_THRESHOLD:
         return "full"
 

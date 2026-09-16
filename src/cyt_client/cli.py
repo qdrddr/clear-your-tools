@@ -428,7 +428,10 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
     agent = _effective_agent(payload)
     verify_only = _verify_only_for_agent(payload)
     if inject_via_for_agent(agent) == "proxy" and not verify_only_mode():
-        prior_rules_injection, force_rules_refresh = read_prior_rules_injection_for_hook(workspace)
+        prior_rules_injection, force_rules_refresh = read_prior_rules_injection_for_hook(
+            workspace,
+            payload,
+        )
         payload_bytes = enrich_hook_payload(
             raw,
             rules_injection=prior_rules_injection,
@@ -456,7 +459,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
     prior_rules_injection, force_rules_refresh = (
         ("", False)
         if (_fresh_hook or verify_only)
-        else read_prior_rules_injection_for_hook(workspace)
+        else read_prior_rules_injection_for_hook(workspace, payload)
     )
     payload_bytes = enrich_hook_payload(
         raw,

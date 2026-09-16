@@ -35,6 +35,33 @@ _CATALOG_SOURCE_ORDER: tuple[CatalogKind, ...] = (
 
 _TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
 
+_UNICODE_JSON_NORMALIZE = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2026": "...",
+        "\u2014": "--",
+        "\u2013": "-",
+    },
+)
+
+
+def normalize_json_text(value: str) -> str:
+    """Map typographic punctuation to ASCII so JSONL hashes stay stable."""
+    return value.translate(_UNICODE_JSON_NORMALIZE)
+
+
+def normalize_json_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return normalize_json_text(value)
+    if isinstance(value, dict):
+        return {str(k): normalize_json_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [normalize_json_value(item) for item in value]
+    return value
+
 _SKILL_HASH_BY_SOURCE: dict[str, str] | None = None
 
 
@@ -414,19 +441,23 @@ def build_tool_log_entry(
             entry["server"] = {k: v for k, v in server.items() if v}
     elif catalog == "cyt_mcp":
         schema = tool.get("input_schema") or tool.get("parameters") or {}
-        entry["input_schema"] = deepcopy(schema if isinstance(schema, dict) else {})
+        entry["input_schema"] = normalize_json_value(
+            deepcopy(schema if isinstance(schema, dict) else {}),
+        )
         entry["source"] = "hook_injection"
         if include_tool_description:
             description = str(tool.get("description") or "").strip()
             if description:
-                entry["description"] = description
+                entry["description"] = normalize_json_text(description)
     else:
         schema = tool.get("input_schema") or tool.get("parameters") or {}
-        entry["input_schema"] = deepcopy(schema if isinstance(schema, dict) else {})
+        entry["input_schema"] = normalize_json_value(
+            deepcopy(schema if isinstance(schema, dict) else {}),
+        )
         if include_tool_description:
             description = str(tool.get("description") or "").strip()
             if description:
-                entry["description"] = description
+                entry["description"] = normalize_json_text(description)
     return entry
 
 

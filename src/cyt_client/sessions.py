@@ -189,7 +189,9 @@ def append_session_log(
     if not path.is_file() and agent:
         new_lines.append(json.dumps({"type": _META_TYPE, "agent": agent}, separators=(",", ":")))
     for entry in entries:
-        new_lines.append(json.dumps(entry, separators=(",", ":"), ensure_ascii=False))
+        line = json.dumps(entry, separators=(",", ":"), ensure_ascii=False)
+        json.loads(line)
+        new_lines.append(line)
 
     with path.open("a", encoding="utf-8") as handle:
         for line in new_lines:
@@ -321,6 +323,19 @@ def _existing_keys_and_hashes(path: Path, kind: str) -> set[tuple[str, str]]:
     }
 
 
+def _has_full_tool_entry(path: Path, key: str, content_hash: str) -> bool:
+    for entry in read_session_log(path):
+        if entry.get("kind") != "tool":
+            continue
+        if str(entry.get("key") or "") != key:
+            continue
+        if str(entry.get("hash") or "") != content_hash:
+            continue
+        if entry.get("full") is True:
+            return True
+    return False
+
+
 def _append_deduped_kind_entries(
     path: Path,
     entries: list[dict[str, Any]],
@@ -337,6 +352,12 @@ def _append_deduped_kind_entries(
         key = str(entry.get("key") or "").strip()
         content_hash = str(entry.get("hash") or "").strip()
         if key and content_hash and (key, content_hash) in existing:
+            if (
+                kind == "tool"
+                and entry.get("full") is True
+                and not _has_full_tool_entry(path, key, content_hash)
+            ):
+                to_append.append(entry)
             continue
         to_append.append(entry)
         if key and content_hash:
