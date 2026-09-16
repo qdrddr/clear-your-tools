@@ -37,10 +37,9 @@ def format_agent_skills_empty(*, combined_text: str = "") -> str:
     from cyt.injection.header_pre_exposed import skill_tier_legend_pre_exposed
     from cyt.injection.tier_legend import SKILL_TIER_LEGEND
 
-    inner: list[str] = []
-    if not skill_tier_legend_pre_exposed(combined_text, SKILL_TIER_LEGEND):
-        inner.append(SKILL_TIER_LEGEND)
-    return "\n".join(["<agent-skills>", *inner, "</agent-skills>"])
+    if skill_tier_legend_pre_exposed(combined_text, SKILL_TIER_LEGEND):
+        return ""
+    return "\n".join(["<agent-skills>", SKILL_TIER_LEGEND, "</agent-skills>"])
 
 
 def _parsed_frontmatter(markdown: str) -> dict[str, object]:

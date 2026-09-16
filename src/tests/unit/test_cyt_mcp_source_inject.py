@@ -115,6 +115,31 @@ def test_multi_source_agent_tools_intro_is_inner_text() -> None:
     assert _AGENT_TOOLS_DESCRIPTION_BASE.split(".")[0] in wrapped
 
 
+def test_multi_source_agent_tools_returns_empty_when_no_sections_even_with_session() -> None:
+    prior = format_multi_source_agent_tools(
+        {"cyt_mcp": "<cyt-mcp>\ny\n</cyt-mcp>"},
+        workspace_paths=["/tmp/project"],
+    )
+    assert format_multi_source_agent_tools({}, workspace_paths=["/tmp/project"], session_text=prior) == ""
+
+
+def test_multi_source_agent_tools_omits_path_when_pre_exposed() -> None:
+    path = "/tmp/project"
+    prior = format_multi_source_agent_tools(
+        {"cyt_mcp": "<cyt-mcp>\ny\n</cyt-mcp>"},
+        workspace_paths=[path],
+    )
+    assert f" path='{path}'" in prior
+    follow_up = format_multi_source_agent_tools(
+        {"executor": "<executor>\nx\n</executor>"},
+        workspace_paths=[path],
+        session_text=prior,
+    )
+    open_tag = follow_up.lstrip("\n").split("\n", 1)[0]
+    assert " path=" not in open_tag
+    assert "<executor>" in follow_up
+
+
 def test_multi_source_agent_tools_omits_intro_when_pre_exposed() -> None:
     prior = format_multi_source_agent_tools(
         {"cyt_mcp": "<cyt-mcp>\ny\n</cyt-mcp>"},

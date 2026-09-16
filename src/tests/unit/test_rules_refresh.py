@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from cyt.injection.pre_exposure_context import PreExposureContext
@@ -12,6 +13,7 @@ from cyt.tools.source_inject import format_cyt_mcp_source_section, format_multi_
 from cyt_client.rules_file import (
     build_rules_mdc_placeholder,
     is_rules_placeholder_body,
+    is_substantive_rules_injection,
     read_prior_rules_injection_for_hook,
     rules_injection_needs_format_refresh,
 )
@@ -31,6 +33,37 @@ def test_is_rules_placeholder_body() -> None:
     body = build_rules_mdc_placeholder().split("---", 2)[-1].strip()
     assert is_rules_placeholder_body(body)
     assert not rules_injection_needs_format_refresh(body)
+
+
+def test_sync_cursor_rules_file_placeholder_when_both_domains_empty_wrappers() -> None:
+    from cyt_client.rules_file import (
+        _RULES_PLACEHOLDER_BODY,
+        build_rules_mdc,
+        rules_file_path,
+        sync_cursor_rules_file,
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_rules_mdc("<agent-tools>existing</agent-tools>"), encoding="utf-8")
+        empty_both = "<agent-tools>\n</agent-tools>\n\n<agent-skills>\n</agent-skills>"
+        sync_cursor_rules_file(workspace, empty_both)
+        body = path.read_text(encoding="utf-8").split("---", 2)[-1].strip()
+        assert body == _RULES_PLACEHOLDER_BODY
+
+
+def test_is_substantive_rules_injection_rejects_empty_wrappers() -> None:
+    assert is_substantive_rules_injection("<agent-tools>\n</agent-tools>") is False
+    assert is_substantive_rules_injection("<agent-skills>\n</agent-skills>") is False
+    assert (
+        is_substantive_rules_injection(
+            "<agent-tools>\n</agent-tools>\n\n<agent-skills>\n</agent-skills>"
+        )
+        is False
+    )
+    assert is_substantive_rules_injection("<agent-tools>\n<tool name='x'></tool>\n</agent-tools>") is True
 
 
 def test_rules_injection_needs_format_refresh_legacy_agent_tools_attribute() -> None:

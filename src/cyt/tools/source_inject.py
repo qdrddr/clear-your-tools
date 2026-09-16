@@ -290,11 +290,12 @@ def format_multi_source_agent_tools(
     if not inner.strip():
         return ""
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
-    lines = [_agent_tools_open_tag(workspace_paths=paths)]
+    from cyt.tools.inject import _finalize_agent_tools_block
+
+    lines = [_agent_tools_open_tag(workspace_paths=paths, session_text=session_text)]
     description = _multi_source_agent_tools_description()
     if not agent_tools_intro_pre_exposed(session_text, description):
         lines.append(description)
     lines.append(inner)
     lines.append("</agent-tools>")
-    wrapped = "\n".join(lines)
-    return ensure_agent_tools_starts_on_new_line(wrapped)
+    return _finalize_agent_tools_block(lines)

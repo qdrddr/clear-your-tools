@@ -1,4 +1,4 @@
-"""Detect pre-exposed injection header prose (agent-tools intro, cyt-mcp note)."""
+"""Detect pre-exposed injection header prose (agent-tools path/intro, cyt-mcp note)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ _AGENT_TOOLS_BLOCK_RE = re.compile(
     r"<agent-tools[^>]*>.*?</agent-tools>",
     re.DOTALL | re.IGNORECASE,
 )
+_AGENT_TOOLS_OPEN_TAG_RE = re.compile(r"<agent-tools(\s[^>]*)?>", re.IGNORECASE)
 _CYT_MCP_BLOCK_RE = re.compile(r"<cyt-mcp[^>]*>.*?</cyt-mcp>", re.DOTALL | re.IGNORECASE)
 _AGENT_SKILLS_BLOCK_RE = re.compile(
     r"<agent-skills[^>]*>.*?</agent-skills>",
@@ -51,6 +52,28 @@ def intro_text_pre_exposed(session_text: str, intro: str) -> bool:
 
 def agent_tools_intro_pre_exposed(session_text: str, intro: str) -> bool:
     return intro_text_pre_exposed(session_text, intro)
+
+
+def agent_tools_path_pre_exposed(session_text: str, path: str) -> bool:
+    """True when the same workspace path already appears on an ``<agent-tools>`` open tag."""
+    text = path.strip()
+    if not text or not session_text.strip():
+        return False
+    emitted = f"<agent-tools path='{_xml_single_quoted_attr(text)}'>"
+    if emitted in session_text:
+        return True
+    for match in _AGENT_TOOLS_OPEN_TAG_RE.finditer(session_text):
+        open_tag = match.group(0)
+        escaped = _xml_single_quoted_attr(text)
+        if f"path='{escaped}'" in open_tag:
+            return True
+        pattern = re.compile(
+            rf"\bpath\s*=\s*['\"](?:{re.escape(text)}|{re.escape(escaped)})['\"]",
+            re.IGNORECASE,
+        )
+        if pattern.search(open_tag):
+            return True
+    return False
 
 
 def cyt_mcp_note_pre_exposed(session_text: str, note: str) -> bool:

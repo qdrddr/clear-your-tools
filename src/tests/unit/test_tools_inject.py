@@ -5,16 +5,20 @@ from __future__ import annotations
 from cyt.tools.inject import ensure_agent_tools_starts_on_new_line, format_agent_tools
 
 
+def _tool(**fields: object) -> dict[str, object]:
+    return {"cyt_injection_tier": "t3", **fields}
+
+
 def test_format_agent_tools_puts_description_as_inner_text() -> None:
     tools = [
-        {
-            "name": "mcp__filesystem__read_file",
-            "description": "Read a file from disk",
-            "input_schema": {
+        _tool(
+            name="mcp__filesystem__read_file",
+            description="Read a file from disk",
+            input_schema={
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
             },
-        },
+        ),
     ]
 
     text = format_agent_tools(tools)
@@ -31,11 +35,11 @@ def test_format_agent_tools_puts_description_as_inner_text() -> None:
 
 def test_format_agent_tools_escapes_multiline_description() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Line one.\n\nLine two.",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Line one.\n\nLine two.",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools)
@@ -45,11 +49,11 @@ def test_format_agent_tools_escapes_multiline_description() -> None:
 
 def test_format_agent_tools_escapes_apostrophe_in_description() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "it's fine",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="it's fine",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools)
@@ -59,11 +63,11 @@ def test_format_agent_tools_escapes_apostrophe_in_description() -> None:
 
 def test_format_agent_tools_omits_tool_description_when_requested() -> None:
     tools = [
-        {
-            "name": "mcp__context7__resolve-library-id",
-            "description": "Resolve a library ID",
-            "parameters": {"type": "object", "properties": {"libraryId": {"type": "string"}}},
-        },
+        _tool(
+            name="mcp__context7__resolve-library-id",
+            description="Resolve a library ID",
+            parameters={"type": "object", "properties": {"libraryId": {"type": "string"}}},
+        ),
     ]
 
     text = format_agent_tools(tools, include_tool_description=False)
@@ -77,11 +81,11 @@ def test_format_agent_tools_omits_tool_description_when_requested() -> None:
 def test_format_agent_tools_intro_avoids_pruned_suffix_on_user_text() -> None:
     """Pruned intro lives inside the block after the opening tag, not before user query."""
     tools = [
-        {
-            "name": "mcp__context7__resolve-library-id",
-            "description": "Resolve a library ID",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__context7__resolve-library-id",
+            description="Resolve a library ID",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools)
@@ -97,11 +101,11 @@ def test_format_agent_tools_intro_avoids_pruned_suffix_on_user_text() -> None:
 
 def test_format_agent_tools_omits_intro_when_pre_exposed() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Demo",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
     first = format_agent_tools(tools)
     second = format_agent_tools(tools, session_text=first)
@@ -118,11 +122,11 @@ def test_ensure_agent_tools_starts_on_new_line() -> None:
 
 def test_format_agent_tools_includes_executor_workspace_note_when_requested() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Demo",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools, include_executor_workspace_note=True)
@@ -133,11 +137,11 @@ def test_format_agent_tools_includes_executor_workspace_note_when_requested() ->
 
 def test_format_agent_tools_omits_executor_workspace_note_by_default() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Demo",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools)
@@ -147,11 +151,11 @@ def test_format_agent_tools_omits_executor_workspace_note_by_default() -> None:
 
 def test_format_agent_tools_single_workspace_path_uses_path_attr() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Demo",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools, workspace_paths=["/tmp/project"])
@@ -160,13 +164,49 @@ def test_format_agent_tools_single_workspace_path_uses_path_attr() -> None:
     assert "<workspace_roots>" not in text
 
 
+def test_format_agent_tools_omits_path_when_pre_exposed() -> None:
+    tools = [
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
+    ]
+    prior = format_agent_tools(tools, workspace_paths=["/tmp/project"])
+    follow_up = format_agent_tools(
+        tools,
+        workspace_paths=["/tmp/project"],
+        session_text=prior,
+    )
+    open_tag = follow_up.lstrip("\n").split("\n", 1)[0]
+    assert " path=" not in open_tag
+    assert "mcp__demo__tool" in follow_up
+
+
+def test_format_agent_tools_re_emits_path_when_workspace_changes() -> None:
+    tools = [
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
+    ]
+    prior = format_agent_tools(tools, workspace_paths=["/tmp/a"])
+    follow_up = format_agent_tools(
+        tools,
+        workspace_paths=["/tmp/b"],
+        session_text=prior,
+    )
+    assert " path='/tmp/b'" in follow_up
+
+
 def test_format_agent_tools_multiple_workspace_paths_use_nested_block() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Demo",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools, workspace_paths=["/tmp/a", "/tmp/b"])
@@ -181,11 +221,11 @@ def test_format_agent_tools_multiple_workspace_paths_use_nested_block() -> None:
 
 def test_format_agent_tools_omits_path_markup_when_no_workspace_paths() -> None:
     tools = [
-        {
-            "name": "mcp__demo__tool",
-            "description": "Demo",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="mcp__demo__tool",
+            description="Demo",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
 
     text = format_agent_tools(tools, workspace_paths=[])
@@ -196,15 +236,15 @@ def test_format_agent_tools_omits_path_markup_when_no_workspace_paths() -> None:
 
 def test_format_agent_tools_rewrites_dynamic_executor_tool_name() -> None:
     tools = [
-        {
-            "name": "tools.semble_mcp.org.default.search",
-            "owner": "org",
-            "integration": "semble_mcp",
-            "connection": "default",
-            "tool_name": "search",
-            "description": "Search",
-            "input_schema": {"type": "object", "properties": {}},
-        },
+        _tool(
+            name="tools.semble_mcp.org.default.search",
+            owner="org",
+            integration="semble_mcp",
+            connection="default",
+            tool_name="search",
+            description="Search",
+            input_schema={"type": "object", "properties": {}},
+        ),
     ]
     text = format_agent_tools(tools)
     assert "<tool name='semble_mcp.org.default.search' description='Search'>" in text

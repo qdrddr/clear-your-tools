@@ -6,6 +6,7 @@ from typing import Any
 
 from cyt.injection.header_pre_exposed import (
     agent_tools_intro_pre_exposed,
+    agent_tools_path_pre_exposed,
     cyt_mcp_note_pre_exposed,
     intro_text_pre_exposed,
 )
@@ -95,6 +96,35 @@ def test_format_session_text_includes_rules_injection_for_cyt_mcp_pre_exposure()
     section = format_cyt_mcp_source_section([other], session_text=corpus)
     assert TOOL_TIER_LEGEND not in section
     assert "other_tool" in section
+
+
+def test_agent_tools_path_pre_exposed_open_tag() -> None:
+    path = "/tmp/project"
+    corpus = f"<agent-tools path='{path}'>\n<tool></tool>\n</agent-tools>"
+    assert agent_tools_path_pre_exposed(corpus, path) is True
+
+
+def test_agent_tools_path_pre_exposed_xml_escaped_path() -> None:
+    from cyt.tools.inject import _xml_single_quoted_attr
+
+    path = "/tmp/user's project"
+    corpus = f"<agent-tools path='{_xml_single_quoted_attr(path)}'>\n</agent-tools>"
+    assert agent_tools_path_pre_exposed(corpus, path) is True
+
+
+def test_agent_tools_path_pre_exposed_not_from_workspace_item() -> None:
+    path = "/tmp/project"
+    corpus = f"<workspace_roots>\n<item path='{path}'/>\n</workspace_roots>"
+    assert agent_tools_path_pre_exposed(corpus, path) is False
+
+
+def test_agent_tools_path_not_pre_exposed_when_different() -> None:
+    corpus = "<agent-tools path='/tmp/other'>\n</agent-tools>"
+    assert agent_tools_path_pre_exposed(corpus, "/tmp/project") is False
+
+
+def test_agent_tools_path_not_pre_exposed_on_empty_corpus() -> None:
+    assert agent_tools_path_pre_exposed("", "/tmp/project") is False
 
 
 def test_intro_reappears_after_compaction_slice() -> None:

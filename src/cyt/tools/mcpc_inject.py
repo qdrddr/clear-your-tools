@@ -12,6 +12,8 @@ __all__ = [
     "compute_mcpc_pre_exposure_flags",
 ]
 from cyt.tools.inject import (
+    _agent_tools_open_tag,
+    _finalize_agent_tools_block,
     _format_examples_block,
     _xml_single_quoted_attr,
     ensure_agent_tools_starts_on_new_line,
@@ -45,16 +47,6 @@ def _format_mcpc_section(*, prompt: str, body: str) -> str:
     prompt = prompt.strip()
     inner = f"{prompt}\n{body}" if prompt else body
     return f"<mcpc>\n{inner}\n</mcpc>"
-
-
-def _agent_tools_open_tag(
-    *,
-    workspace_paths: list[str] | None = None,
-) -> str:
-    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
-    if len(paths) == 1:
-        return f"<agent-tools path='{_xml_single_quoted_attr(paths[0])}'>"
-    return "<agent-tools>"
 
 
 def _pruned_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
@@ -331,9 +323,9 @@ def format_mcpc_agent_tools(
     omit_intro = pre_exposure.omit_agent_tools_description or not include_agent_tools_description
     mcpc_prompt = "" if _MCPC_WORKSPACE_NOTE.strip() in session_text else _MCPC_WORKSPACE_NOTE
     mcpc_section = _format_mcpc_section(prompt=mcpc_prompt, body="\n".join(server_blocks))
-    lines = [_agent_tools_open_tag(workspace_paths=workspace_paths)]
+    lines = [_agent_tools_open_tag(workspace_paths=workspace_paths, session_text=session_text)]
     if not omit_intro:
         lines.append(_mcpc_agent_tools_description())
     lines.append(mcpc_section)
     lines.append("</agent-tools>")
-    return ensure_agent_tools_starts_on_new_line("\n".join(lines))
+    return _finalize_agent_tools_block(lines)

@@ -135,12 +135,26 @@ def is_rules_placeholder_body(body: str) -> bool:
     return body.strip() == _RULES_PLACEHOLDER_BODY
 
 
+def _injection_block_inner_empty(body: str, tag: str) -> bool:
+    pattern = re.compile(rf"<{tag}[^>]*>(.*?)</{tag}>", re.DOTALL | re.IGNORECASE)
+    match = pattern.search(body)
+    if not match:
+        return True
+    return not match.group(1).strip()
+
+
 def is_substantive_rules_injection(body: str) -> bool:
     text = body.strip()
     if not text or is_rules_placeholder_body(text):
         return False
     lowered = text.casefold()
-    return "<agent-tools" in lowered or "<agent-skills" in lowered
+    has_tools = "<agent-tools" in lowered
+    has_skills = "<agent-skills" in lowered
+    if not has_tools and not has_skills:
+        return False
+    tools_empty = not has_tools or _injection_block_inner_empty(text, "agent-tools")
+    skills_empty = not has_skills or _injection_block_inner_empty(text, "agent-skills")
+    return not (tools_empty and skills_empty)
 
 
 def rules_injection_needs_format_refresh(body: str) -> bool:
@@ -485,13 +499,13 @@ def sync_cursor_rules_file(
     *,
     merge_sections: bool = False,
 ) -> bool:
-    """Write or delete the rules file. Return True when disk state changed."""
+    """Write rules injection or reset to lifecycle placeholder. Return True when disk state changed."""
     if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
         return False
 
     path = rules_file_path(workspace)
-    if not injection.strip():
-        return delete_cursor_rules_file(workspace)
+    if not injection.strip() or not is_substantive_rules_injection(injection.strip()):
+        return reset_cursor_rules_file_to_placeholder(workspace)
 
     prior_body = ""
     if merge_sections and path.is_file():

@@ -57,11 +57,25 @@ def _xml_single_quoted_attr(value: str) -> str:
 def _agent_tools_open_tag(
     *,
     workspace_paths: list[str] | None = None,
+    session_text: str = "",
 ) -> str:
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) == 1:
-        return f"<agent-tools path='{_xml_single_quoted_attr(paths[0])}'>"
+        from cyt.injection.header_pre_exposed import agent_tools_path_pre_exposed
+
+        if not agent_tools_path_pre_exposed(session_text, paths[0]):
+            return f"<agent-tools path='{_xml_single_quoted_attr(paths[0])}'>"
     return "<agent-tools>"
+
+
+def _finalize_agent_tools_block(lines: list[str]) -> str:
+    """Join agent-tools lines; return empty string when only the wrapper would remain."""
+    if len(lines) < 2 or lines[-1] != "</agent-tools>":
+        return ensure_agent_tools_starts_on_new_line("\n".join(lines))
+    inner = "\n".join(lines[1:-1]).strip()
+    if not inner:
+        return ""
+    return ensure_agent_tools_starts_on_new_line("\n".join(lines))
 
 
 def _format_workspace_roots_block(workspace_paths: list[str]) -> str:
@@ -217,7 +231,7 @@ def format_agent_tools(
         include_tool_description=include_tool_description,
         include_executor_workspace_note=include_executor_workspace_note,
     )
-    lines = [_agent_tools_open_tag(workspace_paths=paths)]
+    lines = [_agent_tools_open_tag(workspace_paths=paths, session_text=session_text)]
     from cyt.injection.header_pre_exposed import agent_tools_intro_pre_exposed
 
     if not agent_tools_intro_pre_exposed(session_text, intro):
@@ -228,7 +242,7 @@ def format_agent_tools(
             lines.append(roots_block)
     lines.append(body)
     lines.append("</agent-tools>")
-    return ensure_agent_tools_starts_on_new_line("\n".join(lines))
+    return _finalize_agent_tools_block(lines)
 
 
 def injection_token_count(text: str) -> int:

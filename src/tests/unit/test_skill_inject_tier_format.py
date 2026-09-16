@@ -86,8 +86,7 @@ def test_format_agent_skills_empty_emits_stable_wrapper() -> None:
     assert "</agent-skills>" in block
 
 
-def test_format_agent_skills_empty_omits_legend_when_pre_exposed() -> None:
+def test_format_agent_skills_empty_omits_wrapper_when_legend_pre_exposed() -> None:
     prior = format_agent_skills_empty()
     block = format_agent_skills_empty(combined_text=prior)
-    assert SKILL_TIER_LEGEND not in block
-    assert "<agent-skills>" in block
+    assert block == ""

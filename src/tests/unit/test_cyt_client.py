@@ -756,8 +756,13 @@ def test_sync_cursor_rules_file_replaces_on_single_domain_sync() -> None:
         assert "<agent-skills>" not in body
 
 
-def test_sync_cursor_rules_file_deletes_on_empty_injection() -> None:
-    from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
+def test_sync_cursor_rules_file_writes_placeholder_on_empty_injection() -> None:
+    from cyt_client.rules_file import (
+        build_rules_mdc,
+        build_rules_mdc_placeholder,
+        rules_file_path,
+        sync_cursor_rules_file,
+    )
 
     with tempfile.TemporaryDirectory() as tmp:
         workspace = Path(tmp)
@@ -766,7 +771,27 @@ def test_sync_cursor_rules_file_deletes_on_empty_injection() -> None:
         path.write_text(build_rules_mdc("demo"), encoding="utf-8")
 
         assert sync_cursor_rules_file(workspace, "") is True
-        assert not path.is_file()
+        assert path.is_file()
+        assert path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+
+
+def test_sync_cursor_rules_file_writes_placeholder_on_wrapper_only_injection() -> None:
+    from cyt_client.rules_file import (
+        build_rules_mdc,
+        build_rules_mdc_placeholder,
+        rules_file_path,
+        sync_cursor_rules_file,
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_rules_mdc("demo"), encoding="utf-8")
+
+        wrapper_only = "<agent-tools>\n</agent-tools>\n\n<agent-skills>\n</agent-skills>"
+        assert sync_cursor_rules_file(workspace, wrapper_only) is True
+        assert path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
 
 
 def test_delete_cursor_rules_file_noop_when_absent() -> None:

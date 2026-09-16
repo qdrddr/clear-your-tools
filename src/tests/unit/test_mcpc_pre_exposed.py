@@ -23,6 +23,7 @@ def _tool(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
             "type": "object",
             "properties": {"libraryName": {"type": "string"}},
         },
+        "cyt_injection_tier": "t3",
         "server_name": "Context7",
         "server_instructions": "Use this server for docs.",
         "server_description": "Context7 documentation server.",
@@ -73,6 +74,20 @@ def test_format_mcpc_agent_tools_includes_server_description() -> None:
     tool = _tool()
     text = format_mcpc_agent_tools([tool])
     assert "description='Context7 documentation server.'" in text
+
+
+def test_format_mcpc_agent_tools_omits_path_when_pre_exposed() -> None:
+    tool = _tool()
+    path = "/tmp/project"
+    prior = format_mcpc_agent_tools([tool], workspace_paths=[path])
+    assert f" path='{path}'" in prior
+    follow_up = format_mcpc_agent_tools(
+        [tool],
+        workspace_paths=[path],
+        session_text=prior,
+    )
+    open_tag = follow_up.lstrip("\n").split("\n", 1)[0]
+    assert " path=" not in open_tag
 
 
 def test_compute_mcpc_pre_exposure_flags_detects_agent_tools_intro() -> None:
