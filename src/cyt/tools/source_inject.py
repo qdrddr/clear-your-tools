@@ -46,12 +46,6 @@ _CYT_MCP_WORKSPACE_NOTE = (
     "2. The task requires optional properties or complete tool definitions that were omitted by the pruning pipeline.\n"
 )
 
-_CYT_MCP_EMPTY_NOTE = (
-    "No relevant cyt-mcp tools matched this prompt. Do not use `get-tool-definitions` — "
-    "there is nothing to look up. This block is kept stable for prompt-prefix cache."
-)
-
-
 def _normalize_tool_scope(tool: dict[str, Any]) -> str:
     raw = tool.get("cyt_catalog_scope")
     if isinstance(raw, str) and raw.strip().lower() == "workspace":
@@ -240,37 +234,29 @@ def format_cyt_mcp_source_section(
     workspace_paths: list[str] | None = None,
     include_tool_description: bool = True,
     session_text: str = "",
-    force_empty_note: bool = False,
 ) -> str:
-    ws_block = ""
-    usr_block = ""
-    if tools:
-        workspace_tools, user_tools = _partition_cyt_mcp_tools_by_scope(tools)
-        ws_block = _format_scope_tool_block(
-            "cyt-mcp-ws",
-            workspace_tools,
-            include_tool_description=include_tool_description,
-        )
-        usr_block = _format_scope_tool_block(
-            "cyt-mcp-usr",
-            user_tools,
-            include_tool_description=include_tool_description,
-        )
-
-    include_workspace_note = bool(tools) or force_empty_note
     if not tools:
-        include_workspace_note = True
+        return ""
+
+    workspace_tools, user_tools = _partition_cyt_mcp_tools_by_scope(tools)
+    ws_block = _format_scope_tool_block(
+        "cyt-mcp-ws",
+        workspace_tools,
+        include_tool_description=include_tool_description,
+    )
+    usr_block = _format_scope_tool_block(
+        "cyt-mcp-usr",
+        user_tools,
+        include_tool_description=include_tool_description,
+    )
+    if not ws_block and not usr_block:
+        return ""
 
     prompt_parts = _cyt_mcp_prompt_parts(
         session_text=session_text,
         workspace_paths=workspace_paths,
-        include_workspace_note=include_workspace_note,
+        include_workspace_note=True,
     )
-    if not tools:
-        if _CYT_MCP_EMPTY_NOTE not in prompt_parts:
-            prompt_parts.append(_CYT_MCP_EMPTY_NOTE)
-    elif force_empty_note and not ws_block and not usr_block:
-        prompt_parts.append(_CYT_MCP_EMPTY_NOTE)
 
     inner_parts = [part for part in (*prompt_parts, ws_block, usr_block) if part]
     if not inner_parts:

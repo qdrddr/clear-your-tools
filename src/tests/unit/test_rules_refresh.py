@@ -23,6 +23,7 @@ def _sample_tool(name: str = "demo_tool") -> dict:
         "description": "Demo",
         "input_schema": {"type": "object", "properties": {}},
         "cyt_catalog_scope": "user",
+        "cyt_injection_tier": "t3",
     }
 
 
@@ -48,6 +49,16 @@ def test_rules_injection_needs_format_refresh_flat_cyt_mcp() -> None:
         "</agent-tools>"
     )
     assert rules_injection_needs_format_refresh(legacy) is True
+
+
+def test_rules_injection_needs_format_refresh_header_only_cyt_mcp() -> None:
+    stale = (
+        "<agent-tools>\nPruned MCP tool definitions below\n"
+        "<cyt-mcp>\nTool tiers are grouped in <tier_tN>…</tier_tN> wrappers.\n"
+        "No relevant cyt-mcp tools matched this prompt.\n"
+        "</cyt-mcp>\n</agent-tools>"
+    )
+    assert rules_injection_needs_format_refresh(stale) is True
 
 
 def test_rules_injection_does_not_refresh_new_scope_layout() -> None:

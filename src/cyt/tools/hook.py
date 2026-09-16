@@ -104,7 +104,13 @@ def _partition_tools_by_source(
 def _format_session_text(payload: dict[str, Any], ctx: PreExposureContext) -> str:
     if bypass_injection_pre_exposure(payload):
         return ""
-    return ctx.combined_text
+    parts = [ctx.combined_text]
+    rules = payload.get("cyt_rules_injection")
+    if isinstance(rules, str) and rules.strip():
+        rules_text = rules.strip()
+        if rules_text not in ctx.combined_text:
+            parts.append(rules_text)
+    return "\n".join(part for part in parts if part.strip())
 
 
 def _gate_source_tools(
@@ -173,14 +179,6 @@ def _gate_and_build_source_sections(
     all_logs: list[dict[str, Any]] = []
     for source_id, tools in source_tools.items():
         if not tools:
-            if source_id == "cyt_mcp":
-                empty_section = format_cyt_mcp_source_section(
-                    [],
-                    workspace_paths=workspace_paths,
-                    session_text=format_session_text,
-                )
-                if empty_section:
-                    sections[source_id] = empty_section
             continue
         gated, logs, surviving_sessions = _gate_source_tools(
             tools,
@@ -192,15 +190,6 @@ def _gate_and_build_source_sections(
         )
         all_logs.extend(logs)
         if not gated:
-            if source_id == "cyt_mcp":
-                empty_section = format_cyt_mcp_source_section(
-                    [],
-                    workspace_paths=workspace_paths,
-                    session_text=format_session_text,
-                    force_empty_note=True,
-                )
-                if empty_section:
-                    sections[source_id] = empty_section
             continue
         section = _format_gated_source_section(
             source_id,

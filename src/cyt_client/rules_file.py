@@ -151,8 +151,12 @@ def rules_injection_needs_format_refresh(body: str) -> bool:
     if _AGENT_TOOLS_LEGACY_DESCRIPTION_RE.search(text):
         return True
     lowered = text.casefold()
-    if "<cyt-mcp>" in lowered and ("<tool " in lowered or "<tool>" in lowered):
-        if "<cyt-mcp-ws>" not in lowered and "<cyt-mcp-usr>" not in lowered:
+    if "<cyt-mcp>" in lowered:
+        has_scope = "<cyt-mcp-ws>" in lowered or "<cyt-mcp-usr>" in lowered
+        has_tools = "<tool " in lowered or "<tool>" in lowered
+        if not has_scope and not has_tools:
+            return True
+        if has_tools and not has_scope:
             return True
     return False
 

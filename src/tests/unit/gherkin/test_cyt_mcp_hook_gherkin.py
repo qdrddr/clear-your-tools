@@ -43,6 +43,7 @@ def _filesystem_tool() -> dict:
             "properties": {"path": {"type": "string"}},
         },
         "cyt_catalog_source": "cyt_mcp",
+        "cyt_injection_tier": "t3",
     }
 
 

@@ -62,10 +62,9 @@ def test_fixture_pre_exposure_cases_skip_when_fragment_present(case: PreExposure
         assert filtered == [tool]
 
 
-def test_cyt_mcp_empty_block_includes_tool_legend_from_fixture() -> None:
+def test_cyt_mcp_empty_tools_omits_section() -> None:
     section = format_cyt_mcp_source_section([])
-    assert TOOL_TIER_LEGEND in section
-    assert "No relevant cyt-mcp tools matched" in section
+    assert section == ""
 
 
 def test_format_agent_skills_empty_matches_fixture_skill_legend() -> None:

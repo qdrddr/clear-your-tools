@@ -14,6 +14,7 @@ def _sample_tool(name: str, *, scope: str | None = None) -> dict:
         "name": name,
         "description": f"Tool {name}",
         "input_schema": {"type": "object", "properties": {}},
+        "cyt_injection_tier": "t3",
     }
     if scope is not None:
         tool["cyt_catalog_scope"] = scope
@@ -59,19 +60,14 @@ def test_format_cyt_mcp_source_section_workspace_wins_on_name_collision() -> Non
     assert section.count("name='shared_tool'") == 1
 
 
-def test_format_cyt_mcp_source_section_empty_tools_emits_static_block() -> None:
+def test_format_cyt_mcp_source_section_empty_tools_omits_block() -> None:
     section = format_cyt_mcp_source_section([])
-    assert "<cyt-mcp>" in section
-    assert "Tool tiers:" in section
-    assert "get-tool-definitions" in section
-    assert "Do not guess or invent argument property names" in section
-    assert "<cyt-mcp-ws>" not in section
-    assert "<cyt-mcp-usr>" not in section
+    assert section == ""
 
 
 def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
     section = format_cyt_mcp_source_section([_sample_tool("codebase-memory_query_graph")])
-    assert "Tool tiers:" in section
+    assert "Tool tiers are grouped" in section
     assert "pre-filtered tool definitions" in section
     assert "get-tool-definitions" in section
     assert "Do not guess or invent argument property names" in section
@@ -85,18 +81,19 @@ def test_format_cyt_mcp_source_section_omits_note_when_pre_exposed() -> None:
         session_text=prior,
     )
     assert "pre-filtered tool definitions" not in section
-    assert "Tool tiers:" not in section
+    assert "Tool tiers are grouped" not in section
     assert "<cyt-mcp-usr>" in section
 
 
-def test_format_cyt_mcp_source_section_all_pre_exposed_emits_empty_block() -> None:
+def test_format_cyt_mcp_source_section_headers_pre_exposed_when_rules_corpus() -> None:
+    prior = format_cyt_mcp_source_section([_sample_tool("demo_tool")])
     section = format_cyt_mcp_source_section(
-        [],
-        force_empty_note=True,
+        [_sample_tool("other_tool")],
+        session_text=prior,
     )
-    assert "<cyt-mcp>" in section
-    assert "Tool tiers:" in section
-    assert "No relevant cyt-mcp tools matched" in section
+    assert "Tool tiers are grouped" not in section
+    assert "pre-filtered tool definitions" not in section
+    assert "other_tool" in section
 
 
 def test_multi_source_orders_cyt_mcp_first() -> None:

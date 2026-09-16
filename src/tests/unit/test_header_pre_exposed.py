@@ -42,17 +42,59 @@ def test_intro_not_pre_exposed_from_bare_substring_outside_agent_tools() -> None
 def test_cyt_mcp_workspace_roots_included_when_note_pre_exposed() -> None:
     from cyt.tools.source_inject import format_cyt_mcp_source_section
 
+    tool = {
+        "name": "demo_tool",
+        "description": "Demo",
+        "input_schema": {"type": "object", "properties": {}},
+        "cyt_catalog_scope": "user",
+        "cyt_injection_tier": "t3",
+    }
+    other = {
+        "name": "other_tool",
+        "description": "Other",
+        "input_schema": {"type": "object", "properties": {}},
+        "cyt_catalog_scope": "user",
+        "cyt_injection_tier": "t3",
+    }
     prior = format_cyt_mcp_source_section(
-        [{"name": "demo_tool", "input_schema": {}, "cyt_catalog_scope": "user"}],
+        [tool],
         workspace_paths=["/tmp/a", "/tmp/b"],
     )
     section = format_cyt_mcp_source_section(
-        [{"name": "other_tool", "input_schema": {}, "cyt_catalog_scope": "user"}],
+        [other],
         workspace_paths=["/tmp/a", "/tmp/b"],
         session_text=prior,
     )
     assert "pre-filtered tool definitions" not in section
     assert "<workspace_roots>" in section
+
+
+def test_format_session_text_includes_rules_injection_for_cyt_mcp_pre_exposure() -> None:
+    from cyt.injection.pre_exposure_context import PreExposureContext
+    from cyt.injection.tier_legend import TOOL_TIER_LEGEND
+    from cyt.tools.hook import _format_session_text
+    from cyt.tools.source_inject import format_cyt_mcp_source_section
+
+    tool = {
+        "name": "demo_tool",
+        "description": "Demo",
+        "input_schema": {"type": "object", "properties": {}},
+        "cyt_catalog_scope": "user",
+        "cyt_injection_tier": "t3",
+    }
+    other = {
+        "name": "other_tool",
+        "description": "Other",
+        "input_schema": {"type": "object", "properties": {}},
+        "cyt_catalog_scope": "user",
+        "cyt_injection_tier": "t3",
+    }
+    prior_rules = format_cyt_mcp_source_section([tool])
+    ctx = PreExposureContext.from_entries(payload_text="follow-up question", entries=[])
+    corpus = _format_session_text({"cyt_rules_injection": prior_rules}, ctx)
+    section = format_cyt_mcp_source_section([other], session_text=corpus)
+    assert TOOL_TIER_LEGEND not in section
+    assert "other_tool" in section
 
 
 def test_intro_reappears_after_compaction_slice() -> None:
