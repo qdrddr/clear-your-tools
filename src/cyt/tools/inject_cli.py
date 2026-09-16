@@ -14,6 +14,7 @@ from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_work
 from cyt.pruners.token_stats import build_preview_token_stats, format_preview_token_summary_lines
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.tools.hook import gate_and_format_hook_tools
+from cyt.indexer.tokens import count_json_tokens
 from cyt.tools.inject import injection_token_count
 from cyt.tools.master_catalog import get_master_tool_catalog
 from cyt.tools.source_inject import (
@@ -179,19 +180,13 @@ def _preview_token_stats(
     agent: str,
     workspace: Path,
 ) -> dict[str, int | float]:
-    workspace_paths = [str(workspace)]
-    full_by_source = {source: tools for source, tools in grouped.items() if tools}
-    full_sections = _format_sections(full_by_source, workspace_path=workspace)
-    full_injection = format_multi_source_agent_tools(
-        full_sections,
-        workspace_paths=workspace_paths,
-    )
-    tokens_in = injection_token_count(full_injection) if full_injection.strip() else 0
+    all_tools = [tool for tools in grouped.values() for tool in tools]
+    tokens_in = count_json_tokens(all_tools) if all_tools else 0
     tokens_out = injection_token_count(pruned_injection) if pruned_injection.strip() else 0
     if tokens_in == 0 and tokens_out == 0:
         return {}
 
-    tool_count_in = sum(len(tools) for tools in full_by_source.values())
+    tool_count_in = len(all_tools)
 
     frontend_tool_count: int | None = None
     frontend_tokens: int | None = None
