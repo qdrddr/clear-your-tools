@@ -107,16 +107,19 @@ def run_tier_state_maintenance(
         from cyt.tiers.manager import _managers
 
         allowed_sources = configured_tool_catalog_sources(config)
-        catalog_entity_ids = resolve_tracked_catalog_entity_ids(config, blocking=False)
+        # Require a complete catalog snapshot before deleting persisted tool rows.
+        # Non-blocking reads can return a partial SWR cache and mass-delete valid tiers.
+        catalog_entity_ids = resolve_tracked_catalog_entity_ids(config, blocking=True)
         for manager in list(_managers.values()):
             purge = getattr(manager, "purge_inactive_tool_sources", None)
             if callable(purge):
                 purge(config)
         flush_all_tier_managers(force=True)
-        result.deleted["stale_catalog_tools"] = store.purge_stale_catalog_tool_entities(
-            allowed_sources=allowed_sources,
-            catalog_entity_ids=catalog_entity_ids,
-        )
+        if catalog_entity_ids:
+            result.deleted["stale_catalog_tools"] = store.purge_stale_catalog_tool_entities(
+                allowed_sources=allowed_sources,
+                catalog_entity_ids=catalog_entity_ids,
+            )
         result.deleted["dormant_entities"] = store.prune_dormant_entities(
             idle_cutoff_ms=idle_cutoff_ms,
             counter_floor=retention.entity_counter_floor,

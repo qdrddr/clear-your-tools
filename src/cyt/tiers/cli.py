@@ -157,6 +157,9 @@ def run_tiers_status(args: argparse.Namespace) -> int:
     maybe_run_tier_maintenance_on_stats_query(config)
 
     manager = get_tier_manager(config, workspace=project_root)
+    refresh = getattr(manager, "refresh_states_from_store", None)
+    if callable(refresh):
+        refresh()
     status = manager.status(config, agent=status_agent)
     status_payload = {
         **status,

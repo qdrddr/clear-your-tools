@@ -267,6 +267,15 @@ class TierManager:
         for kind, entity_id in removed:
             self._store.delete_entity_state(self.project, kind=kind, entity_id=entity_id)
 
+    def refresh_states_from_store(self) -> None:
+        """Merge persisted tier rows from SQLite into memory (for CLI status reporting)."""
+        persisted = self._store.load_entity_states(self.project)
+        with self._state_lock:
+            for key, state in persisted.items():
+                existing = self._states.get(key)
+                if existing is None or state.stats.last_seen_ms >= existing.stats.last_seen_ms:
+                    self._states[key] = state
+
     def close(self) -> None:
         self.flush_pending(force=True)
         self._store.close()
@@ -876,73 +885,74 @@ class TierManager:
             )
             tool_cfg = tier_section_config(config, kind="tool")
             skill_cfg = tier_section_config(config, kind="skill")
-            tool_detail = build_kind_detail(
-                self._states,
-                kind=EntityKind.TOOL,
-                cfg=tool_cfg,
-                wake_cycle_id=self._epoch.wake_cycle_id,
-                now_ms=now_ms,
-                effective_tier_fn=effective_fn,
-                config=scoped_config,
-                workspace_root=self.project.root_path,
-                tracked_catalog_entity_ids=tracked_catalog_ids,
-                catalog_tools=catalog_tools,
-            )
-            tool_detail = enrich_tool_detail_with_catalog_discoveries(
-                tool_detail,
-                states=self._states,
-                cfg=tool_cfg,
-                config=scoped_config,
-                workspace_root=self.project.root_path,
-                catalog_tools=catalog_tools,
-                wake_cycle_id=self._epoch.wake_cycle_id,
-                now_ms=now_ms,
-                effective_tier_fn=effective_fn,
-            )
-            resolved_agent = resolve_tier_status_agent(
-                config,
-                workspace_root=self.project.root_path,
-                explicit=agent,
-            )
-            if filter_by_permissions:
-                tool_detail = filter_tool_detail_by_permissions(
+            with self._state_lock:
+                tool_detail = build_kind_detail(
+                    self._states,
+                    kind=EntityKind.TOOL,
+                    cfg=tool_cfg,
+                    wake_cycle_id=self._epoch.wake_cycle_id,
+                    now_ms=now_ms,
+                    effective_tier_fn=effective_fn,
+                    config=scoped_config,
+                    workspace_root=self.project.root_path,
+                    tracked_catalog_entity_ids=tracked_catalog_ids,
+                    catalog_tools=catalog_tools,
+                )
+                tool_detail = enrich_tool_detail_with_catalog_discoveries(
                     tool_detail,
-                    agent=resolved_agent,
+                    states=self._states,
+                    cfg=tool_cfg,
+                    config=scoped_config,
+                    workspace_root=self.project.root_path,
+                    catalog_tools=catalog_tools,
+                    wake_cycle_id=self._epoch.wake_cycle_id,
+                    now_ms=now_ms,
+                    effective_tier_fn=effective_fn,
+                )
+                resolved_agent = resolve_tier_status_agent(
+                    config,
+                    workspace_root=self.project.root_path,
+                    explicit=agent,
+                )
+                if filter_by_permissions:
+                    tool_detail = filter_tool_detail_by_permissions(
+                        tool_detail,
+                        agent=resolved_agent,
+                        workspace_root=self.project.root_path,
+                    )
+                skill_detail = build_kind_detail(
+                    self._states,
+                    kind=EntityKind.SKILL,
+                    cfg=skill_cfg,
+                    wake_cycle_id=self._epoch.wake_cycle_id,
+                    now_ms=now_ms,
+                    effective_tier_fn=effective_fn,
+                    config=config,
                     workspace_root=self.project.root_path,
                 )
-            skill_detail = build_kind_detail(
-                self._states,
-                kind=EntityKind.SKILL,
-                cfg=skill_cfg,
-                wake_cycle_id=self._epoch.wake_cycle_id,
-                now_ms=now_ms,
-                effective_tier_fn=effective_fn,
-                config=config,
-                workspace_root=self.project.root_path,
-            )
-            skill_detail = enrich_skill_detail_with_workspace_discoveries(
-                skill_detail,
-                states=self._states,
-                cfg=skill_cfg,
-                config=config,
-                workspace_root=self.project.root_path,
-                agent=resolved_agent,
-                wake_cycle_id=self._epoch.wake_cycle_id,
-                now_ms=now_ms,
-                effective_tier_fn=effective_fn,
-            )
-            skill_detail = filter_skill_detail_by_agent(
-                skill_detail,
-                agent=resolved_agent,
-                config=config,
-                workspace_root=self.project.root_path,
-            )
-            if filter_by_permissions:
-                skill_detail = filter_skill_detail_by_permissions(
+                skill_detail = enrich_skill_detail_with_workspace_discoveries(
+                    skill_detail,
+                    states=self._states,
+                    cfg=skill_cfg,
+                    config=config,
+                    workspace_root=self.project.root_path,
+                    agent=resolved_agent,
+                    wake_cycle_id=self._epoch.wake_cycle_id,
+                    now_ms=now_ms,
+                    effective_tier_fn=effective_fn,
+                )
+                skill_detail = filter_skill_detail_by_agent(
                     skill_detail,
                     agent=resolved_agent,
+                    config=config,
                     workspace_root=self.project.root_path,
                 )
+                if filter_by_permissions:
+                    skill_detail = filter_skill_detail_by_permissions(
+                        skill_detail,
+                        agent=resolved_agent,
+                        workspace_root=self.project.root_path,
+                    )
             summary["agent"] = resolved_agent
             summary["tools"] = {
                 "mode": tool_cfg.mode.value,

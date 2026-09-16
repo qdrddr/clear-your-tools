@@ -1465,19 +1465,6 @@ def uninstall_hooks_from_file(
     if not changed:
         return False
 
-    # #region agent log
-    from cyt.hook.debug_hooks_audit import log_hooks_json_mutation
-
-    log_hooks_json_mutation(
-        path,
-        action="uninstall_hooks_from_file",
-        hypothesis_id="B",
-        data={
-            "preserve_empty_hooks_object": preserve_empty_hooks_object,
-            "merged_event_count": len(merged_hooks),
-        },
-    )
-    # #endregion
     if preserve_empty_hooks_object:
         _write_cursor_hooks_file(path, existing, merged_hooks)
     elif merged_hooks:
@@ -1502,23 +1489,6 @@ def _load_json_object(path: Path) -> dict[str, Any]:
 
 
 def _write_json_object(path: Path, data: dict[str, Any]) -> None:
-    # #region agent log
-    if path.name == "hooks.json":
-        from cyt.hook.debug_hooks_audit import log_hooks_json_mutation
-
-        raw_hooks = data.get("hooks")
-        hooks_section = raw_hooks if isinstance(raw_hooks, dict) else {}
-        log_hooks_json_mutation(
-            path,
-            action="write_json_object",
-            hypothesis_id="B",
-            data={
-                "event_count": len(hooks_section),
-                "empty_hooks": not hooks_section,
-                "top_level_keys": sorted(data.keys()),
-            },
-        )
-    # #endregion
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
@@ -2036,16 +2006,6 @@ def _handle_existing_cursor_hooks(
     if action == "remove":
         merged_hooks, changed = remove_cyt_hooks(hooks_section)
         if changed:
-            # #region agent log
-            from cyt.hook.debug_hooks_audit import log_hooks_json_mutation
-
-            log_hooks_json_mutation(
-                path,
-                action="_handle_existing_cursor_hooks_remove",
-                hypothesis_id="B",
-                data={"label": label},
-            )
-            # #endregion
             existing = _load_json_object(path)
             _write_cursor_hooks_file(path, existing, merged_hooks)
             print(f"{label}: removed CYT hook from {path}")

@@ -937,11 +937,13 @@ def enrich_tool_detail_with_catalog_discoveries(
             continue
         state = states.get((EntityKind.TOOL, entity_id))
         if state is None:
+            # Match runtime _ensure_state default: unseen catalog tools are ACTIVE (T2),
+            # not DORMANT (T0). T0 is reserved for deliberate fast-sleep demotion.
             state = EntityTierState(
                 entity_id=entity_id,
                 kind=EntityKind.TOOL,
-                stable_tier=Tier.DORMANT,
-                effective_tier=Tier.DORMANT,
+                stable_tier=Tier.ACTIVE,
+                effective_tier=Tier.ACTIVE,
             )
         label = tier_label(resolve_effective(state))
         histogram[label] = histogram.get(label, 0) + 1
@@ -1048,7 +1050,7 @@ def build_combined_histogram(
         now_ms = int(time.time() * 1000)
     resolve_effective = effective_tier_fn or (lambda s: effective_tier_for(s, now_ms=now_ms))
     out: dict[str, dict[str, int]] = {}
-    for (kind, _), state in states.items():
+    for (kind, _), state in list(states.items()):
         label = tier_label(resolve_effective(state))
         kind_hist = out.setdefault(str(kind), dict.fromkeys(_TIER_LABELS, 0))
         kind_hist[label] = kind_hist.get(label, 0) + 1
