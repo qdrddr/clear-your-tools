@@ -22,7 +22,7 @@ ensure_native_import
 
 case "${category}" in
 unit)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_QA_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/unit \
 		--ignore=src/tests/unit/gherkin \
 		--ignore=src/tests/integration \

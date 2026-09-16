@@ -25,6 +25,17 @@ from tests.support.tier_ephemeral_guard_fixtures import (
 )
 
 
+def test_load_config_tier_db_path_is_isolated_from_user_home() -> None:
+    """Regression: load_config() must not resolve tier DB to ~/.config/cyt/tier_state.db."""
+    from cyt.config import load_config
+    from cyt.tiers.config import tier_state_db_path
+
+    configured = Path(tier_state_db_path(load_config())).expanduser()
+    user_default = Path("~/.config/cyt/tier_state.db").expanduser()
+    assert configured != user_default
+    assert configured.name == "tier_state.db"
+
+
 @pytest.mark.parametrize(
     "path",
     load_scenarios()["ephemeral_skill_paths"],

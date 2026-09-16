@@ -295,7 +295,10 @@ def _session_gate_summary(
     for source, tools in pruned_by_source.items():
         for tool in tools:
             catalog_source = str(tool.get("cyt_catalog_source") or source).strip()
-            display_name = str(tool.get("name") or tool.get("tool_name") or "").strip()
+            if catalog_source == "cyt_mcp":
+                display_name = str(tool.get("name") or "").strip()
+            else:
+                display_name = str(tool.get("name") or tool.get("tool_name") or "").strip()
             if not display_name:
                 continue
             key = tool_item_key(tool)

@@ -1,5 +1,10 @@
 # Language groups for scripts/pre-commit-hooks/prek-loop.sh
 #
+# Automated pytest hooks run unit/gherkin/quality/coverage/mutation/qa categories only.
+# Integration tests (src/tests/integration) are manual-only:
+#   uv run pytest -m integration --run-integration
+# prek-loop.sh unsets CYT_RUN_INTEGRATION_TESTS; do not add integration pytest hooks here.
+#
 # Hooks may appear in more than one group. The `suggestion` hook is omitted
 # intentionally (informational only).
 #

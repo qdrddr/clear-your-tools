@@ -260,13 +260,21 @@ def _master_tool_for_pre_exposure(
     name = str(tool_record.get("name") or "").strip()
     master: dict[str, Any] = {
         "name": name,
-        "tool_name": name,
         "input_schema": tool_record.get("input_schema") or {},
         "cyt_catalog_source": catalog,
     }
     description = tool_record.get("description")
     if description is not None and str(description).strip():
         master["description"] = str(description).strip()
+    if catalog == "cyt_mcp":
+        server_key = str(tool_record.get("server_key") or "").strip()
+        bare = str(tool_record.get("tool_name") or "").strip()
+        if server_key:
+            master["server_key"] = server_key
+        if bare:
+            master["tool_name"] = bare
+    else:
+        master["tool_name"] = name
     if catalog == "mcpc":
         session = str(mcpc_session or tool_record.get("mcpc_session") or "").strip()
         if session:

@@ -1,0 +1,55 @@
+{
+  "tool_log_write_expectations": [
+    {
+      "id": "fff_grep",
+      "wire_name": "fff_grep",
+      "expected_key": "tool:cyt_mcp:fff_grep",
+      "expected_xml_name_attr": "fff_grep",
+      "must_not_xml_name_attr": "grep"
+    },
+    {
+      "id": "graphify_query_graph",
+      "wire_name": "graphify_query_graph",
+      "expected_key": "tool:cyt_mcp:graphify_query_graph",
+      "expected_xml_name_attr": "graphify_query_graph",
+      "must_not_xml_name_attr": "query_graph"
+    },
+    {
+      "id": "codebase-memory_query_graph",
+      "wire_name": "codebase-memory_query_graph",
+      "expected_key": "tool:cyt_mcp:codebase-memory_query_graph",
+      "expected_xml_name_attr": "codebase-memory_query_graph",
+      "must_not_xml_name_attr": "query_graph"
+    }
+  ],
+  "gate_skip_expectations": [
+    {
+      "id": "wire_session_skips_fff_grep",
+      "wire_name": "fff_grep",
+      "session_entry_source": "wire_tool_log_entry",
+      "expect_skipped": true
+    },
+    {
+      "id": "legacy_bare_session_does_not_skip_fff_grep",
+      "wire_name": "fff_grep",
+      "session_entry_source": "legacy_bare_grep",
+      "expect_skipped": false
+    }
+  ],
+  "inject_preview_expectations": [
+    {
+      "id": "wire_session_inject_preview_skips",
+      "wire_name": "fff_grep",
+      "session_entry_source": "wire_tool_log_entry",
+      "expect_injection_contains": "name='fff_grep'",
+      "expect_injection_excludes": null
+    },
+    {
+      "id": "legacy_bare_session_inject_preview_does_not_skip",
+      "wire_name": "fff_grep",
+      "session_entry_source": "legacy_bare_grep",
+      "expect_injection_contains": "name='fff_grep'",
+      "expect_injection_excludes": null
+    }
+  ]
+}

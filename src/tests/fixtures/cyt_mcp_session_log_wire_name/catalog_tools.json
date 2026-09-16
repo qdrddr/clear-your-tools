@@ -1,0 +1,47 @@
+{
+  "tools": [
+    {
+      "name": "fff_grep",
+      "tool_name": "grep",
+      "server_key": "fff",
+      "description": "Search file contents with grep.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    },
+    {
+      "name": "graphify_query_graph",
+      "tool_name": "query_graph",
+      "server_key": "graphify",
+      "description": "Graphify natural-language graph query.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {"type": "string"}
+        },
+        "required": ["question"]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    },
+    {
+      "name": "codebase-memory_query_graph",
+      "tool_name": "query_graph",
+      "server_key": "codebase-memory",
+      "description": "Codebase-memory Cypher graph query.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string"},
+          "query": {"type": "string"}
+        },
+        "required": ["project", "query"]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ]
+}

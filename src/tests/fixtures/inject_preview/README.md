@@ -30,3 +30,6 @@ home when no workspace root is available). With `--json`, output includes `sessi
 
 - `src/tests/unit/test_inject_cli.py` — workspace scoping and `--session` unit coverage
 - `src/tests/integration/test_inject_preview_integration.py` — end-to-end preview CLI
+- `src/tests/fixtures/cyt_mcp_session_log_wire_name/` — wire vs bare session log regression fixtures
+- `src/tests/unit/test_cyt_mcp_session_log_wire_name.py` — session log write/gate unit tests
+- `src/tests/integration/test_cyt_mcp_session_log_wire_name_integration.py` — inject preview wire-name gate

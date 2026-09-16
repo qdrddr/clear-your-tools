@@ -1,0 +1,25 @@
+{
+  "entries": [
+    {
+      "id": "legacy_bare_grep",
+      "issue": "Pre-fix hook wrote bare tool_name as session log name/key",
+      "entry": {
+        "kind": "tool",
+        "key": "tool:cyt_mcp:grep",
+        "name": "grep",
+        "catalog": "cyt_mcp",
+        "hash": "legacy-bare-grep-hash",
+        "full": false,
+        "source": "hook_injection",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"}
+          },
+          "required": ["query"]
+        },
+        "description": "Search file contents with grep."
+      }
+    }
+  ]
+}

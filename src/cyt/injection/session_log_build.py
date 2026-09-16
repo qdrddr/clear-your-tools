@@ -49,6 +49,24 @@ def tool_definition_content_hash(definition: dict[str, Any]) -> str:
     return hashlib.sha256(_TOOL_DEF_HASH_PREFIX + canonical.encode("utf-8")).hexdigest()
 
 
+def _cyt_mcp_wire_name(tool: dict[str, Any]) -> str:
+    """Frontend wire name from cyt-mcp catalog (``tool[\"name\"]``)."""
+    return str(tool.get("name") or "").strip()
+
+
+def _tool_item_name(tool: dict[str, Any], *, catalog: CatalogKind | None = None) -> str:
+    source = str(tool.get("cyt_catalog_source") or catalog or "executor").strip()
+    if source == "cyt_mcp":
+        return _cyt_mcp_wire_name(tool)
+    return str(tool.get("tool_name") or tool.get("name") or "").strip()
+
+
+def _tool_has_catalog_name(tool: dict[str, Any], *, catalog: CatalogKind) -> bool:
+    if catalog == "cyt_mcp":
+        return bool(_cyt_mcp_wire_name(tool))
+    return bool(str(tool.get("tool_name") or tool.get("name") or "").strip())
+
+
 def _mcpc_tool_definition_for_hash(tool: dict[str, Any]) -> dict[str, Any]:
     schema = tool.get("input_schema") or tool.get("inputSchema") or {}
     name = str(tool.get("name") or "").strip()
@@ -70,11 +88,11 @@ def _executor_tool_definition_for_hash(tool: dict[str, Any]) -> dict[str, Any]:
     schema = tool.get("input_schema") or tool.get("parameters") or tool.get("inputSchema") or {}
     tool_name = str(tool.get("tool_name") or "").strip()
     name = str(tool.get("name") or "").strip()
-    hash_name = name or tool_name
-    if tool_name:
-        source = str(tool.get("cyt_catalog_source") or "").strip()
-        if source == "cyt_mcp" or (name and name != tool_name and name.endswith(f"_{tool_name}")):
-            hash_name = tool_name
+    source = str(tool.get("cyt_catalog_source") or "").strip()
+    if source == "cyt_mcp":
+        hash_name = name
+    else:
+        hash_name = name or tool_name
     definition: dict[str, Any] = {
         "name": hash_name,
         "input_schema": schema if isinstance(schema, dict) else {},
@@ -129,11 +147,17 @@ def _resolve_tool_for_hash(
 ) -> dict[str, Any]:
     if not catalog_tools:
         return tool
-    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    if catalog == "cyt_mcp":
+        name = _cyt_mcp_wire_name(tool)
+    else:
+        name = str(tool.get("tool_name") or tool.get("name") or "").strip()
     session = str(tool.get("mcpc_session") or "").strip()
     tool_source = str(tool.get("cyt_catalog_source") or catalog).strip()
     for original in catalog_tools:
-        orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
+        if catalog == "cyt_mcp":
+            orig_name = _cyt_mcp_wire_name(original)
+        else:
+            orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
         if orig_name != name:
             continue
         orig_source = str(original.get("cyt_catalog_source") or "").strip()
@@ -204,7 +228,7 @@ def resource_content_hash(match: MatchedResource) -> str:
 
 def tool_item_key(tool: dict[str, Any], *, catalog: CatalogKind | None = None) -> str:
     source = str(tool.get("cyt_catalog_source") or catalog or "executor").strip()
-    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    name = _tool_item_name(tool, catalog=catalog)
     if source == "mcpc":
         session = str(tool.get("mcpc_session") or "").strip()
         return f"tool:mcpc:{session}:{name}"
@@ -224,7 +248,7 @@ def tool_item_legacy_keys(
 ) -> tuple[str, ...]:
     """Pre-multi-source session-log keys for the same tool (lookup aliases only)."""
     source = str(tool.get("cyt_catalog_source") or catalog or "executor").strip()
-    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    name = _tool_item_name(tool, catalog=catalog)
     if not name:
         return ()
     legacy: list[str] = []
@@ -370,7 +394,9 @@ def build_tool_log_entry(
         "hash": content_hash,
         "full": full,
         "catalog": catalog,
-        "name": str(tool.get("tool_name") or tool.get("name") or "").strip(),
+        "name": _cyt_mcp_wire_name(tool)
+        if catalog == "cyt_mcp"
+        else str(tool.get("tool_name") or tool.get("name") or "").strip(),
     }
     if catalog == "mcpc":
         entry["title"] = str(tool.get("title") or entry["name"]).strip()
@@ -511,7 +537,7 @@ def catalog_bundle_content_hash(catalog: CatalogKind, tools: list[dict[str, Any]
         [
             _tool_record_core_for_catalog_bundle(tool, catalog=catalog)
             for tool in tools
-            if str(tool.get("tool_name") or tool.get("name") or "").strip()
+            if _tool_has_catalog_name(tool, catalog=catalog)
         ],
         key=lambda item: (
             str(item.get("mcpc_session") or ""),
@@ -529,7 +555,7 @@ def build_tool_catalog_log_entry(
     tool_records = [
         _tool_record_for_catalog_bundle(tool, catalog=catalog)
         for tool in tools
-        if str(tool.get("tool_name") or tool.get("name") or "").strip()
+        if _tool_has_catalog_name(tool, catalog=catalog)
     ]
     content_hash = catalog_bundle_content_hash(catalog, tools)
     return {

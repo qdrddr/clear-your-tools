@@ -201,6 +201,19 @@ def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     )
 
 
+def _default_user_cyt_db(name: str) -> Path:
+    return Path("~/.config/cyt").expanduser() / name
+
+
+def _configured_path_is_user_default(path: str, *, default_name: str) -> bool:
+    configured = Path(path).expanduser()
+    user_default = _default_user_cyt_db(default_name)
+    try:
+        return configured.resolve() == user_default.resolve()
+    except OSError:
+        return configured == user_default
+
+
 @pytest.fixture(autouse=True)
 def _isolate_tier_state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests must not read or mutate the developer's ~/.config/cyt/tier_state.db."""
@@ -216,10 +229,46 @@ def _isolate_tier_state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         if isinstance(database, dict):
             path = database.get("path")
             if isinstance(path, str) and path.strip():
-                return real_tier_state_db_path(cfg)
+                if not _configured_path_is_user_default(path, default_name="tier_state.db"):
+                    return real_tier_state_db_path(cfg)
         return str(isolated_db)
 
     monkeypatch.setattr(tier_config, "tier_state_db_path", isolated_tier_state_db_path)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tool_examples_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests must not read or mutate the developer's ~/.config/cyt/tool_examples.db."""
+    import cyt.tool_examples.config as examples_config
+
+    isolated_db = tmp_path / "tool_examples.db"
+    real_tool_examples_db_path = examples_config.tool_examples_db_path
+
+    def isolated_tool_examples_db_path(cfg: dict) -> str:
+        block = examples_config._examples_block(cfg)
+        database = block.get("database")
+        if isinstance(database, dict):
+            path = database.get("path")
+            if isinstance(path, str) and path.strip():
+                if not _configured_path_is_user_default(path, default_name="tool_examples.db"):
+                    return real_tool_examples_db_path(cfg)
+        return str(isolated_db)
+
+    monkeypatch.setattr(examples_config, "tool_examples_db_path", isolated_tool_examples_db_path)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tier_maintenance_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep daily tier maintenance markers out of the developer's ~/.config/cyt/."""
+    from cyt.tiers import maintenance as maintenance_mod
+
+    marker = tmp_path / ".tier_db_maintenance_last_run"
+
+    def isolated_maintenance_marker_path(config: dict) -> Path:
+        _ = config
+        return marker
+
+    monkeypatch.setattr(maintenance_mod, "_maintenance_marker_path", isolated_maintenance_marker_path)
 
 
 @pytest.fixture(autouse=True)

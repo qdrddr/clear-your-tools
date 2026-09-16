@@ -8,6 +8,7 @@ from typing import Any
 from cyt.injection.session_log import SessionLogIndex, resolve_injection_mode
 from cyt.injection.session_log_build import (
     CatalogKind,
+    _cyt_mcp_wire_name,
     build_resource_log_entry,
     build_skill_log_entry,
     build_tool_log_entry,
@@ -53,11 +54,17 @@ def _full_tool_from_catalog(
 ) -> dict[str, Any]:
     if not catalog_tools:
         return tool
-    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    if catalog == "cyt_mcp":
+        name = _cyt_mcp_wire_name(tool)
+    else:
+        name = str(tool.get("tool_name") or tool.get("name") or "").strip()
     session = str(tool.get("mcpc_session") or "").strip()
     tool_source = str(tool.get("cyt_catalog_source") or catalog).strip()
     for original in catalog_tools:
-        orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
+        if catalog == "cyt_mcp":
+            orig_name = _cyt_mcp_wire_name(original)
+        else:
+            orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
         if orig_name != name:
             continue
         orig_source = str(original.get("cyt_catalog_source") or "").strip()

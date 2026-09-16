@@ -200,6 +200,15 @@
         "input_schema": {"type": "object", "properties": {"question": {"type": "string"}}}
       },
       "expected_record_name": "graphify_query_graph"
+    },
+    {
+      "tool": {
+        "name": "fff_grep",
+        "tool_name": "grep",
+        "server_key": "fff",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}}
+      },
+      "expected_record_name": "fff_grep"
     }
   ],
   "session_log_rejections": [

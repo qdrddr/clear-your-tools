@@ -300,7 +300,9 @@ def test_catalog_tool_hash_matches_type1_tool_entry_hash() -> None:
         "required": ["project"],
     }
     catalog_record = {
-        "name": "index_status",
+        "name": "codebase-memory_index_status",
+        "tool_name": "index_status",
+        "server_key": "codebase-memory",
         "input_schema": schema,
         "description": "Get the indexing status of a project",
     }
@@ -326,6 +328,54 @@ def test_catalog_tool_hash_matches_type1_tool_entry_hash() -> None:
         ],
     )
     assert type1["hash"] == catalog_hash
+
+
+def test_cyt_mcp_tool_item_key_uses_wire_name_not_bare_tool_name() -> None:
+    tool = {
+        "name": "fff_grep",
+        "tool_name": "grep",
+        "server_key": "fff",
+        "cyt_catalog_source": "cyt_mcp",
+    }
+    assert tool_item_key(tool, catalog="cyt_mcp") == "tool:cyt_mcp:fff_grep"
+
+
+def test_cyt_mcp_tool_log_entry_prefers_wire_name_over_bare_tool_name() -> None:
+    tool = {
+        "name": "fff_grep",
+        "tool_name": "grep",
+        "server_key": "fff",
+        "description": "Search file contents",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        "cyt_catalog_source": "cyt_mcp",
+    }
+    entry = build_tool_log_entry(tool, catalog="cyt_mcp", full=False)
+    assert entry["key"] == "tool:cyt_mcp:fff_grep"
+    assert entry["name"] == "fff_grep"
+    fragment = format_entry_fragment(entry)
+    assert "name='fff_grep'" in fragment
+    assert "name='grep'" not in fragment
+
+
+def test_cyt_mcp_distinct_wire_names_for_shared_bare_tool_name() -> None:
+    graphify = {
+        "name": "graphify_query_graph",
+        "tool_name": "query_graph",
+        "server_key": "graphify",
+        "cyt_catalog_source": "cyt_mcp",
+    }
+    codebase = {
+        "name": "codebase-memory_query_graph",
+        "tool_name": "query_graph",
+        "server_key": "codebase-memory",
+        "cyt_catalog_source": "cyt_mcp",
+    }
+    assert tool_item_key(graphify, catalog="cyt_mcp") == "tool:cyt_mcp:graphify_query_graph"
+    assert tool_item_key(codebase, catalog="cyt_mcp") == "tool:cyt_mcp:codebase-memory_query_graph"
 
 
 def test_cyt_mcp_tool_log_entry_sets_hook_injection_source() -> None:
