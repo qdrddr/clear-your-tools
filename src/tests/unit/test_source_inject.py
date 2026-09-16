@@ -11,22 +11,25 @@ from cyt.tools.source_inject import (
     format_mcp_source_section,
     format_multi_source_agent_tools,
 )
+from tests.support.injection_tier import stamp_tool_tier, stamp_tools_tier
 
 
 def test_format_multi_source_agent_tools_omits_empty_sources() -> None:
     block = format_multi_source_agent_tools(
         {
             "mcpc": format_mcp_source_section(
-                [
-                    {
-                        "name": "@s/t",
-                        "tool_name": "t",
-                        "mcpc_session": "@s",
-                        "description": "d",
-                        "input_schema": {"type": "object"},
-                        "server_name": "S",
-                    },
-                ],
+                stamp_tools_tier(
+                    [
+                        {
+                            "name": "@s/t",
+                            "tool_name": "t",
+                            "mcpc_session": "@s",
+                            "description": "d",
+                            "input_schema": {"type": "object"},
+                            "server_name": "S",
+                        },
+                    ],
+                ),
             ),
         },
     )
@@ -38,7 +41,9 @@ def test_format_multi_source_agent_tools_omits_empty_sources() -> None:
 
 def test_format_executor_source_section_wraps_tools() -> None:
     section = format_executor_source_section(
-        [{"name": "alpha", "description": "A", "input_schema": {"type": "object"}}],
+        stamp_tools_tier(
+            [{"name": "alpha", "description": "A", "input_schema": {"type": "object"}}],
+        ),
     )
     assert "executor" in section.lower() or "<executor>" in section
     assert "<tool " in section
@@ -47,7 +52,9 @@ def test_format_executor_source_section_wraps_tools() -> None:
 
 def test_format_definitions_source_section_wraps_tools() -> None:
     section = format_definitions_source_section(
-        [{"name": "beta", "description": "B", "input_schema": {"type": "object"}}],
+        stamp_tools_tier(
+            [{"name": "beta", "description": "B", "input_schema": {"type": "object"}}],
+        ),
     )
     assert "<definitions>" in section
     assert "beta" in section
@@ -56,12 +63,14 @@ def test_format_definitions_source_section_wraps_tools() -> None:
 def test_gate_and_format_single_source_section_not_legacy_mcpc() -> None:
     """Executor-only pruned tools must not fall back to MCPC formatting."""
     pruned = [
-        {
-            "name": "Shell",
-            "description": "Run shell",
-            "input_schema": {"type": "object"},
-            "cyt_catalog_source": "executor",
-        },
+        stamp_tool_tier(
+            {
+                "name": "Shell",
+                "description": "Run shell",
+                "input_schema": {"type": "object"},
+                "cyt_catalog_source": "executor",
+            },
+        ),
     ]
     config = {"tools": {"hook": {"sources": ["mcpc", "executor"]}}}
     payload: dict = {}

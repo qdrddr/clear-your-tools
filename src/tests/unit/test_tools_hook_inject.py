@@ -18,6 +18,7 @@ from cyt.skills import cli as skills_cli
 from cyt.skills.executor_skill import EXECUTOR_SKILL_NAME, executor_skill_match_from_text
 from cyt.skills.inject import format_skill_item
 from cyt.tools.hook import _finish_tools_hook_injection
+from tests.support.injection_tier import stamp_tools_tier
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +71,7 @@ def test_hook_injects_agent_tools_block() -> None:
 
     fixture = FIXTURES_DIR / "mcp_definitions_sample.json"
     catalog = json.loads(fixture.read_text(encoding="utf-8"))["tools"]
-    pruned = [catalog[0]]
+    pruned = stamp_tools_tier([catalog[0]])
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -126,24 +127,26 @@ def test_hook_injects_agent_tools_block() -> None:
 
 
 def test_hook_injects_mcpc_agent_tools_block() -> None:
-    catalog = [
-        {
-            "name": "@ctx7/resolve-library-id",
-            "tool_name": "resolve-library-id",
-            "mcpc_session": "@ctx7",
-            "title": "Resolve Context7 Library ID",
-            "description": "Resolve a library id",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "libraryName": {"type": "string"},
-                    "query": {"type": "string"},
+    catalog = stamp_tools_tier(
+        [
+            {
+                "name": "@ctx7/resolve-library-id",
+                "tool_name": "resolve-library-id",
+                "mcpc_session": "@ctx7",
+                "title": "Resolve Context7 Library ID",
+                "description": "Resolve a library id",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "libraryName": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
                 },
+                "server_name": "Context7",
+                "server_instructions": "Use this server for docs.",
             },
-            "server_name": "Context7",
-            "server_instructions": "Use this server for docs.",
-        },
-    ]
+        ],
+    )
 
     config = {
         "skills": {"enabled": False},
@@ -213,22 +216,24 @@ def test_hook_injects_mcpc_agent_tools_block() -> None:
 
 
 def test_coordinated_hook_injects_mcpc_agent_tools_block() -> None:
-    catalog = [
-        {
-            "name": "@fff/grep",
-            "tool_name": "grep",
-            "mcpc_session": "@fff",
-            "title": "Grep",
-            "description": "Search file contents",
-            "input_schema": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
+    catalog = stamp_tools_tier(
+        [
+            {
+                "name": "@fff/grep",
+                "tool_name": "grep",
+                "mcpc_session": "@fff",
+                "title": "Grep",
+                "description": "Search file contents",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+                "server_name": "fff",
+                "server_instructions": "Use grep for content search.",
             },
-            "server_name": "fff",
-            "server_instructions": "Use grep for content search.",
-        },
-    ]
+        ],
+    )
     config = {
         "skills": {
             "enabled": True,

@@ -665,7 +665,25 @@ def _injection_tier_for_skill_tier(tier: Tier) -> str:
     return injection_tier_attr(tier) or "t2"
 
 
+def _executor_skill_match(match: MatchedSkill) -> bool:
+    from cyt.skills.executor_skill import (
+        EXECUTOR_SKILL_DOC_ID,
+        EXECUTOR_SKILL_NAME,
+        EXECUTOR_SKILL_PATH,
+    )
+
+    path = match.file_path.replace("\\", "/").rstrip("/")
+    return (
+        match.name == EXECUTOR_SKILL_NAME
+        or match.doc_id == EXECUTOR_SKILL_DOC_ID
+        or path == EXECUTOR_SKILL_PATH
+        or path.endswith(f"/{EXECUTOR_SKILL_PATH}")
+    )
+
+
 def apply_skill_representation(match: MatchedSkill, tier: Tier) -> MatchedSkill:
+    if _executor_skill_match(match) and tier < Tier.HOT:
+        tier = Tier.HOT
     tier_attr = _injection_tier_for_skill_tier(tier)
     if tier == Tier.COLD:
         body = skill_description_only_markdown_from_match(match)
@@ -745,7 +763,10 @@ def merge_skill_matches(
     for match in searched:
         entity_id = skill_match_entity_id(match)
         tier = representation_by_skill.get(entity_id, Tier.HOT)
-        shaped = apply_skill_representation(match, tier) if apply_representation else match
+        if apply_representation or not match.injection_tier:
+            shaped = apply_skill_representation(match, tier)
+        else:
+            shaped = match
         by_path[match.file_path] = shaped
         order.append(match.file_path)
     for match in t4_direct:

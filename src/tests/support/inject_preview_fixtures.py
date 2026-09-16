@@ -196,6 +196,7 @@ def tool_log_entry(
 
 def patch_preview_prune_all_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return every catalog tool from preview prune so session gating is isolated."""
+    from tests.support.injection_tier import stamp_tools_tier
 
     def _all_tools(
         tools: list[dict[str, Any]],
@@ -204,7 +205,7 @@ def patch_preview_prune_all_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> PruneResult:
         count = len(tools)
         return PruneResult(
-            tools=list(tools),
+            tools=stamp_tools_tier(list(tools)),
             status="applied",
             query=query,
             tools_in=count,

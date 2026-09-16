@@ -12,6 +12,7 @@ from cyt.proxy.user_message_inject import (
     openai_append_mcp_stubs,
     openai_mcp_namespace_stub,
 )
+from tests.support.injection_tier import stamp_tools_tier
 
 
 def test_anthropic_mcp_tool_stub_strips_description_and_schema() -> None:
@@ -139,13 +140,18 @@ def test_transform_anthropic_inject_keeps_mcp_stubs_not_inject_via_hook() -> Non
             {"name": "mcp__ctx7__query-docs", "description": "Docs", "input_schema": {}},
         ],
     }
-    pruned_tools = [
-        {
-            "name": "mcp__ctx7__query-docs",
-            "description": "Docs pruned",
-            "input_schema": {"type": "object", "properties": {"libraryId": {"type": "string"}}},
-        },
-    ]
+    pruned_tools = stamp_tools_tier(
+        [
+            {
+                "name": "mcp__ctx7__query-docs",
+                "description": "Docs pruned",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"libraryId": {"type": "string"}},
+                },
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",
@@ -177,7 +183,9 @@ def test_transform_anthropic_inject_false_has_no_stubs() -> None:
         "messages": [{"role": "user", "content": "grep files"}],
         "tools": [{"name": "mcp__a__grep", "input_schema": {}}],
     }
-    pruned_tools = [{"name": "mcp__a__grep", "description": "Grep", "input_schema": {}}]
+    pruned_tools = stamp_tools_tier(
+        [{"name": "mcp__a__grep", "description": "Grep", "input_schema": {}}],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",

@@ -35,6 +35,7 @@ def _skill_match(*, name: str = "create-hook", doc_id: str = "create-hook") -> M
         name=name,
         score=1.0,
         token_count=10,
+        injection_tier="t3",
     )
 
 
@@ -42,6 +43,7 @@ def _tool(name: str = "mcp__a__grep") -> dict:
     return {
         "name": name,
         "description": f"Tool {name}",
+        "cyt_injection_tier": "t3",
         "input_schema": {
             "type": "object",
             "properties": {"query": {"type": "string"}},

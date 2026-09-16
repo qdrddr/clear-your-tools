@@ -25,6 +25,7 @@ def _skill(doc_id: str, tokens: int, score: float) -> MatchedSkill:
         name=doc_id,
         score=score,
         token_count=tokens,
+        injection_tier="t3",
     )
 
 

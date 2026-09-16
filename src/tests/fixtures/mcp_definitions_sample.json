@@ -3,6 +3,7 @@
     {
       "name": "mcp__filesystem__read_file",
       "description": "Read a file from disk",
+      "cyt_injection_tier": "t3",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -17,6 +18,7 @@
     {
       "name": "mcp__filesystem__write_file",
       "description": "Write content to a file",
+      "cyt_injection_tier": "t3",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -35,6 +37,7 @@
     {
       "name": "mcp__search__query",
       "description": "Search indexed documents",
+      "cyt_injection_tier": "t3",
       "input_schema": {
         "type": "object",
         "properties": {

@@ -17,6 +17,7 @@
         "required": ["query", "repo"]
       },
       "cyt_catalog_source": "cyt_mcp",
+      "cyt_injection_tier": "t3",
       "server_key": "semble",
       "tool_name": "search"
     },
@@ -31,6 +32,7 @@
         "required": ["search_query"]
       },
       "cyt_catalog_source": "cyt_mcp",
+      "cyt_injection_tier": "t3",
       "server_key": "gitnexus",
       "tool_name": "query"
     },
@@ -45,6 +47,7 @@
         "required": ["query"]
       },
       "cyt_catalog_source": "cyt_mcp",
+      "cyt_injection_tier": "t3",
       "server_key": "fff",
       "tool_name": "grep"
     }

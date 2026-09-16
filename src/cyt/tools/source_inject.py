@@ -15,7 +15,6 @@ from cyt.tools.inject import (
     _EXECUTOR_WORKSPACE_NOTE,
     _agent_tools_open_tag,
     _format_workspace_roots_block,
-    ensure_agent_tools_starts_on_new_line,
     format_tools_grouped_by_tier,
 )
 from cyt.tools.mcpc_inject import (
@@ -45,6 +44,7 @@ _CYT_MCP_WORKSPACE_NOTE = (
     "1. The task requires a tool that is not included in the pre-filtered definitions below.\n"
     "2. The task requires optional properties or complete tool definitions that were omitted by the pruning pipeline.\n"
 )
+
 
 def _normalize_tool_scope(tool: dict[str, Any]) -> str:
     raw = tool.get("cyt_catalog_scope")

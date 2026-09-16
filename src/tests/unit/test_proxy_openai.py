@@ -17,6 +17,7 @@ from cyt.proxy.openai_responses import (
     extract_user_query_from_input,
     transform_openai_request,
 )
+from tests.support.injection_tier import stamp_tools_tier
 from tests.support.skills_helpers import isolated_skills_agents_block
 
 _TOOL_PRUNE_CONFIG = {
@@ -278,14 +279,16 @@ def test_transform_openai_request_only_changes_tools() -> None:
         ],
         "stream": True,
     }
-    pruned_tools = [
-        {
-            "type": "function",
-            "name": "mcp__srv__tool_a",
-            "description": "A",
-            "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
-        },
-    ]
+    pruned_tools = stamp_tools_tier(
+        [
+            {
+                "type": "function",
+                "name": "mcp__srv__tool_a",
+                "description": "A",
+                "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",
@@ -555,6 +558,7 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
+        "agents": isolated_skills_agents_block(),
     }
     body = {
         "model": "gpt-test",
@@ -624,20 +628,22 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
             },
         ],
     }
-    pruned_named = [
-        {
-            "type": "function",
-            "name": "Read",
-            "description": "Read",
-            "parameters": {"type": "object", "properties": {}},
-        },
-        {
-            "type": "function",
-            "name": "mcp__a__grep",
-            "description": "Grep pruned",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    ]
+    pruned_named = stamp_tools_tier(
+        [
+            {
+                "type": "function",
+                "name": "Read",
+                "description": "Read",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "type": "function",
+                "name": "mcp__a__grep",
+                "description": "Grep pruned",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_named,
         status="applied",
@@ -714,14 +720,16 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
         "input": [_user_message("explore agents.ts with codegraph"), tool_search_output],
         "tools": root_tools,
     }
-    pruned_named = [
-        {
-            "type": "function",
-            "name": "mcp__context7__codegraph_explore",
-            "description": "pruned explore",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
-        },
-    ]
+    pruned_named = stamp_tools_tier(
+        [
+            {
+                "type": "function",
+                "name": "mcp__context7__codegraph_explore",
+                "description": "pruned explore",
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_named,
         status="applied",

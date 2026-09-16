@@ -8,6 +8,7 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from cyt.tools.mcpc_inject import _cli_payload_from_input_schema, format_mcpc_agent_tools
+from tests.support.injection_tier import stamp_tools_tier
 from tests.unit.gherkin.conftest import GherkinContext
 
 FEATURES = Path(__file__).resolve().parent / "features" / "mcpc_inject.feature"
@@ -81,7 +82,7 @@ def given_ctx7_tool(gherkin_context: GherkinContext) -> None:
 @when(parsers.parse("MCPC agent-tools text is formatted for workspace {path}"))
 def when_format_mcpc(gherkin_context: GherkinContext, path: str) -> None:
     gherkin_context.stdout = format_mcpc_agent_tools(
-        gherkin_context.payload["tools"],
+        stamp_tools_tier(gherkin_context.payload["tools"]),
         workspace_paths=[path],
     )
 

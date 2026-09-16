@@ -120,7 +120,10 @@ def test_multi_source_agent_tools_returns_empty_when_no_sections_even_with_sessi
         {"cyt_mcp": "<cyt-mcp>\ny\n</cyt-mcp>"},
         workspace_paths=["/tmp/project"],
     )
-    assert format_multi_source_agent_tools({}, workspace_paths=["/tmp/project"], session_text=prior) == ""
+    assert (
+        format_multi_source_agent_tools({}, workspace_paths=["/tmp/project"], session_text=prior)
+        == ""
+    )
 
 
 def test_multi_source_agent_tools_omits_path_when_pre_exposed() -> None:

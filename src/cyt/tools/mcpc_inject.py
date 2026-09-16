@@ -16,7 +16,6 @@ from cyt.tools.inject import (
     _finalize_agent_tools_block,
     _format_examples_block,
     _xml_single_quoted_attr,
-    ensure_agent_tools_starts_on_new_line,
 )
 from cyt.tools.serialize import minimize_json_single_quotes
 

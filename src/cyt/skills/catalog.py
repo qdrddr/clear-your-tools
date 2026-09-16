@@ -464,16 +464,18 @@ def _ensure_chunk_variant(
 
 
 def _walk_skill_md_files(directories: list[str]) -> list[Path]:
-    from cyt.tiers.adapters.skills import is_ephemeral_skill_path
-
     files: list[Path] = []
     for directory in directories:
         root = Path(directory)
         if not root.is_dir():
             continue
         for path in sorted(root.rglob("*.md")):
-            if path.is_file() and not is_ephemeral_skill_path(str(path)):
-                files.append(path)
+            if not path.is_file():
+                continue
+            normalized = str(path).replace("\\", "/").lower()
+            if "/.cyt/skinny/" in normalized:
+                continue
+            files.append(path)
     return files
 
 

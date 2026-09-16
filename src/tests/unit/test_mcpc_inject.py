@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cyt.tools.mcpc_inject import _cli_payload_from_input_schema, format_mcpc_agent_tools
+from tests.support.injection_tier import stamp_tools_tier
 
 _QUESTIONS_INPUT_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -103,7 +104,10 @@ def test_format_mcpc_agent_tools_groups_by_server() -> None:
             "server_instructions": "Use this server for docs.",
         },
     ]
-    text = format_mcpc_agent_tools(tools, workspace_paths=["/workspace/repo"])
+    text = format_mcpc_agent_tools(
+        stamp_tools_tier(tools),
+        workspace_paths=["/workspace/repo"],
+    )
     assert text.startswith("\n<agent-tools")
     assert "Pruned MCP tool definitions below" in text.split("\n", 3)[2]
     assert "<mcpc>" in text
@@ -145,7 +149,7 @@ def test_format_mcpc_cli_shell_quotes_json_with_single_quotes() -> None:
             "server_name": "Context7",
         },
     ]
-    text = format_mcpc_agent_tools(tools)
+    text = format_mcpc_agent_tools(stamp_tools_tier(tools))
     assert (
         "echo '{\"libraryName\":\"O'\\''Brien\"}' | mcpc @ctx7 tools-call resolve-library-id"
         in text
@@ -165,7 +169,10 @@ def test_format_mcpc_agent_tools_nested_cli_payload() -> None:
             "server_instructions": "Use for clarifying questions.",
         },
     ]
-    text = format_mcpc_agent_tools(tools, workspace_paths=["/workspace/repo"])
+    text = format_mcpc_agent_tools(
+        stamp_tools_tier(tools),
+        workspace_paths=["/workspace/repo"],
+    )
     expected_cli = (
         'echo \'{"questions":[{"question":"string","header":"string","options":'
         '[{"label":"string","description":"string"},{"label":"string","description":"string"}],'
@@ -193,7 +200,7 @@ def test_format_mcpc_cli_and_json_schema_match_pruned_properties_only() -> None:
             "server_name": "filesystem",
         },
     ]
-    text = format_mcpc_agent_tools(tools)
+    text = format_mcpc_agent_tools(stamp_tools_tier(tools))
     assert 'echo \'{"path":"string"}\' | mcpc @filesystem tools-call read_text_file' in text
     assert "'properties':{'path':" in text
     assert "'head':" not in text
@@ -225,7 +232,7 @@ def test_format_mcpc_cli_includes_optional_survivors_in_json_schema() -> None:
             "server_name": "filesystem",
         },
     ]
-    text = format_mcpc_agent_tools(tools)
+    text = format_mcpc_agent_tools(stamp_tools_tier(tools))
     assert 'echo \'{"path":"string","head":0,"tail":0}\'' in text
     assert "'head':" in text
     assert "'tail':" in text

@@ -122,6 +122,23 @@ def injection_tier_for_tool(tool: dict[str, Any]) -> str | None:
     return None
 
 
+def ensure_tools_have_injection_tier(
+    tools: list[dict[str, Any]],
+    *,
+    default: str = "t3",
+) -> list[dict[str, Any]]:
+    """Stamp *default* tier on native tools that bypass the prune tier pipeline."""
+    stamped: list[dict[str, Any]] = []
+    for tool in tools:
+        if injection_tier_for_tool(tool) is not None:
+            stamped.append(tool)
+            continue
+        copy_tool = dict(tool)
+        copy_tool["cyt_injection_tier"] = default
+        stamped.append(copy_tool)
+    return stamped
+
+
 def tier_wrapper_tag(tier: str) -> str:
     """XML wrapper tag for a tier bucket, e.g. ``tier_t3`` → ``<tier_t3>…</tier_t3>``."""
     label = str(tier or "").strip().lower()
@@ -142,9 +159,7 @@ def format_tools_grouped_by_tier(
 ) -> str:
     """Format tools wrapped in ``<tier_tN>`` groups (t0-t4 only; skip tools without a tier)."""
     render = format_item or format_tool_item
-    buckets: OrderedDict[str, list[str]] = OrderedDict(
-        (tier, []) for tier in TIER_GROUP_ORDER
-    )
+    buckets: OrderedDict[str, list[str]] = OrderedDict((tier, []) for tier in TIER_GROUP_ORDER)
 
     for tool in tools:
         tier = injection_tier_for_tool(tool)
@@ -221,7 +236,7 @@ def format_agent_tools(
     if not pruned_tools:
         return ""
     body = format_tools_grouped_by_tier(
-        pruned_tools,
+        ensure_tools_have_injection_tier(pruned_tools),
         include_tool_description=include_tool_description,
     )
     if not body.strip():

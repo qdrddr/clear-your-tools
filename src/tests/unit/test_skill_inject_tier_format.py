@@ -31,7 +31,7 @@ def _skill_match(*, tier: str | None = "t3") -> MatchedSkill:
 def test_format_skill_item_omits_tier_attribute() -> None:
     item = format_skill_item(_skill_match(tier="t2"))
     assert 'tier="' not in item
-    assert 'tier=\'' not in item
+    assert "tier='" not in item
 
 
 def test_format_skills_grouped_by_tier_wraps_skills() -> None:

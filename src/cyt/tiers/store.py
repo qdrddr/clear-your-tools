@@ -792,6 +792,8 @@ class TierStore:
                 effective_tier = int(row[15]) if row[15] is not None else int(Tier.ACTIVE)
                 if last_seen_ms >= idle_cutoff_ms:
                     continue
+                if effective_tier <= int(Tier.DORMANT):
+                    continue
                 if effective_tier > max_effective_tier:
                     continue
                 counters = (

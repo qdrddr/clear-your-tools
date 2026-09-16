@@ -15,6 +15,7 @@ from cyt.proxy.anthropic import (
     format_search_query,
     transform_anthropic_request,
 )
+from tests.support.injection_tier import stamp_tools_tier
 from tests.support.skills_helpers import isolated_skills_agents_block
 
 _TOOL_PRUNE_CONFIG = {
@@ -199,13 +200,15 @@ def test_transform_anthropic_request_only_changes_tools() -> None:
         "stream": True,
         "metadata": {"k": "v"},
     }
-    pruned_tools = [
-        {
-            "name": "mcp__srv__tool_a",
-            "description": "A",
-            "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
-        },
-    ]
+    pruned_tools = stamp_tools_tier(
+        [
+            {
+                "name": "mcp__srv__tool_a",
+                "description": "A",
+                "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",
@@ -374,10 +377,16 @@ def test_transform_anthropic_request_inject_into_user_message(
             {"name": "mcp__a__grep", "description": "Grep", "input_schema": {"type": "object"}},
         ],
     }
-    pruned_tools = [
-        {"name": "Read", "description": "Read", "input_schema": {"type": "object"}},
-        {"name": "mcp__a__grep", "description": "Grep pruned", "input_schema": {"type": "object"}},
-    ]
+    pruned_tools = stamp_tools_tier(
+        [
+            {"name": "Read", "description": "Read", "input_schema": {"type": "object"}},
+            {
+                "name": "mcp__a__grep",
+                "description": "Grep pruned",
+                "input_schema": {"type": "object"},
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",
@@ -417,13 +426,18 @@ def test_transform_anthropic_request_inject_keeps_all_original_system_tools() ->
             {"name": "mcp__ctx7__query-docs", "description": "Docs", "input_schema": {}},
         ],
     }
-    pruned_tools = [
-        {
-            "name": "mcp__ctx7__query-docs",
-            "description": "Docs pruned",
-            "input_schema": {"type": "object", "properties": {"libraryId": {"type": "string"}}},
-        },
-    ]
+    pruned_tools = stamp_tools_tier(
+        [
+            {
+                "name": "mcp__ctx7__query-docs",
+                "description": "Docs pruned",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"libraryId": {"type": "string"}},
+                },
+            },
+        ],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",
@@ -462,7 +476,9 @@ def test_transform_anthropic_request_inject_into_user_message_tool_result_only()
         ],
         "tools": [{"name": "mcp__a__grep", "input_schema": {}}],
     }
-    pruned_tools = [{"name": "mcp__a__grep", "description": "Grep", "input_schema": {}}]
+    pruned_tools = stamp_tools_tier(
+        [{"name": "mcp__a__grep", "description": "Grep", "input_schema": {}}],
+    )
     prune_result = PruneResult(
         tools=pruned_tools,
         status="applied",

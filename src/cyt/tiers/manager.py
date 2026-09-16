@@ -320,11 +320,12 @@ class TierManager:
         scope_key = (allowed, catalog_entity_ids)
         if self._purged_tool_scope == scope_key:
             return
-        removed = purge_stale_tool_entity_states(
-            self._states,
-            allowed_sources=allowed,
-            catalog_entity_ids=catalog_entity_ids,
-        )
+        with self._state_lock:
+            removed = purge_stale_tool_entity_states(
+                self._states,
+                allowed_sources=allowed,
+                catalog_entity_ids=catalog_entity_ids,
+            )
         if removed:
             for entity_id in removed:
                 self._store.delete_entity_state(
@@ -578,10 +579,10 @@ class TierManager:
                     self._epoch.epoch_id,
                     len(transitions),
                 )
-        for state in self._states.values():
+        for state in list(self._states.values()):
             state.stats.epoch_used = 0.0
             state.stats.epoch_attempts = 0.0
-        for state in self._states.values():
+        for state in list(self._states.values()):
             self._store.upsert_entity_state(self.project, state)
         self._epoch.epoch_id += 1
         self._epoch.epoch_start_ms = now_ms

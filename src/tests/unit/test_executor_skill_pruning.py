@@ -74,8 +74,10 @@ def _mock_executor_mcp_cache() -> dict[str, str]:
 
 
 def _mock_prune_result(prompt: str, catalog: list[dict[str, Any]]) -> PruneResult:
+    from tests.support.injection_tier import stamp_tools_tier
+
     return PruneResult(
-        tools=catalog,
+        tools=stamp_tools_tier(catalog),
         status="applied",
         query=prompt,
         tools_in=len(catalog),
@@ -166,7 +168,15 @@ def test_executor_skill_pruned_when_skills_disabled() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _config_with_catalog(root)
-        catalog = [{"name": "tools.demo.tool", "description": "Demo tool", "input_schema": {}}]
+        catalog = [
+            {
+                "name": "tools.demo.tool",
+                "description": "Demo tool",
+                "input_schema": {},
+                "cyt_catalog_source": "executor",
+                "cyt_injection_tier": "t3",
+            },
+        ]
         payload = _hook_payload("tools.search workflow find matching tools")
 
         with (
@@ -201,7 +211,15 @@ def test_executor_skill_not_injected_when_no_survivors() -> None:
         root = Path(tmp)
         config = _config_with_catalog(root)
         config["pruning"]["tools"]["pipelines"]["bm25"]["score_skills"] = 99.0
-        catalog = [{"name": "tools.demo.tool", "description": "Demo tool", "input_schema": {}}]
+        catalog = [
+            {
+                "name": "tools.demo.tool",
+                "description": "Demo tool",
+                "input_schema": {},
+                "cyt_catalog_source": "executor",
+                "cyt_injection_tier": "t3",
+            },
+        ]
         payload = _hook_payload("completely unrelated knitting scarves yarn")
 
         with (
@@ -326,7 +344,15 @@ def test_hook_stdout_injects_pruned_executor_skill() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _config_with_catalog(root)
-        catalog = [{"name": "tools.demo.tool", "description": "Demo tool", "input_schema": {}}]
+        catalog = [
+            {
+                "name": "tools.demo.tool",
+                "description": "Demo tool",
+                "input_schema": {},
+                "cyt_catalog_source": "executor",
+                "cyt_injection_tier": "t3",
+            },
+        ]
 
         with (
             patch.object(skills_cli, "load_config", return_value=config),

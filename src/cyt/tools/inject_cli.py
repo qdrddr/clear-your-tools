@@ -11,10 +11,10 @@ from typing import Any
 
 from cyt.config import load_config, tools_hook_sources
 from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.token_stats import build_preview_token_stats, format_preview_token_summary_lines
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.tools.hook import gate_and_format_hook_tools
-from cyt.indexer.tokens import count_json_tokens
 from cyt.tools.inject import injection_token_count
 from cyt.tools.master_catalog import get_master_tool_catalog
 from cyt.tools.source_inject import (
@@ -233,11 +233,11 @@ def _preview_hook_payload(
     }
     from cyt_client.rules_file import read_prior_rules_injection_for_hook
 
-    injection, force_refresh = read_prior_rules_injection_for_hook(workspace)
+    injection, _force_refresh = read_prior_rules_injection_for_hook(workspace)
     if injection:
         payload["cyt_rules_injection"] = injection
-    if force_refresh:
-        payload["cyt_force_rules_refresh"] = True
+    # Preview is read-only diagnostics: omit cyt_force_rules_refresh so session gating
+    # and pre-exposure match a populated rules file (see test_preview_hook_payload_*).
     return payload
 
 
@@ -262,7 +262,7 @@ def resolve_preview_session_log(
 
 
 def _prune_result_from_filter(
-    result: Any,
+    result: PruneResult,
     *,
     query: str,
     tools: list[dict[str, Any]],
@@ -347,6 +347,133 @@ def config_for_inject_preview(workspace: Path) -> dict[str, Any]:
     return set_hook_workspace_in_config(config, resolved_workspace or workspace)
 
 
+def _preview_prune_by_source(
+    grouped: dict[str, list[dict[str, Any]]],
+    *,
+    query: str,
+    config: dict[str, Any],
+) -> tuple[
+    dict[str, list[dict[str, Any]]],
+    dict[str, Any],
+    dict[str, PruneResult],
+]:
+    pruned_by_source: dict[str, list[dict[str, Any]]] = {}
+    prune_meta: dict[str, Any] = {}
+    prune_results: dict[str, PruneResult] = {}
+    for source, tools in grouped.items():
+        if not tools:
+            continue
+        result = filter_tools_for_query(
+            tools,
+            query,
+            config=config,
+            for_hook=True,
+            log_token_counts=False,
+        )
+        prune_meta[source] = {
+            "status": result.status,
+            "tools_in": result.tools_in,
+            "tools_out": result.tools_out,
+            "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out,
+            "tokens_saved": result.tokens_saved,
+            "error": result.error,
+        }
+        prune_results[source] = _prune_result_from_filter(
+            result,
+            query=query,
+            tools=tools,
+        )
+        if result.tools:
+            pruned_by_source[source] = result.tools
+    return pruned_by_source, prune_meta, prune_results
+
+
+def _preview_injection_text(
+    args: argparse.Namespace,
+    *,
+    workspace: Path,
+    config: dict[str, Any],
+    catalog: list[dict[str, Any]],
+    pruned_by_source: dict[str, list[dict[str, Any]]],
+    prune_results: dict[str, PruneResult],
+    agent: str,
+) -> tuple[str, Path | None, dict[str, Any] | None]:
+    session_raw = getattr(args, "session", None)
+    session_id = str(session_raw).strip() if session_raw else ""
+    if not session_id:
+        sections = _format_sections(pruned_by_source, workspace_path=workspace)
+        return (
+            format_multi_source_agent_tools(sections, workspace_paths=[str(workspace)]),
+            None,
+            None,
+        )
+
+    session_log_path_value = resolve_preview_session_log(
+        session_id,
+        workspace=workspace,
+        agent=agent,
+    )
+    hook_payload = _preview_hook_payload(
+        workspace=workspace,
+        query=args.query,
+        session_id=session_id,
+        agent=agent,
+    )
+    injection, session_logs = _gated_injection_for_preview(
+        pruned_by_source,
+        prune_results,
+        config=config,
+        catalog=catalog,
+        payload=hook_payload,
+    )
+    return (
+        injection,
+        session_log_path_value,
+        _session_gate_summary(pruned_by_source, session_logs),
+    )
+
+
+def _emit_preview_json(
+    args: argparse.Namespace,
+    *,
+    workspace: Path,
+    config: dict[str, Any],
+    sources_filter: set[str] | None,
+    prune_meta: dict[str, Any],
+    pruned_by_source: dict[str, list[dict[str, Any]]],
+    injection: str,
+    session_id: str,
+    session_log_path_value: Path | None,
+    session_gate: dict[str, Any] | None,
+    token_stats: dict[str, int | float],
+    agent: str,
+) -> None:
+    payload: dict[str, Any] = {
+        "query": args.query,
+        "workspace": str(workspace),
+        "sources": sorted(sources_filter) if sources_filter else sorted(tools_hook_sources(config)),
+        "prune": prune_meta,
+        "tools": pruned_by_source,
+        "injection": injection,
+    }
+    if session_id:
+        payload["session_id"] = session_id
+        if session_log_path_value is not None:
+            payload["session_log_path"] = str(session_log_path_value)
+        if session_gate is not None:
+            payload["session_gate"] = session_gate
+    if token_stats:
+        payload["token_stats"] = token_stats
+    if args.definitions and pruned_by_source.get("cyt_mcp"):
+        payload["full_definitions"] = _full_definitions_for_tools(
+            pruned_by_source["cyt_mcp"],
+            agent=agent,
+        )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    _print_preview_token_summary(token_stats)
+
+
 def run_inject_preview(args: argparse.Namespace) -> int:
     workspace = (args.workspace or Path.cwd()).resolve()
     config = config_for_inject_preview(workspace)
@@ -365,71 +492,28 @@ def run_inject_preview(args: argparse.Namespace) -> int:
 
     sources_filter = set(args.source) if args.source else None
     grouped = _tools_for_sources(catalog, sources_filter)
-
-    pruned_by_source: dict[str, list[dict[str, Any]]] = {}
-    prune_meta: dict[str, Any] = {}
-    prune_results: dict[str, PruneResult] = {}
     agent = str(config.get("agent") or "cursor")
-    for source, tools in grouped.items():
-        if not tools:
-            continue
-        result = filter_tools_for_query(
-            tools,
-            args.query,
-            config=config,
-            for_hook=True,
-            log_token_counts=False,
-        )
-        prune_meta[source] = {
-            "status": result.status,
-            "tools_in": result.tools_in,
-            "tools_out": result.tools_out,
-            "tokens_in": result.tokens_in,
-            "tokens_out": result.tokens_out,
-            "tokens_saved": result.tokens_saved,
-            "error": result.error,
-        }
-        prune_results[source] = _prune_result_from_filter(
-            result,
-            query=args.query,
-            tools=tools,
-        )
-        if result.tools:
-            pruned_by_source[source] = result.tools
+    pruned_by_source, prune_meta, prune_results = _preview_prune_by_source(
+        grouped,
+        query=args.query,
+        config=config,
+    )
 
     session_raw = getattr(args, "session", None)
     session_id = str(session_raw).strip() if session_raw else ""
-    session_log_path_value: Path | None = None
-    session_gate: dict[str, Any] | None = None
-    session_logs: list[dict[str, Any]] = []
-
-    if session_id:
-        try:
-            session_log_path_value = resolve_preview_session_log(
-                session_id,
-                workspace=workspace,
-                agent=agent,
-            )
-        except FileNotFoundError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
-        hook_payload = _preview_hook_payload(
+    try:
+        injection, session_log_path_value, session_gate = _preview_injection_text(
+            args,
             workspace=workspace,
-            query=args.query,
-            session_id=session_id,
-            agent=agent,
-        )
-        injection, session_logs = _gated_injection_for_preview(
-            pruned_by_source,
-            prune_results,
             config=config,
             catalog=catalog,
-            payload=hook_payload,
+            pruned_by_source=pruned_by_source,
+            prune_results=prune_results,
+            agent=agent,
         )
-        session_gate = _session_gate_summary(pruned_by_source, session_logs)
-    else:
-        sections = _format_sections(pruned_by_source, workspace_path=workspace)
-        injection = format_multi_source_agent_tools(sections, workspace_paths=[str(workspace)])
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     token_stats = _preview_token_stats(
         grouped=grouped,
@@ -439,31 +523,20 @@ def run_inject_preview(args: argparse.Namespace) -> int:
     )
 
     if args.json:
-        payload: dict[str, Any] = {
-            "query": args.query,
-            "workspace": str(workspace),
-            "sources": sorted(sources_filter)
-            if sources_filter
-            else sorted(tools_hook_sources(config)),
-            "prune": prune_meta,
-            "tools": pruned_by_source,
-            "injection": injection,
-        }
-        if session_id:
-            payload["session_id"] = session_id
-            if session_log_path_value is not None:
-                payload["session_log_path"] = str(session_log_path_value)
-            if session_gate is not None:
-                payload["session_gate"] = session_gate
-        if token_stats:
-            payload["token_stats"] = token_stats
-        if args.definitions and pruned_by_source.get("cyt_mcp"):
-            payload["full_definitions"] = _full_definitions_for_tools(
-                pruned_by_source["cyt_mcp"],
-                agent=agent,
-            )
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        _print_preview_token_summary(token_stats)
+        _emit_preview_json(
+            args,
+            workspace=workspace,
+            config=config,
+            sources_filter=sources_filter,
+            prune_meta=prune_meta,
+            pruned_by_source=pruned_by_source,
+            injection=injection,
+            session_id=session_id,
+            session_log_path_value=session_log_path_value,
+            session_gate=session_gate,
+            token_stats=token_stats or {},
+            agent=agent,
+        )
         return 0
 
     if injection:
@@ -477,7 +550,7 @@ def run_inject_preview(args: argparse.Namespace) -> int:
         )
         print("\n--- full definitions ---\n")
         print(json.dumps(defs, ensure_ascii=False, indent=2))
-    _print_preview_token_summary(token_stats)
+    _print_preview_token_summary(token_stats or {})
     return 0 if injection else 1
 
 

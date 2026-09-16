@@ -24,6 +24,7 @@ from cyt.skills.proxy_inject import (
     inject_skills_for_proxy_request,
     prepare_deferred_skills_context,
 )
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -70,6 +71,7 @@ def _skills_config(root: Path) -> dict:
             "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
+        "agents": isolated_skills_agents_block(),
     }
 
 

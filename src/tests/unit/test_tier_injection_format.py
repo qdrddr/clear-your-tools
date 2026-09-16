@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
-from cyt.injection.tier_legend import TOOL_TIER_LEGEND
 from cyt.skills.inject import format_agent_skills_empty
 from cyt.tools.inject import format_tool_item, format_tools_grouped_by_tier
 from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _format_server_block

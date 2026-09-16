@@ -59,11 +59,14 @@ def test_is_substantive_rules_injection_rejects_empty_wrappers() -> None:
     assert is_substantive_rules_injection("<agent-skills>\n</agent-skills>") is False
     assert (
         is_substantive_rules_injection(
-            "<agent-tools>\n</agent-tools>\n\n<agent-skills>\n</agent-skills>"
+            "<agent-tools>\n</agent-tools>\n\n<agent-skills>\n</agent-skills>",
         )
         is False
     )
-    assert is_substantive_rules_injection("<agent-tools>\n<tool name='x'></tool>\n</agent-tools>") is True
+    assert (
+        is_substantive_rules_injection("<agent-tools>\n<tool name='x'></tool>\n</agent-tools>")
+        is True
+    )
 
 
 def test_rules_injection_needs_format_refresh_legacy_agent_tools_attribute() -> None:

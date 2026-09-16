@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import yaml
 
@@ -90,11 +90,11 @@ def injection_tier_for_skill(match: MatchedSkill) -> str | None:
     """Return ``injection_tier`` (t0-t4) stamped by the tier manager for grouping."""
     tier = match.injection_tier
     if not isinstance(tier, str) or not tier.strip():
-        return None
+        return "t3"
     label = tier.strip().lower()
     if label in TIER_GROUP_ORDER:
         return label
-    return None
+    return "t3"
 
 
 def format_skills_grouped_by_tier(
@@ -107,9 +107,7 @@ def format_skills_grouped_by_tier(
     from cyt.injection.session_log_build import skill_item_key
 
     render = format_item or format_skill_item
-    buckets: OrderedDict[str, list[str]] = OrderedDict(
-        (tier, []) for tier in TIER_GROUP_ORDER
-    )
+    buckets: OrderedDict[str, list[str]] = OrderedDict((tier, []) for tier in TIER_GROUP_ORDER)
 
     for match in matches:
         tier = injection_tier_for_skill(match)
