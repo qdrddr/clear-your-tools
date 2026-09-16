@@ -8,11 +8,15 @@ from pathlib import Path
 import pytest
 
 from cyt.config import load_config
-from cyt.tools.inject_cli import _preview_token_stats, _print_preview_token_summary
 from cyt.cyt_mcp.catalog import cyt_mcp_catalog_slug
 from cyt.cyt_mcp.catalog_disk import read_disk_catalog
 from cyt.hook.workspace_config import hook_workspace_from_config
-from cyt.tools.inject_cli import config_for_inject_preview, run_inject_preview
+from cyt.tools.inject_cli import (
+    _preview_token_stats,
+    _print_preview_token_summary,
+    config_for_inject_preview,
+    run_inject_preview,
+)
 from cyt.tools.master_catalog import get_master_tool_catalog
 from tests.support.inject_preview_fixtures import (
     InjectPreviewFixturePack,

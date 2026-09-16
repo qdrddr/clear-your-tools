@@ -14,11 +14,11 @@ from cyt_mcp.search import (
     refresh_search_tool_schema,
     register_search_tool,
 )
-from cyt_mcp.stub_catalog import DEFAULT_STUBS, resolve_stub_retain
+from cyt_mcp.stub_catalog import DEFAULT_STUBS, RetainSpec, resolve_stub_retain
 from cyt_mcp.stubs import StubListTransform, _stub_from_tool
 
 _BASIC_RETAIN = DEFAULT_STUBS[0]["always"]
-_EMPTY_REQUIRED_RETAIN = {
+_EMPTY_REQUIRED_RETAIN: RetainSpec = {
     "tool": ["name"],
     "required_properties": [],
     "optional_properties": [],
@@ -48,7 +48,7 @@ def test_stub_empty_schema_when_required_properties_not_retained() -> None:
 
 def test_resolve_stub_retain_basic_includes_required_property_names() -> None:
     retain = resolve_stub_retain({}, "cursor")
-    assert retain["required_properties"] == ["name"]
+    assert retain.get("required_properties") == ["name"]
 
 
 def test_build_catalog_excludes_search_tool() -> None:

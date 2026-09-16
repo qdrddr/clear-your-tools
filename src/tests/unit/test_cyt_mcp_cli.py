@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from cyt_mcp.cli import _run_catalog, _run_search, _run_server
-from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
 from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
 
 
 def _stdio_config() -> AggregatorConfig:

@@ -46,8 +46,8 @@ def run_cyt_db_maintenance(
     vacuum: bool | None = None,
 ) -> DbMaintenanceResult:
     """Run maintenance for all enabled CYT SQLite databases."""
-    from cyt.tool_examples.config import examples_active
     from cyt.tiers.config import tiers_active
+    from cyt.tool_examples.config import examples_active
 
     result = DbMaintenanceResult()
     if examples_active(config):

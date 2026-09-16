@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+from cyt.pruners.token_stats import format_catalog_token_line
 from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.catalog_export import (
     backend_full_catalog,
@@ -24,7 +25,6 @@ from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import lookup_tool_definition
 from cyt_mcp.transport import refresh_runtime_cache
-from cyt.pruners.token_stats import format_catalog_token_line
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +140,7 @@ def _catalog_export_payload(
     frontend_payload: dict[str, Any],
 ) -> dict[str, Any]:
     backend_payload = (
-        backend_full_catalog(cache, config)
-        if backend_full
-        else backend_hook_catalog(cache, config)
+        backend_full_catalog(cache, config) if backend_full else backend_hook_catalog(cache, config)
     )
     if source == "backend":
         return backend_payload
@@ -167,9 +165,7 @@ async def _run_catalog(config: AggregatorConfig, args: argparse.Namespace) -> in
     show_tokens = bool(getattr(args, "tokens", False)) or source == "both"
 
     backend_payload = (
-        backend_full_catalog(cache, config)
-        if backend_full
-        else backend_hook_catalog(cache, config)
+        backend_full_catalog(cache, config) if backend_full else backend_hook_catalog(cache, config)
     )
     frontend_payload = await frontend_stubs(server, cache, config)
     payload = _catalog_export_payload(
@@ -188,9 +184,17 @@ async def _run_catalog(config: AggregatorConfig, args: argparse.Namespace) -> in
                 frontend_payload=frontend_payload,
             )
         elif source == "backend":
-            _print_catalog_token_lines(source=source, backend_payload=payload, frontend_payload=None)
+            _print_catalog_token_lines(
+                source=source,
+                backend_payload=payload,
+                frontend_payload=None,
+            )
         else:
-            _print_catalog_token_lines(source=source, backend_payload=None, frontend_payload=payload)
+            _print_catalog_token_lines(
+                source=source,
+                backend_payload=None,
+                frontend_payload=payload,
+            )
 
     use_json = bool(getattr(args, "json", False)) or not sys.stdout.isatty()
     indent = 2 if use_json or sys.stdout.isatty() else None

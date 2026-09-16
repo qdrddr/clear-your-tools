@@ -47,7 +47,9 @@ def _record_maintenance_run(config: dict[str, Any], *, today: date | None = None
     marker.write_text(today.isoformat(), encoding="utf-8")
 
 
-def maybe_run_tier_maintenance_on_stats_query(config: dict[str, Any]) -> DbTableMaintenanceResult | None:
+def maybe_run_tier_maintenance_on_stats_query(
+    config: dict[str, Any],
+) -> DbTableMaintenanceResult | None:
     """Run tier DB maintenance at most once per calendar day (e.g. from ``tiers stats``)."""
     retention = tier_retention_config(config)
     if not retention.enabled or not tiers_active(config, kind="tool"):
@@ -124,9 +126,7 @@ def run_tier_state_maintenance(
             max_entries=retention.epoch_log_max_entries,
         )
 
-        should_vacuum = (
-            retention.vacuum_after_maintenance if vacuum is None else vacuum
-        )
+        should_vacuum = retention.vacuum_after_maintenance if vacuum is None else vacuum
         if should_vacuum and result.total_deleted() > 0:
             store.vacuum()
             result.vacuumed = True

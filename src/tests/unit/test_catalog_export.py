@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+from fastmcp.tools.base import Tool
+
 from cyt.indexer.tokens import count_json_tokens
 from cyt_mcp.catalog_build import json_safe_value, mcp_tool_to_catalog_dict
 from cyt_mcp.catalog_export import (
@@ -18,7 +20,6 @@ from cyt_mcp.catalog_export import (
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
-from fastmcp.tools.base import Tool
 
 
 def test_stub_dict_from_hook_tool_minimal_schema() -> None:

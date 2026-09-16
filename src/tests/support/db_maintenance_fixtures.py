@@ -323,11 +323,13 @@ def db_maintenance_pack(tmp_path: Path) -> DbMaintenanceFixturePack:
 
 
 @pytest.fixture
-def db_maintenance_marker(tmp_path: Path) -> Iterator[Path]:
+def db_maintenance_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     marker = tmp_path / ".tier_db_maintenance_last_run"
     from cyt.tiers import maintenance as maintenance_mod
 
-    original = maintenance_mod._maintenance_marker_path
-    maintenance_mod._maintenance_marker_path = lambda _cfg: marker
+    def _patched_marker_path(config: dict[str, Any]) -> Path:
+        _ = config
+        return marker
+
+    monkeypatch.setattr(maintenance_mod, "_maintenance_marker_path", _patched_marker_path)
     yield marker
-    maintenance_mod._maintenance_marker_path = original

@@ -125,15 +125,17 @@ def test_unified_maintenance_end_to_end(db_maintenance_pack: DbMaintenanceFixtur
 
     assert result.tool_examples is not None
     assert result.tier_state is not None
-    assert count_tool_input_schemas(db_maintenance_pack.tool_examples_db) <= te_scenario[
-        "expected"
-    ]["max_total_captures"]
+    assert (
+        count_tool_input_schemas(db_maintenance_pack.tool_examples_db)
+        <= te_scenario["expected"]["max_total_captures"]
+    )
 
     from tests.support.db_maintenance_fixtures import count_epoch_log
 
-    assert count_epoch_log(db_maintenance_pack.tier_state_db) <= tier_scenario["expected"][
-        "max_remaining"
-    ]
+    assert (
+        count_epoch_log(db_maintenance_pack.tier_state_db)
+        <= tier_scenario["expected"]["max_remaining"]
+    )
 
 
 def test_tier_stats_daily_maintenance_marker(

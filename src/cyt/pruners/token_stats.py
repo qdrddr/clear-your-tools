@@ -21,10 +21,7 @@ def format_tool_token_arrow_line(
     """Compact-JSON savings line using ``in -> out`` form (proxy debug logs)."""
     saved = tokens_in - tokens_out if tokens_saved is None else tokens_saved
     pct = savings_percent(tokens_in, saved)
-    return (
-        f"tool tokens (compact JSON): {tokens_in} -> {tokens_out} "
-        f"(saved {saved}, {pct:.1f}%)"
-    )
+    return f"tool tokens (compact JSON): {tokens_in} -> {tokens_out} (saved {saved}, {pct:.1f}%)"
 
 
 def format_agent_tools_token_lines(
@@ -35,15 +32,13 @@ def format_agent_tools_token_lines(
 ) -> list[str]:
     """Format token counts for the full ``<agent-tools>`` rulefile / additionalContext block."""
     if tool_count is not None:
-        before = (
-            f"\nTools before cleaning (compact JSON): tools={tool_count}, tokens={tokens_in}"
-        )
+        before = f"\nTools before cleaning (compact JSON): tools={tool_count}, tokens={tokens_in}"
     else:
         before = f"\nTools before cleaning (tokens): {tokens_in}"
     lines = [before]
     if tokens_out is not None:
         lines.append(
-            f"Tools after cleaning agent-tools (compact JSON): tokens={tokens_out}"
+            f"Tools after cleaning agent-tools (compact JSON): tokens={tokens_out}",
         )
     return lines
 
@@ -63,10 +58,7 @@ def format_saved_tokens_line(
 ) -> str:
     saved = tokens_in - tokens_out - frontend_tokens
     pct = savings_percent(tokens_in, saved)
-    return (
-        f"Saved (tokens): {saved} ({pct:.1f}%) = "
-        f"{tokens_in}-{tokens_out}+{frontend_tokens}"
-    )
+    return f"Saved (tokens): {saved} ({pct:.1f}%) = {tokens_in}-{tokens_out}+{frontend_tokens}"
 
 
 def savings_percent(tokens_in: int, saved: int) -> float:

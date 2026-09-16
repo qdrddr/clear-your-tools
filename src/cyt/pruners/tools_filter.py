@@ -47,12 +47,12 @@ from cyt.pruners.policies import (
 from cyt.pruners.query import tools_pruning_query, tools_scoring_query
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
+from cyt.pruners.token_stats import format_tool_token_line
 from cyt.tiers.adapters.tools import merge_t4_tools, stamp_tool_injection_tiers
 from cyt.tiers.config import tiers_active
 from cyt.tiers.manager import NoOpTierManager, TierManager, get_tier_manager
 from cyt.tiers.models import ToolsTierApplyResult
 from cyt.tiers.shadow import schedule_tool_shadow_evaluation
-from cyt.pruners.token_stats import format_tool_token_line
 from cyt.tools.budget import tools_inject_allowed
 from cyt.tools.policy_context import prepare_hook_tool_pruning
 from cyt_core.types.prune import PruneResult
@@ -1093,6 +1093,78 @@ def _prune_result_without_catalog_entries(
     )
 
 
+def _finalize_applied_prune_result(
+    *,
+    original_tools: list[dict[str, Any]],
+    tools_for_prune: list[dict[str, Any]],
+    merged: list[dict[str, Any]],
+    stashed_by_name: dict[str, dict[str, Any]],
+    t4_direct: list[dict[str, Any]],
+    tier_apply: ToolsTierApplyResult,
+    tier_manager: TierManager | NoOpTierManager,
+    config: dict[str, Any],
+    query: str,
+    scoring_query: str,
+    tools_in: int,
+    catalog_tools_in: int,
+    tokens_in: int,
+    tool_properties_count_in: int,
+    tool_properties_count_out: int,
+    pruning_model_tokens: dict[str, int],
+    pruning_token_usage: dict[str, StageTokenUsage],
+    decomposed: dict[str, int],
+    decomposed_breakdown: dict[str, dict[str, int]],
+    decomposed_catalog: dict[str, dict[str, Any]] | None,
+    to_api: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+    log_token_counts: bool,
+) -> PruneResult:
+    pruned_by_name = _pruned_tools_by_name(tools_for_prune, merged, to_api)
+    pruned = merge_tools_preserving_order(tools_for_prune, pruned_by_name, stashed_by_name)
+    pruned = merge_t4_tools(pruned, t4_direct)
+    t4_names = {str(tool.get("name") or "") for tool in t4_direct if str(tool.get("name") or "")}
+    pruned = stamp_tool_injection_tiers(pruned, tier_apply.tier_by_tool, t4_names=t4_names)
+    pruned = _ensure_injection_schemas_for_tiers(pruned, original_tools)
+    try:
+        from cyt.tool_examples.enrich import enrich_tools_with_examples
+
+        pruned = enrich_tools_with_examples(pruned, query, config)
+    except Exception as exc:
+        logger.warning("tool example enrichment failed: %s", exc)
+    if tiers_active(config, kind="tool"):
+        schedule_tool_shadow_evaluation(
+            config=config,
+            query=scoring_query,
+            original_tools=original_tools,
+            tier_apply=tier_apply,
+            manager=tier_manager,
+        )
+    tokens_out = count_json_tokens(pruned)
+    tokens_saved = tokens_in - tokens_out
+    if log_token_counts:
+        _log_tool_token_counts(tokens_in, tokens_out)
+    return PruneResult(
+        tools=pruned,
+        status="applied",
+        query=query,
+        tools_in=tools_in,
+        mcp_tools_in=catalog_tools_in,
+        tools_out=len(pruned),
+        error=None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        tokens_saved=tokens_saved,
+        tool_properties_count_in=tool_properties_count_in,
+        tool_properties_count_out=tool_properties_count_out,
+        tools_accepted=copy.deepcopy(original_tools),
+        tools_final=copy.deepcopy(pruned),
+        pruning_model_tokens=pruning_model_tokens,
+        pruning_token_usage=pruning_token_usage,
+        decomposed=decomposed,
+        decomposed_breakdown=decomposed_breakdown,
+        decomposed_catalog=decomposed_catalog,
+    )
+
+
 def filter_tools_for_query(
     original_tools: list[dict[str, Any]],
     query: str,
@@ -1269,48 +1341,27 @@ def filter_tools_for_query(
             decomposed_catalog=decomposed_catalog,
         )
 
-    pruned_by_name = _pruned_tools_by_name(tools_for_prune, merged, to_api)
-    pruned = merge_tools_preserving_order(tools_for_prune, pruned_by_name, stashed_by_name)
-    pruned = merge_t4_tools(pruned, t4_direct)
-    t4_names = {str(tool.get("name") or "") for tool in t4_direct if str(tool.get("name") or "")}
-    pruned = stamp_tool_injection_tiers(pruned, tier_apply.tier_by_tool, t4_names=t4_names)
-    pruned = _ensure_injection_schemas_for_tiers(pruned, original_tools)
-    try:
-        from cyt.tool_examples.enrich import enrich_tools_with_examples
-
-        pruned = enrich_tools_with_examples(pruned, query, config)
-    except Exception as exc:
-        logger.warning("tool example enrichment failed: %s", exc)
-    if tiers_active(config, kind="tool"):
-        schedule_tool_shadow_evaluation(
-            config=config,
-            query=scoring_query,
-            original_tools=original_tools,
-            tier_apply=tier_apply,
-            manager=tier_manager,
-        )
-    tokens_out = count_json_tokens(pruned)
-    tokens_saved = tokens_in - tokens_out
-    if log_token_counts:
-        _log_tool_token_counts(tokens_in, tokens_out)
-    return PruneResult(
-        tools=pruned,
-        status="applied",
+    return _finalize_applied_prune_result(
+        original_tools=original_tools,
+        tools_for_prune=tools_for_prune,
+        merged=merged,
+        stashed_by_name=stashed_by_name,
+        t4_direct=t4_direct,
+        tier_apply=tier_apply,
+        tier_manager=tier_manager,
+        config=config,
         query=query,
+        scoring_query=scoring_query,
         tools_in=tools_in,
-        mcp_tools_in=catalog_tools_in,
-        tools_out=len(pruned),
-        error=None,
+        catalog_tools_in=catalog_tools_in,
         tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        tokens_saved=tokens_saved,
         tool_properties_count_in=tool_properties_count_in,
         tool_properties_count_out=tool_properties_count_out,
-        tools_accepted=copy.deepcopy(original_tools),
-        tools_final=copy.deepcopy(pruned),
         pruning_model_tokens=pruning_model_tokens,
         pruning_token_usage=pruning_token_usage,
         decomposed=decomposed,
         decomposed_breakdown=decomposed_breakdown,
         decomposed_catalog=decomposed_catalog,
+        to_api=to_api,
+        log_token_counts=log_token_counts,
     )

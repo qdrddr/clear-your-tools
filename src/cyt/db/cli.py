@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
 from cyt.config import load_config
 from cyt.db.maintenance import run_cyt_db_maintenance

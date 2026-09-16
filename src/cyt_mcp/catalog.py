@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
@@ -36,7 +37,7 @@ def catalog_payload(
     cache: RuntimeToolCache,
     *,
     agent: str,
-    server_origins: dict[str, str] | None = None,
+    server_origins: Mapping[str, str] | None = None,
     server_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     origins = server_origins or {}

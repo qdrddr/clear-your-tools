@@ -892,8 +892,7 @@ class TierStore:
                 if excess <= 0:
                     continue
                 old_rows = self._conn.execute(
-                    "SELECT id FROM epoch_log WHERE project_id = ? "
-                    "ORDER BY ts_ms ASC LIMIT ?",
+                    "SELECT id FROM epoch_log WHERE project_id = ? ORDER BY ts_ms ASC LIMIT ?",
                     (pid, excess),
                 ).fetchall()
                 for (row_id,) in old_rows:

@@ -434,9 +434,11 @@ class ToolExamplesStore:
                 if not stale:
                     continue
                 keep_historical = min(min_historical_per_path, len(stale))
-                historical_ids = {
-                    int(row[0]) for row in stale[-keep_historical:]
-                } if keep_historical > 0 else set()
+                historical_ids = (
+                    {int(row[0]) for row in stale[-keep_historical:]}
+                    if keep_historical > 0
+                    else set()
+                )
                 recent_ids = {int(row[0]) for row in rows if int(row[1]) >= cutoff_ms}
                 protected = recent_ids | historical_ids
                 max_deletable = max(0, len(rows) - min_per_path)
@@ -506,9 +508,11 @@ class ToolExamplesStore:
                 if not stale:
                     continue
                 keep_historical = min(min_historical_per_path, len(stale))
-                historical_ids = {
-                    int(row[0]) for row in stale[-keep_historical:]
-                } if keep_historical > 0 else set()
+                historical_ids = (
+                    {int(row[0]) for row in stale[-keep_historical:]}
+                    if keep_historical > 0
+                    else set()
+                )
                 recent_ids = {int(row[0]) for row in rows if int(row[1]) >= cutoff_ms}
                 protected = recent_ids | historical_ids
                 max_deletable = max(0, len(rows) - min_per_path)

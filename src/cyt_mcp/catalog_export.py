@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from fastmcp import FastMCP
@@ -12,15 +12,19 @@ from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.catalog_build import json_safe_value, mcp_tool_to_catalog_dict
 from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.tool_identity import enrich_tool_identity
 from cyt_mcp.search import (
     MCP_WIRE_SEARCH_TOOL_NAME,
     SEARCH_TOOL_NAME,
     build_search_input_schema,
     search_tool_description,
 )
-from cyt_mcp.stub_catalog import RetainSpec, retain_includes_required_names, retain_includes_tool_field
+from cyt_mcp.stub_catalog import (
+    RetainSpec,
+    retain_includes_required_names,
+    retain_includes_tool_field,
+)
 from cyt_mcp.stubs import _minimal_required_schema
+from cyt_mcp.tool_identity import enrich_tool_identity
 
 
 def _input_schema_from_hook_tool(tool: dict[str, Any]) -> dict[str, Any]:
@@ -49,7 +53,7 @@ def stub_dict_from_hook_tool(tool: dict[str, Any], *, retain: RetainSpec) -> dic
 def group_backend_catalog_payload(
     payload: dict[str, Any],
     *,
-    server_origins: dict[str, str] | None = None,
+    server_origins: Mapping[str, str] | None = None,
     server_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Group a flat backend catalog export by MCP server key."""
@@ -63,7 +67,9 @@ def group_backend_catalog_payload(
             continue
         enriched = enrich_tool_identity(dict(tool), keys) if keys else dict(tool)
         server_key = str(enriched.get("server_key") or "").strip() or "unknown"
-        grouped.setdefault(server_key, []).append(json_safe_value(enriched))
+        grouped.setdefault(server_key, []).append(
+            cast(dict[str, Any], json_safe_value(enriched)),
+        )
 
     servers: dict[str, Any] = {}
     for server_key in sorted(grouped.keys()):
@@ -124,8 +130,7 @@ def backend_full_catalog(
         key=lambda item: str(item.get("name") or ""),
     )
     enriched_tools = [
-        json_safe_value(enrich_tool_identity(dict(tool), server_keys))
-        for tool in tools
+        json_safe_value(enrich_tool_identity(dict(tool), server_keys)) for tool in tools
     ]
     flat = {
         "agent": config.agent,
@@ -179,10 +184,7 @@ async def frontend_stubs(
     _ = cache
     backend_server = cast(Any, server)
     stub_tools = await backend_server.list_tools()
-    tools = [
-        json_safe_value(mcp_tool_to_catalog_dict(stub.to_mcp_tool()))
-        for stub in stub_tools
-    ]
+    tools = [json_safe_value(mcp_tool_to_catalog_dict(stub.to_mcp_tool())) for stub in stub_tools]
     return {"agent": config.agent, "tools": tools}
 
 

@@ -15,8 +15,6 @@ from cyt.pruners.token_stats import build_preview_token_stats, format_preview_to
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.tools.inject import injection_token_count
 from cyt.tools.master_catalog import get_master_tool_catalog
-from cyt_mcp.catalog_export import catalog_token_stats, frontend_payload_from_hook_tools
-from cyt_mcp.config import load_aggregator_config
 from cyt.tools.source_inject import (
     format_cloudflare_source_section,
     format_cyt_mcp_source_section,
@@ -25,6 +23,8 @@ from cyt.tools.source_inject import (
     format_mcp_source_section,
     format_multi_source_agent_tools,
 )
+from cyt_mcp.catalog_export import catalog_token_stats, frontend_payload_from_hook_tools
+from cyt_mcp.config import load_aggregator_config
 
 
 def _add_preview_arguments(parser: argparse.ArgumentParser) -> None:

@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 from cyt.db.maintenance import run_cyt_db_maintenance
-from cyt.tool_examples.maintenance import run_tool_examples_maintenance
 from cyt.tiers.maintenance import run_tier_state_maintenance
 from cyt.tiers.models import EffectiveStats
 from cyt.tiers.retention_config import tier_retention_config
+from cyt.tool_examples.maintenance import run_tool_examples_maintenance
 from tests.support.db_maintenance_fixtures import (
     DbMaintenanceFixturePack,
     build_examples_retention_config,
@@ -88,7 +88,9 @@ def test_schema_hash_diversity_retention_from_fixture(
     )
     result = run_tool_examples_maintenance(config, vacuum=False)
     assert result.deleted.get("tool_input_schema", 0) >= 5
-    assert count_unique_schema_hashes(store_path) >= scenario["expected"]["min_unique_schema_hashes"]
+    assert (
+        count_unique_schema_hashes(store_path) >= scenario["expected"]["min_unique_schema_hashes"]
+    )
     assert count_tool_input_schemas(store_path) <= scenario["expected"]["max_total_captures"]
 
 

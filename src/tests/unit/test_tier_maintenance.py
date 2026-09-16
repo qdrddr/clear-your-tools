@@ -10,8 +10,8 @@ import pytest
 from cyt.tiers.maintenance import (
     maintenance_ran_today,
     maybe_run_tier_maintenance_on_stats_query,
-    run_tier_state_maintenance,
     reset_tier_maintenance_scheduler_for_tests,
+    run_tier_state_maintenance,
     schedule_tier_state_maintenance_if_due,
 )
 from cyt.tiers.models import EffectiveStats, EntityKind, Tier
