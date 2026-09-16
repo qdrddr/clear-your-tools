@@ -71,6 +71,8 @@ def _maybe_purge_stale_catalog_tools(
         allowed_sources=allowed_sources,
         catalog_entity_ids=catalog_entity_ids,
     )
+
+
 _last_maintenance_start = 0.0
 _maintenance_in_progress = False
 

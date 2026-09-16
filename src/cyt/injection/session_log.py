@@ -114,8 +114,14 @@ def resolve_injection_mode(
     if latest is not None and latest != current_hash:
         return "full"
 
-    if index.count_key(key, aliases=key_aliases) >= FULL_PROMOTION_THRESHOLD:
+    count = index.count_key(key, aliases=key_aliases)
+    if count >= FULL_PROMOTION_THRESHOLD:
         return "full"
+
+    # Same hash already logged this session (even full:false) — skip re-inject when
+    # verbatim match fails due to fragment drift (tier attr, examples, pruned schema).
+    if count >= 1 and latest is not None and latest == current_hash:
+        return "skip"
 
     return "skinny"
 

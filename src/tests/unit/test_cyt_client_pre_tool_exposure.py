@@ -319,7 +319,9 @@ def test_deny_type1_hash_skips_hook_reinjection() -> None:
         "required": ["project"],
     }
     catalog_tool = {
-        "name": "index_status",
+        "name": "codebase-memory_index_status",
+        "tool_name": "index_status",
+        "server_key": "codebase-memory",
         "input_schema": schema,
         "description": "Get the indexing status of a project",
     }
@@ -346,7 +348,7 @@ def test_deny_type1_hash_skips_hook_reinjection() -> None:
     )
     assert current_hash == deny_entry["hash"]
     mode = resolve_injection_mode(
-        key="tool:cyt_mcp:index_status",
+        key="tool:cyt_mcp:codebase-memory_index_status",
         current_hash=current_hash,
         index=index,
         session_text="",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -29,7 +30,7 @@ from tests.support.inject_preview_fixtures import (
 
 @pytest.fixture
 def wire_name_inject_preview_pack(
-    tmp_path,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[InjectPreviewFixturePack]:
     pack = materialize_inject_preview_pack_with_wire_catalog(tmp_path)

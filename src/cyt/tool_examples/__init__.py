@@ -6,8 +6,13 @@ and workspace-origin MCP tools share the same project pool — injection scope
 (``cyt-mcp-usr`` vs ``cyt-mcp-ws``) affects catalog layout only, not example storage.
 """
 
+from typing import TYPE_CHECKING
+
 from cyt.tool_examples.config import examples_active, tool_examples_db_path
 from cyt.tool_examples.store import ToolExamplesStore
+
+if TYPE_CHECKING:
+    from cyt.tool_examples.enrich import enrich_tools_with_examples
 
 __all__ = [
     "ToolExamplesStore",

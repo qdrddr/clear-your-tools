@@ -8,7 +8,6 @@ import pytest
 
 from cyt.injection.pre_exposure_context import PreExposureContext
 from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
-from cyt.injection.session_log import SessionLogIndex
 from cyt.injection.session_log_build import (
     build_tool_log_entry,
     format_entry_fragment,
@@ -20,6 +19,7 @@ from cyt.tools.inject import format_tool_item
 from tests.support.cyt_mcp_session_log_wire_name_fixtures import (
     GateSkipExpectation,
     ToolLogWriteExpectation,
+    WireNameFixturePack,
     catalog_tool_by_wire_name,
     catalog_tools_list,
     load_fixture_pack,
@@ -30,7 +30,7 @@ from tests.support.cyt_mcp_session_log_wire_name_fixtures import (
 
 
 @pytest.fixture(scope="module")
-def wire_name_fixture_pack():
+def wire_name_fixture_pack() -> WireNameFixturePack:
     return load_fixture_pack()
 
 
@@ -116,8 +116,7 @@ def test_gate_and_filter_tools_respects_wire_vs_legacy_session_entries(
         wire_name=expectation.wire_name,
         catalog_tools=catalog_tools,
     )
-    index = SessionLogIndex(entries=(session_entry,))
-    ctx = PreExposureContext.from_entries(payload_text="", entries=(session_entry,))
+    ctx = PreExposureContext.from_entries(payload_text="", entries=[session_entry])
     gated, log_entries, _ = gate_and_filter_tools(
         [tool],
         config={},

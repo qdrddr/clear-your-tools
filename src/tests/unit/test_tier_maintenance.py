@@ -335,9 +335,11 @@ def test_run_tier_state_maintenance_skips_purge_on_incomplete_catalog(
     assert result.deleted.get("stale_catalog_tools", 0) == 0
     remaining = {
         row[0]
-        for row in TierStore(str(db))._conn.execute(
+        for row in TierStore(str(db))
+        ._conn.execute(
             "SELECT entity_id FROM entity_stats WHERE kind = ?",
             (EntityKind.TOOL,),
-        ).fetchall()
+        )
+        .fetchall()
     }
     assert len(remaining) == 10

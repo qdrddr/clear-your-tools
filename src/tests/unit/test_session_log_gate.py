@@ -119,6 +119,30 @@ def test_combined_session_text_includes_turn_corpus() -> None:
     assert "codebase-memory-mcp_search_graph" in combined
 
 
+def test_matching_hash_after_skinny_log_skips_reinjection() -> None:
+    index = SessionLogIndex(
+        entries=(
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:fff_grep",
+                "hash": "hash-v1",
+                "full": False,
+                "name": "fff_grep",
+                "catalog": "cyt_mcp",
+            },
+        ),
+    )
+    mode = resolve_injection_mode(
+        key="tool:cyt_mcp:fff_grep",
+        current_hash="hash-v1",
+        index=index,
+        session_text="",
+        formatted_skinny="<tool name='fff_grep' tier='t3'>with examples</tool>",
+        formatted_full="<tool name='fff_grep'>full</tool>",
+    )
+    assert mode == "skip"
+
+
 def test_post_compaction_index_allows_reinject() -> None:
     entries: list[dict[str, Any]] = [
         {

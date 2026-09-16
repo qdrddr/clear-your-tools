@@ -226,6 +226,15 @@ skills:
         store.upsert_entity_state(
             project,
             EntityTierState(
+                entity_id="cyt_mcp:dormant_tool",
+                kind="tool",
+                stable_tier=Tier.DORMANT,
+                effective_tier=Tier.DORMANT,
+            ),
+        )
+        store.upsert_entity_state(
+            project,
+            EntityTierState(
                 entity_id="cyt_mcp:active_tool",
                 kind="tool",
                 stable_tier=Tier.ACTIVE,

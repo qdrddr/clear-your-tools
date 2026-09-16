@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.injection.session_log_build import build_tool_log_entry
+from tests.support.inject_preview_fixtures import InjectPreviewFixturePack
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "cyt_mcp_session_log_wire_name"
 CATALOG_TOOLS_PATH = FIXTURES_ROOT / "catalog_tools.json"
@@ -219,7 +220,9 @@ def session_entry_for_source(
     )
 
 
-def materialize_inject_preview_pack_with_wire_catalog(tmp_path: Path):
+def materialize_inject_preview_pack_with_wire_catalog(
+    tmp_path: Path,
+) -> InjectPreviewFixturePack:
     """Build inject preview workspace pack using this fixture's catalog tools."""
     from dataclasses import replace
 

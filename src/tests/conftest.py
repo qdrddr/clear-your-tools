@@ -268,7 +268,9 @@ def _isolate_tier_maintenance_marker(tmp_path: Path, monkeypatch: pytest.MonkeyP
         _ = config
         return marker
 
-    monkeypatch.setattr(maintenance_mod, "_maintenance_marker_path", isolated_maintenance_marker_path)
+    monkeypatch.setattr(
+        maintenance_mod, "_maintenance_marker_path", isolated_maintenance_marker_path,
+    )
 
 
 @pytest.fixture(autouse=True)

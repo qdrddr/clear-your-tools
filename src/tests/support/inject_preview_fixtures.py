@@ -11,11 +11,11 @@ from typing import Any
 import pytest
 
 from cyt.config import load_config
-from cyt.injection.session_log_build import build_tool_log_entry
-from cyt_core.types.prune import PruneResult
 from cyt.cyt_mcp.catalog import apply_fetched_catalog, clear_cyt_mcp_catalog_cache
 from cyt.hook.workspace_config import set_hook_workspace_in_config
+from cyt.injection.session_log_build import build_tool_log_entry
 from cyt.tools.master_catalog import clear_master_catalog_cache, rebuild_master_catalog
+from cyt_core.types.prune import PruneResult
 from tests.support.permissions_gate_fixtures import patch_global_config_path
 from tests.support.tiers_stats_fixtures import patch_cyt_mcp_paths
 

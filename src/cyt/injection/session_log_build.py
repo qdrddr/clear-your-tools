@@ -519,7 +519,10 @@ def catalog_tool_record_content_hash(catalog: CatalogKind, record: dict[str, Any
     """Per-tool hash aligned with Type-1 ``tool_content_hash`` for the same full schema."""
     if catalog == "mcpc":
         return tool_definition_content_hash(_mcpc_tool_definition_for_hash(record))
-    return tool_definition_content_hash(_executor_tool_definition_for_hash(record))
+    stamped = dict(record)
+    if catalog == "cyt_mcp" and not str(stamped.get("cyt_catalog_source") or "").strip():
+        stamped["cyt_catalog_source"] = "cyt_mcp"
+    return tool_definition_content_hash(_executor_tool_definition_for_hash(stamped))
 
 
 def _tool_record_for_catalog_bundle(
