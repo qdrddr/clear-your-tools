@@ -654,8 +654,8 @@ def add_status_filter_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--tier",
-        metavar="T0-T4",
-        help="Filter by effective tier (example: T2 or 2)",
+        metavar="TIER",
+        help="Filter by effective tier (T0-T4, t0-t4, or 0-4)",
     )
     parser.add_argument(
         "--name",

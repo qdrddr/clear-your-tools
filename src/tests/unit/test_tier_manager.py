@@ -418,6 +418,63 @@ def test_epoch_success_blocks_demotion_of_stable_hot_tool() -> None:
     assert state.stable_tier == Tier.HOT
 
 
+def test_epoch_success_allows_t3_t4_promotion_for_heavily_used_tool() -> None:
+    from cyt.tiers.evaluator import evaluate_slow_clock
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:semble_search",
+        kind="tool",
+        stable_tier=Tier.HOT,
+        effective_tier=Tier.HOT,
+        stats=EffectiveStats(
+            injected=20.0,
+            candidates=45.0,
+            used=26.0,
+            attempts=28.0,
+            epoch_used=1.0,
+            epoch_attempts=1.0,
+        ),
+    )
+    cfg = tier_section_config({}, kind="tool")
+    transitions = evaluate_slow_clock(
+        {("tool", state.entity_id): state},
+        cfg=cfg,
+        epoch=EpochState(),
+    )
+    assert any(t.reason == "slow_promote_t3_t4" for t in transitions)
+    assert state.stable_tier == Tier.EXTRA_HOT
+
+
+def test_t4_promotion_uses_execution_not_injection_demand() -> None:
+    from cyt.tiers.evaluator import evaluate_slow_clock
+    from cyt.tiers.scores import demand_score, execution_score
+
+    stats = EffectiveStats(
+        injected=20.0,
+        candidates=45.0,
+        used=26.0,
+        attempts=28.0,
+    )
+    cfg = tier_section_config({}, kind="tool")
+    assert demand_score(stats) < cfg.thresholds_t34.promote_demand
+    assert execution_score(stats) >= cfg.thresholds_t34.promote_demand
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:fff_grep",
+        kind="tool",
+        stable_tier=Tier.HOT,
+        effective_tier=Tier.HOT,
+        stats=stats,
+    )
+    transitions = evaluate_slow_clock(
+        {("tool", state.entity_id): state},
+        cfg=cfg,
+        epoch=EpochState(),
+    )
+    assert any(t.reason == "slow_promote_t3_t4" for t in transitions)
+    assert state.stable_tier == Tier.EXTRA_HOT
+
+
 def test_expire_temporary_promotions_crystallizes_successful_tool_use() -> None:
     from cyt.tiers.evaluator import expire_temporary_promotions
 

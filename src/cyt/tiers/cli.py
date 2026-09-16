@@ -148,7 +148,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
 
     if getattr(args, "tier", None) and filters.tier is None:
         return _status_error(
-            f"invalid --tier value: {args.tier!r} (expected T0-T4)",
+            f"invalid --tier value: {args.tier!r} (expected T0-T4, t0-t4, or 0-4)",
             json_output=bool(args.json),
         )
 

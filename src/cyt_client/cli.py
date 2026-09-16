@@ -41,6 +41,7 @@ from cyt_client.rules_file import (
     hook_stdout_bytes_for_agent,
     is_substantive_rules_injection,
     is_valid_workspace_root,
+    read_cursor_rules_injection,
     read_prior_rules_injection_for_hook,
     reset_cursor_rules_file_to_placeholder,
     set_rules_file_rel_path,
@@ -178,7 +179,7 @@ def _workspace_for_cursor_hook(payload: dict) -> Path | None:
     return workspace
 
 
-def _resolve_hook_url_for_submit(*, retries: int = 6, delay_seconds: float = 0.15) -> str | None:
+def _resolve_hook_url_for_submit(*, retries: int = 20, delay_seconds: float = 0.25) -> str | None:
     """Resolve hook URL with brief retries (sessionStart may still be starting the daemon)."""
     for attempt in range(retries):
         hook_url = resolve_hook_url()
@@ -266,6 +267,10 @@ def _sync_cursor_rules_for_lifecycle(payload: dict) -> None:
     if _verify_only_for_agent(payload):
         delete_cursor_rules_file(workspace, force=True)
     else:
+        # beforeSubmitPrompt can finish before sessionStart in a new session; do not
+        # wipe substantive injection that was just synced for the first prompt.
+        if is_substantive_rules_injection(read_cursor_rules_injection(workspace)):
+            return
         reset_cursor_rules_file_to_placeholder(workspace)
 
 

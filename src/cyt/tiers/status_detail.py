@@ -28,6 +28,7 @@ from cyt.tiers.scores import (
     epoch_execution_score,
     execution_score,
     shadow_score,
+    tool_t4_demand_met,
     utility_score,
 )
 from cyt.tiers.wake import wake_pressure
@@ -178,8 +179,17 @@ def _hot_progression_hints(
     utility: float,
     min_inj: int,
 ) -> list[str]:
+    t4_demand_met = (
+        tool_t4_demand_met(
+            state.stats,
+            demand_threshold=cfg.thresholds_t34.promote_demand,
+            min_used=float(min_inj * 2),
+        )
+        if state.kind == EntityKind.TOOL
+        else demand >= cfg.thresholds_t34.promote_demand
+    )
     if (
-        demand >= cfg.thresholds_t34.promote_demand
+        t4_demand_met
         and utility >= cfg.thresholds_t34.promote_utility
         and state.stats.injected >= min_inj * 2
     ):

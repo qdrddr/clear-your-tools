@@ -62,6 +62,22 @@ def execution_score(stats: object) -> float:
     return wilson_lower_bound(stats.used, stats.attempts)
 
 
+def tool_t4_demand_met(
+    stats: object,
+    *,
+    demand_threshold: float,
+    min_used: float,
+) -> bool:
+    """T3→T4 demand gate for tools: execution rate or sustained use, not injection rate."""
+    from cyt.tiers.models import EffectiveStats
+
+    if not isinstance(stats, EffectiveStats):
+        return False
+    if execution_score(stats) >= demand_threshold:
+        return True
+    return stats.used >= min_used
+
+
 def epoch_execution_score(stats: object) -> float:
     """Execution rate within the current epoch only (recent signal, not lifetime)."""
     from cyt.tiers.models import EffectiveStats

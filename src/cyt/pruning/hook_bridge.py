@@ -164,7 +164,7 @@ def run_hook_coordinated_prune(
     catalog = None
     if tools_allowed:
         with hook_timer.measure("hook:catalog-load"):
-            catalog = load_tool_catalog(config)
+            catalog = load_tool_catalog(config, payload=payload)
     if tools_allowed and catalog is None:
         missing = PruneResult(
             tools=None,

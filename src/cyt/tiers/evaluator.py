@@ -7,7 +7,7 @@ import time
 
 from cyt.tiers.config import TierSectionConfig
 from cyt.tiers.models import EntityTierState, EpochState, Tier, TierTransition
-from cyt.tiers.scores import demand_score, utility_score
+from cyt.tiers.scores import demand_score, tool_t4_demand_met, utility_score
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,32 @@ def _epoch_had_success(state: EntityTierState) -> bool:
     return state.stats.epoch_used > 0
 
 
+def _tool_skip_demotion_on_epoch_success(state: EntityTierState) -> bool:
+    return state.kind == "tool" and _epoch_had_success(state)
+
+
+def _t4_promotion_demand_met(state: EntityTierState, *, cfg: TierSectionConfig) -> bool:
+    threshold = cfg.thresholds_t34.promote_demand
+    if state.kind == "tool":
+        return tool_t4_demand_met(
+            state.stats,
+            demand_threshold=threshold,
+            min_used=float(cfg.min_injections_before_reconsider * 2),
+        )
+    return demand_score(state.stats) >= threshold
+
+
+def _t4_promotion_criteria_met(state: EntityTierState, *, cfg: TierSectionConfig) -> bool:
+    min_inj = cfg.min_injections_before_reconsider
+    if not _min_injections_met(state, min_inj):
+        return False
+    if state.stats.injected < min_inj * 2:
+        return False
+    if utility_score(state.stats) < cfg.thresholds_t34.promote_utility:
+        return False
+    return _t4_promotion_demand_met(state, cfg=cfg)
+
+
 def evaluate_slow_clock(  # noqa: C901
     states: dict[tuple[str, str], EntityTierState],
     *,
@@ -143,31 +169,26 @@ def evaluate_slow_clock(  # noqa: C901
     for state in states.values():
         if state.effective_tier <= Tier.DORMANT:
             continue
-        if state.kind == "tool" and _epoch_had_success(state):
-            continue
+        skip_demotion = _tool_skip_demotion_on_epoch_success(state)
         d = demand_score(state.stats)
         u = utility_score(state.stats)
         tier = state.stable_tier
 
         if tier == Tier.EXTRA_HOT:
-            if (
-                state.stats.injected >= cfg.emergency_t4_inject_min
-                and u < cfg.emergency_t4_utility_max
-            ):
-                transitions.append(_demote_tier(state, Tier.HOT, reason="emergency_t4_eviction"))
-            elif _min_injections_met(state, cfg.min_injections_before_reconsider) and (
-                d < cfg.thresholds_t34.demote_demand or u < cfg.thresholds_t34.demote_utility
-            ):
-                transitions.append(_demote_tier(state, Tier.HOT, reason="slow_demote_t4_t3"))
+            if not skip_demotion:
+                if (
+                    state.stats.injected >= cfg.emergency_t4_inject_min
+                    and u < cfg.emergency_t4_utility_max
+                ):
+                    transitions.append(_demote_tier(state, Tier.HOT, reason="emergency_t4_eviction"))
+                elif _min_injections_met(state, cfg.min_injections_before_reconsider) and (
+                    d < cfg.thresholds_t34.demote_demand or u < cfg.thresholds_t34.demote_utility
+                ):
+                    transitions.append(_demote_tier(state, Tier.HOT, reason="slow_demote_t4_t3"))
             continue
 
         if tier == Tier.HOT:
-            if (
-                _min_injections_met(state, cfg.min_injections_before_reconsider)
-                and d >= cfg.thresholds_t34.promote_demand
-                and u >= cfg.thresholds_t34.promote_utility
-                and state.stats.injected >= cfg.min_injections_before_reconsider * 2
-            ):
+            if _t4_promotion_criteria_met(state, cfg=cfg):
                 transitions.append(
                     _promote_tier(
                         state,
@@ -176,13 +197,16 @@ def evaluate_slow_clock(  # noqa: C901
                         temporary=False,
                     ),
                 )
-            elif _min_injections_met(state, cfg.min_injections_before_reconsider) and (
-                d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility
-            ):
+            elif not skip_demotion and _min_injections_met(
+                state,
+                cfg.min_injections_before_reconsider,
+            ) and (d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility):
                 transitions.append(_demote_tier(state, Tier.ACTIVE, reason="slow_demote_t3_t2"))
             continue
 
         if tier == Tier.ACTIVE:
+            if skip_demotion:
+                continue
             if (
                 _min_injections_met(state, cfg.min_injections_before_reconsider)
                 and d >= cfg.thresholds_t23.promote_demand
@@ -203,6 +227,8 @@ def evaluate_slow_clock(  # noqa: C901
             continue
 
         if tier == Tier.COLD:
+            if skip_demotion:
+                continue
             if (
                 _min_injections_met(state, cfg.min_injections_before_reconsider)
                 and d >= cfg.thresholds_t12.promote_demand

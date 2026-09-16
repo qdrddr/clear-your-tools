@@ -5,8 +5,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from cyt.injection.pre_exposure_context import PreExposureContext
 from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
 from cyt.injection.rules_refresh import bypass_injection_pre_exposure
@@ -166,29 +164,119 @@ def test_read_prior_rules_injection_for_hook_placeholder(tmp_path: Path) -> None
     assert force_refresh is True
 
 
+def _write_session_log(workspace: Path, conversation_id: str, entries: list[dict]) -> None:
+    from cyt_client.sessions import append_session_log, session_log_path
+
+    payload = {
+        "conversation_id": conversation_id,
+        "workspace_roots": [str(workspace)],
+        "cyt_agent": "cursor",
+    }
+    path = session_log_path(payload)
+    assert path is not None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    append_session_log(path, entries, agent="cursor")
+
+
 def test_read_prior_rules_injection_for_hook_placeholder_with_session_tools(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Pre-exposure skip: placeholder + session tools + completed turn → no force refresh."""
     workspace = Path(tmp_path)
     rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
     rules_path.parent.mkdir(parents=True)
     rules_path.write_text(build_rules_mdc_placeholder(), encoding="utf-8")
-    payload = {
-        "conversation_id": "conv-placeholder-session",
-        "workspace_roots": [str(workspace)],
-    }
-
-    def _fake_has_items(_payload: dict) -> bool:
-        return True
-
-    monkeypatch.setattr(
-        "cyt_client.rules_file._session_log_has_injection_items",
-        _fake_has_items,
+    conversation_id = "conv-placeholder-session"
+    _write_session_log(
+        workspace,
+        conversation_id,
+        [
+            {"kind": "turn", "key": "turn:1", "prompt": "first", "assistant": ""},
+            {"kind": "turn", "key": "turn:2", "prompt": "second", "assistant": "done"},
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:demo_tool",
+                "hash": "abc",
+                "full": True,
+                "name": "demo_tool",
+            },
+        ],
     )
+    payload = {
+        "conversation_id": conversation_id,
+        "workspace_roots": [str(workspace)],
+        "cyt_agent": "cursor",
+    }
     injection, force_refresh = read_prior_rules_injection_for_hook(workspace, payload)
     assert injection == ""
     assert force_refresh is False
+
+
+def test_read_prior_rules_injection_for_hook_placeholder_first_turn_still_refreshes(
+    tmp_path: Path,
+) -> None:
+    """First prompt after restart: tools without completed turn → still force refresh."""
+    workspace = Path(tmp_path)
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text(build_rules_mdc_placeholder(), encoding="utf-8")
+    conversation_id = "conv-first-turn"
+    _write_session_log(
+        workspace,
+        conversation_id,
+        [
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:demo_tool",
+                "hash": "abc",
+                "full": False,
+                "name": "demo_tool",
+            },
+        ],
+    )
+    payload = {
+        "conversation_id": conversation_id,
+        "workspace_roots": [str(workspace)],
+        "cyt_agent": "cursor",
+    }
+    injection, force_refresh = read_prior_rules_injection_for_hook(workspace, payload)
+    assert injection == ""
+    assert force_refresh is True
+
+
+def test_placeholder_skip_and_first_prompt_both_preserve_hook_gating() -> None:
+    """Client force-refresh flag and hook bypass must agree for both lifecycle cases."""
+    tool = _sample_tool()
+    fragment = format_tool_item(tool)
+
+    # Scenario A: new session / first prompt — force refresh, bypass pre-exposure.
+    fresh_ctx = PreExposureContext.from_entries(payload_text="locate BM25", entries=[])
+    assert bypass_injection_pre_exposure({"cyt_force_rules_refresh": True}, fresh_ctx) is True
+
+    # Scenario B: post skip — client suppresses refresh; hook also refuses bypass.
+    follow_up_ctx = PreExposureContext.from_entries(
+        payload_text=fragment,
+        entries=[
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:demo_tool",
+                "hash": "abc",
+                "full": True,
+                "name": "demo_tool",
+            },
+            {"kind": "turn", "key": "turn:1", "prompt": "q", "assistant": "a"},
+        ],
+    )
+    assert bypass_injection_pre_exposure({"cyt_force_rules_refresh": False}, follow_up_ctx) is False
+    assert bypass_injection_pre_exposure({"cyt_force_rules_refresh": True}, follow_up_ctx) is False
+    gated, _logs, _ = gate_and_filter_tools(
+        [tool],
+        config={},
+        ctx=follow_up_ctx,
+        source_id="cyt_mcp",
+        payload={"cyt_force_rules_refresh": True},
+    )
+    assert gated == []
 
 
 def test_read_prior_rules_injection_for_hook_legacy_format(tmp_path: Path) -> None:
@@ -203,6 +291,23 @@ def test_read_prior_rules_injection_for_hook_legacy_format(tmp_path: Path) -> No
     injection, force_refresh = read_prior_rules_injection_for_hook(workspace)
     assert injection == ""
     assert force_refresh is True
+
+
+def test_session_start_does_not_wipe_substantive_rules(tmp_path: Path) -> None:
+    from cyt_client.cli import _sync_cursor_rules_for_lifecycle
+    from cyt_client.rules_file import build_rules_mdc, read_cursor_rules_injection
+
+    workspace = Path(tmp_path)
+    substantive = (
+        "<agent-tools>\nPruned MCP tool definitions below\n"
+        "<cyt-mcp>\n<tool name='demo'>{'input_schema':{}}\n</tool>\n</cyt-mcp>\n</agent-tools>"
+    )
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text(build_rules_mdc(substantive), encoding="utf-8")
+    payload = {"workspace_roots": [str(workspace)], "cyt_agent": "cursor"}
+    _sync_cursor_rules_for_lifecycle(payload)
+    assert read_cursor_rules_injection(workspace) == substantive
 
 
 def test_read_prior_rules_injection_for_hook_missing_file(tmp_path: Path) -> None:

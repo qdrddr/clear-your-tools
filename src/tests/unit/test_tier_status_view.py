@@ -49,10 +49,14 @@ def _sample_payload() -> dict:
 
 
 def test_normalize_tier_filter() -> None:
-    assert normalize_tier_filter("T2") == "T2"
-    assert normalize_tier_filter("2") == "T2"
-    assert normalize_tier_filter("t0") == "T0"
+    for digit in range(5):
+        canonical = f"T{digit}"
+        assert normalize_tier_filter(str(digit)) == canonical
+        assert normalize_tier_filter(f"t{digit}") == canonical
+        assert normalize_tier_filter(f"T{digit}") == canonical
+        assert normalize_tier_filter(f"  {digit}  ") == canonical
     assert normalize_tier_filter("bad") is None
+    assert normalize_tier_filter("T 3") is None
 
 
 def test_flatten_and_filter_entities() -> None:

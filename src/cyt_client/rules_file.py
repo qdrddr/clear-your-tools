@@ -193,6 +193,40 @@ def _session_log_has_injection_items(payload: dict[str, Any]) -> bool:
     )
 
 
+def _session_log_has_completed_assistant_turn(payload: dict[str, Any]) -> bool:
+    from cyt_client.sessions import (
+        entries_after_latest_compaction,
+        read_session_log_file,
+        session_log_path,
+    )
+
+    path = session_log_path(payload)
+    if path is None or not path.is_file():
+        return False
+    _agent, entries = read_session_log_file(path)
+    sliced = entries_after_latest_compaction(entries)
+    return any(
+        entry.get("kind") == "turn" and str(entry.get("assistant") or "").strip()
+        for entry in sliced
+    )
+
+
+def _session_log_suppresses_rules_refresh(payload: dict[str, Any]) -> bool:
+    """True when a lifecycle placeholder should not force-refresh (follow-up turn).
+
+    Pre-exposure skip writes a lifecycle placeholder while the session log still
+    holds injected tools. Suppress ``cyt_force_rules_refresh`` only when the session
+    has injection items **and** at least one completed assistant turn.
+
+    A brand-new session (or first prompt after daemon restart) may have tool entries
+    without a completed turn yet; those must still force-refresh so the hook can
+    populate rules / additionalContext on the first question.
+    """
+    if not _session_log_has_injection_items(payload):
+        return False
+    return _session_log_has_completed_assistant_turn(payload)
+
+
 def read_prior_rules_injection_for_hook(
     workspace: Path,
     payload: dict[str, Any] | None = None,
@@ -204,7 +238,9 @@ def read_prior_rules_injection_for_hook(
         or is_rules_placeholder_body(body)
         or rules_injection_needs_format_refresh(body)
     ):
-        force_refresh = not (payload is not None and _session_log_has_injection_items(payload))
+        force_refresh = not (
+            payload is not None and _session_log_suppresses_rules_refresh(payload)
+        )
         return "", force_refresh
     return body, False
 
