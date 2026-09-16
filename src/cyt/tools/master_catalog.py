@@ -50,6 +50,17 @@ _rebuild_waiters: dict[_MasterCacheKey, threading.Event] = {}
 BLOCKING_REBUILD_WAIT_SECONDS = 30.0
 
 
+def master_catalog_rebuild_in_progress(config: dict[str, Any] | None = None) -> bool:
+    """Return True when a blocking master-catalog rebuild is still in flight."""
+    cfg = config or load_config()
+    sources = tools_hook_sources(cfg)
+    if not sources:
+        return False
+    cache_key = _cache_key_for_config(cfg)
+    with _catalog_lock:
+        return cache_key in _rebuild_in_progress
+
+
 def clear_master_catalog_cache() -> None:
     with _catalog_lock:
         _catalog_states.clear()

@@ -16,7 +16,61 @@ from cyt.tiers.store import TierStore
 
 logger = logging.getLogger(__name__)
 
+_INCOMPLETE_CATALOG_MIN_RATIO = 0.25
+_INCOMPLETE_CATALOG_MIN_COUNT = 10
+
 _scheduler_lock = threading.RLock()
+
+
+def _catalog_snapshot_safe_for_stale_purge(
+    *,
+    catalog_entity_ids: frozenset[str],
+    persisted_tool_count: int,
+    catalog_rebuild_in_progress: bool,
+) -> bool:
+    """Return False when the hook catalog looks too incomplete to trust for deletes."""
+    if catalog_rebuild_in_progress:
+        return False
+    if persisted_tool_count <= 0:
+        return True
+    catalog_size = len(catalog_entity_ids)
+    if catalog_size >= persisted_tool_count:
+        return True
+    floor = max(
+        _INCOMPLETE_CATALOG_MIN_COUNT,
+        int(persisted_tool_count * _INCOMPLETE_CATALOG_MIN_RATIO),
+    )
+    return catalog_size >= floor
+
+
+def _maybe_purge_stale_catalog_tools(
+    store: TierStore,
+    *,
+    config: dict[str, Any],
+    allowed_sources: frozenset[str],
+    catalog_entity_ids: frozenset[str] | None,
+) -> int:
+    if not catalog_entity_ids:
+        return 0
+    from cyt.tools.master_catalog import master_catalog_rebuild_in_progress
+
+    persisted_tool_count = store.count_catalog_tool_entities(allowed_sources=allowed_sources)
+    if not _catalog_snapshot_safe_for_stale_purge(
+        catalog_entity_ids=catalog_entity_ids,
+        persisted_tool_count=persisted_tool_count,
+        catalog_rebuild_in_progress=master_catalog_rebuild_in_progress(config),
+    ):
+        logger.warning(
+            "skipping stale catalog tool purge: catalog=%d persisted=%d rebuild_in_progress=%s",
+            len(catalog_entity_ids),
+            persisted_tool_count,
+            master_catalog_rebuild_in_progress(config),
+        )
+        return 0
+    return store.purge_stale_catalog_tool_entities(
+        allowed_sources=allowed_sources,
+        catalog_entity_ids=catalog_entity_ids,
+    )
 _last_maintenance_start = 0.0
 _maintenance_in_progress = False
 
@@ -115,11 +169,12 @@ def run_tier_state_maintenance(
             if callable(purge):
                 purge(config)
         flush_all_tier_managers(force=True)
-        if catalog_entity_ids:
-            result.deleted["stale_catalog_tools"] = store.purge_stale_catalog_tool_entities(
-                allowed_sources=allowed_sources,
-                catalog_entity_ids=catalog_entity_ids,
-            )
+        result.deleted["stale_catalog_tools"] = _maybe_purge_stale_catalog_tools(
+            store,
+            config=config,
+            allowed_sources=allowed_sources,
+            catalog_entity_ids=catalog_entity_ids,
+        )
         result.deleted["dormant_entities"] = store.prune_dormant_entities(
             idle_cutoff_ms=idle_cutoff_ms,
             counter_floor=retention.entity_counter_floor,

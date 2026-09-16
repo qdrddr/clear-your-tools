@@ -12,9 +12,12 @@ from cyt.cyt_mcp.catalog import cyt_mcp_catalog_slug
 from cyt.cyt_mcp.catalog_disk import read_disk_catalog
 from cyt.hook.workspace_config import hook_workspace_from_config
 from cyt.tools.inject_cli import (
+    _preview_hook_payload,
     _preview_token_stats,
     _print_preview_token_summary,
+    _session_gate_summary,
     config_for_inject_preview,
+    resolve_preview_session_log,
     run_inject_preview,
 )
 from cyt.tools.master_catalog import get_master_tool_catalog
@@ -22,8 +25,11 @@ from tests.support.inject_preview_fixtures import (
     InjectPreviewFixturePack,
     json_payload_from_stdout,
     patch_inject_preview_environment,
+    patch_preview_prune_all_tools,
     scoped_hook_config,
     seed_workspace_disk_catalog,
+    tool_log_entry,
+    write_session_log,
 )
 
 
@@ -226,3 +232,207 @@ def test_run_inject_preview_fails_without_workspace_scoping_when_only_workspace_
     assert code == 1
     assert "No tools in master hook catalog" in err
     assert "disk_cache=miss" in err
+
+
+def test_preview_hook_payload_includes_session_fields(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    payload = _preview_hook_payload(
+        workspace=pack.workspace,
+        query="find BM25",
+        session_id="sess-123",
+        agent="cursor",
+    )
+    assert payload["session_id"] == "sess-123"
+    assert payload["prompt"] == "find BM25"
+    assert payload["cwd"] == str(pack.workspace)
+
+
+def test_resolve_preview_session_log_finds_workspace_session_file(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    session_id = "resolve-workspace"
+    log_path = write_session_log(pack.workspace, session_id, [])
+    resolved = resolve_preview_session_log(
+        session_id,
+        workspace=pack.workspace,
+        agent="cursor",
+    )
+    assert resolved == log_path
+
+
+def test_resolve_preview_session_log_raises_when_missing(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    with pytest.raises(FileNotFoundError, match="Session log not found:"):
+        resolve_preview_session_log(
+            "no-such-session",
+            workspace=pack.workspace,
+            agent="cursor",
+        )
+
+
+def test_session_gate_summary_tracks_injected_and_skipped_tools(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    fff_tool = next(tool for tool in pack.tools if tool["name"] == "fff_grep")
+    semble_tool = next(tool for tool in pack.tools if tool["name"] == "semble_search")
+    pruned_by_source = {"cyt_mcp": [fff_tool, semble_tool]}
+    session_logs = [tool_log_entry(fff_tool, catalog_tools=pack.tools, full=True)]
+
+    summary = _session_gate_summary(pruned_by_source, session_logs)
+
+    assert summary["log_entry_count"] == 1
+    assert summary["injected_tools"]["cyt_mcp"] == ["fff_grep"]
+    assert summary["skipped_tools"]["cyt_mcp"] == ["semble_search"]
+
+
+def test_run_inject_preview_missing_session_exits_with_path(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    monkeypatch.chdir(pack.workspace)
+
+    args = argparse.Namespace(
+        query=pack.scenario.query,
+        workspace=pack.workspace,
+        json=False,
+        definitions=False,
+        source=["cyt_mcp"],
+        session="missing-session-id",
+    )
+    code = run_inject_preview(args)
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert "Session log not found:" in err
+
+
+def test_run_inject_preview_session_skips_post_compaction_tool(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    monkeypatch.chdir(pack.workspace)
+    patch_preview_prune_all_tools(monkeypatch)
+
+    fff_tool = next(tool for tool in pack.tools if tool["name"] == "fff_grep")
+    session_id = "post-compaction-skip"
+    write_session_log(
+        pack.workspace,
+        session_id,
+        [
+            {"kind": "compaction", "key": "compaction", "payload": {}},
+            tool_log_entry(fff_tool, catalog_tools=pack.tools, full=True),
+        ],
+    )
+
+    args = argparse.Namespace(
+        query=pack.scenario.query,
+        workspace=pack.workspace,
+        json=True,
+        definitions=False,
+        source=["cyt_mcp"],
+        session=session_id,
+    )
+    code = run_inject_preview(args)
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    payload = json_payload_from_stdout(captured.out)
+    assert payload["session_id"] == session_id
+    pruned_names = {tool["name"] for tool in payload["tools"]["cyt_mcp"]}
+    assert "fff_grep" in pruned_names
+    assert "fff_grep" in payload["session_gate"]["skipped_tools"]["cyt_mcp"]
+    assert "name='fff_grep'" not in payload["injection"]
+
+
+def test_run_inject_preview_session_ignores_pre_compaction_tool(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    monkeypatch.chdir(pack.workspace)
+    patch_preview_prune_all_tools(monkeypatch)
+
+    fff_tool = next(tool for tool in pack.tools if tool["name"] == "fff_grep")
+    semble_tool = next(tool for tool in pack.tools if tool["name"] == "semble_search")
+    session_id = "pre-compaction-ignore"
+    write_session_log(
+        pack.workspace,
+        session_id,
+        [
+            tool_log_entry(fff_tool, catalog_tools=pack.tools, full=True),
+            {"kind": "compaction", "key": "compaction", "payload": {}},
+            tool_log_entry(semble_tool, catalog_tools=pack.tools, full=True),
+        ],
+    )
+
+    args = argparse.Namespace(
+        query=pack.scenario.query,
+        workspace=pack.workspace,
+        json=True,
+        definitions=False,
+        source=["cyt_mcp"],
+        session=session_id,
+    )
+    code = run_inject_preview(args)
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    payload = json_payload_from_stdout(captured.out)
+    assert "fff_grep" in payload["session_gate"]["injected_tools"]["cyt_mcp"]
+    assert "semble_search" in payload["session_gate"]["skipped_tools"]["cyt_mcp"]
+    assert "name='fff_grep'" in payload["injection"]
+    assert "name='semble_search'" not in payload["injection"]
+
+
+def test_run_inject_preview_session_reduces_token_stats_vs_unsessioned(
+    disk_catalog_inject_preview_pack: InjectPreviewFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pack = disk_catalog_inject_preview_pack
+    monkeypatch.chdir(pack.workspace)
+    patch_preview_prune_all_tools(monkeypatch)
+
+    fff_tool = next(tool for tool in pack.tools if tool["name"] == "fff_grep")
+    semble_tool = next(tool for tool in pack.tools if tool["name"] == "semble_search")
+    gitnexus_tool = next(tool for tool in pack.tools if tool["name"] == "gitnexus_query")
+    session_id = "token-stats-gate"
+    write_session_log(
+        pack.workspace,
+        session_id,
+        [
+            {"kind": "compaction", "key": "compaction", "payload": {}},
+            tool_log_entry(fff_tool, catalog_tools=pack.tools, full=True),
+            tool_log_entry(semble_tool, catalog_tools=pack.tools, full=True),
+            tool_log_entry(gitnexus_tool, catalog_tools=pack.tools, full=True),
+        ],
+    )
+
+    base_args = argparse.Namespace(
+        query=pack.scenario.query,
+        workspace=pack.workspace,
+        json=True,
+        definitions=False,
+        source=["cyt_mcp"],
+    )
+    unsessioned_args = argparse.Namespace(**{**vars(base_args), "session": None})
+    sessioned_args = argparse.Namespace(**{**vars(base_args), "session": session_id})
+
+    run_inject_preview(unsessioned_args)
+    unsessioned = json_payload_from_stdout(capsys.readouterr().out)
+    run_inject_preview(sessioned_args)
+    sessioned = json_payload_from_stdout(capsys.readouterr().out)
+
+    assert sessioned["token_stats"]["tokens_out"] < unsessioned["token_stats"]["tokens_out"]
+    assert sessioned["session_log_path"].endswith(f"{session_id}.jsonl")

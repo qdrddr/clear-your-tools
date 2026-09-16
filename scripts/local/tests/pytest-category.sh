@@ -25,30 +25,35 @@ unit)
 	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/unit \
 		--ignore=src/tests/unit/gherkin \
+		--ignore=src/tests/integration \
 		-m "not integration and not gherkin and not qa and not runtime" \
 		"${@:2}"
 	;;
 gherkin-unit)
 	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/unit/gherkin \
+		--ignore=src/tests/integration \
 		-m "gherkin and not runtime" \
 		"${@:2}"
 	;;
 quality_metrics)
 	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/quality_metrics \
+		--ignore=src/tests/integration \
 		-m "not runtime" \
 		"${@:2}"
 	;;
 coverage)
 	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/coverage \
+		--ignore=src/tests/integration \
 		-m "not runtime" \
 		"${@:2}"
 	;;
 mutation)
 	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/mutation \
+		--ignore=src/tests/integration \
 		-m "not runtime" \
 		"${@:2}"
 	;;

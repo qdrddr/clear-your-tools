@@ -906,6 +906,22 @@ class TierStore:
         with self._lock:
             self._conn.execute("VACUUM")
 
+    def count_catalog_tool_entities(self, *, allowed_sources: frozenset[str]) -> int:
+        """Count persisted tool rows whose catalog source is in *allowed_sources*."""
+        from cyt.tiers.adapters.tools import entity_id_catalog_source
+        from cyt.tiers.models import EntityKind
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT entity_id FROM entity_stats WHERE kind = ?",
+                (EntityKind.TOOL,),
+            ).fetchall()
+        count = 0
+        for (entity_id,) in rows:
+            if entity_id_catalog_source(str(entity_id)) in allowed_sources:
+                count += 1
+        return count
+
     def count_stats_needing_decay(self) -> int:
         with self._lock:
             row = self._conn.execute(

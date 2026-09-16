@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 
 from cyt.config import load_config
+from cyt.injection.session_log_build import build_tool_log_entry
+from cyt_core.types.prune import PruneResult
 from cyt.cyt_mcp.catalog import apply_fetched_catalog, clear_cyt_mcp_catalog_cache
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tools.master_catalog import clear_master_catalog_cache, rebuild_master_catalog
@@ -168,6 +170,52 @@ def seed_workspace_disk_catalog(pack: InjectPreviewFixturePack) -> None:
     rebuild_master_catalog(scoped_hook_config(pack), blocking=True)
 
 
+def write_session_log(workspace: Path, session_id: str, entries: list[dict[str, Any]]) -> Path:
+    log_dir = workspace / ".cursor" / "cyt" / "sessions"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{session_id}.jsonl"
+    lines = [json.dumps({"type": "meta", "agent": "cursor"})]
+    lines.extend(json.dumps(entry) for entry in entries)
+    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return log_path
+
+
+def tool_log_entry(
+    tool: dict[str, Any],
+    *,
+    catalog_tools: list[dict[str, Any]],
+    full: bool = True,
+) -> dict[str, Any]:
+    return build_tool_log_entry(
+        tool,
+        catalog="cyt_mcp",
+        full=full,
+        catalog_tools=catalog_tools,
+    )
+
+
+def patch_preview_prune_all_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return every catalog tool from preview prune so session gating is isolated."""
+
+    def _all_tools(
+        tools: list[dict[str, Any]],
+        query: str,
+        **kwargs: object,
+    ) -> PruneResult:
+        count = len(tools)
+        return PruneResult(
+            tools=list(tools),
+            status="applied",
+            query=query,
+            tools_in=count,
+            mcp_tools_in=count,
+            tools_out=count,
+            error=None,
+        )
+
+    monkeypatch.setattr("cyt.tools.inject_cli.filter_tools_for_query", _all_tools)
+
+
 def json_payload_from_stdout(text: str) -> dict[str, Any]:
     """Parse JSON CLI output that may be prefixed by token budget lines."""
     start = text.find("{")
@@ -217,6 +265,9 @@ __all__ = [
     "load_inject_preview_scenarios",
     "materialize_fixture_pack",
     "patch_inject_preview_environment",
+    "patch_preview_prune_all_tools",
     "scoped_hook_config",
     "seed_workspace_disk_catalog",
+    "tool_log_entry",
+    "write_session_log",
 ]

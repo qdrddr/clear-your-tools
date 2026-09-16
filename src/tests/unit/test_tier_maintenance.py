@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from cyt.tiers.maintenance import (
+    _catalog_snapshot_safe_for_stale_purge,
     maintenance_ran_today,
     maybe_run_tier_maintenance_on_stats_query,
     reset_tier_maintenance_scheduler_for_tests,
@@ -282,3 +283,61 @@ def test_fixture_driven_decay_scenario(tmp_path: Path, monkeypatch: pytest.Monke
         verify.close()
     assert row is not None
     assert int(row[1]) == 0
+
+
+def test_catalog_snapshot_safe_for_stale_purge_rejects_incomplete_snapshot() -> None:
+    assert not _catalog_snapshot_safe_for_stale_purge(
+        catalog_entity_ids=frozenset(f"cyt_mcp:tool{i}" for i in range(5)),
+        persisted_tool_count=202,
+        catalog_rebuild_in_progress=False,
+    )
+
+
+def test_catalog_snapshot_safe_for_stale_purge_allows_legitimate_shrink() -> None:
+    assert _catalog_snapshot_safe_for_stale_purge(
+        catalog_entity_ids=frozenset(f"cyt_mcp:tool{i}" for i in range(80)),
+        persisted_tool_count=202,
+        catalog_rebuild_in_progress=False,
+    )
+
+
+def test_run_tier_state_maintenance_skips_purge_on_incomplete_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "tier_state.db"
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    store = _open_tier_store(db)
+    try:
+        seed_tier_entities(
+            store,
+            project_root=workspace,
+            entities=[
+                {
+                    "entity_id": f"cyt_mcp:tool{i}",
+                    "kind": "tool",
+                    "effective_tier": "ACTIVE",
+                    "candidates": 1.0,
+                }
+                for i in range(10)
+            ],
+        )
+    finally:
+        store.close()
+
+    monkeypatch.setattr(
+        "cyt.tiers.adapters.tools.resolve_tracked_catalog_entity_ids",
+        lambda _config, blocking=False: frozenset({"cyt_mcp:tool0", "cyt_mcp:tool1"}),
+    )
+    config = build_tier_retention_config(workspace, db)
+    result = run_tier_state_maintenance(config, vacuum=False)
+    assert result.deleted.get("stale_catalog_tools", 0) == 0
+    remaining = {
+        row[0]
+        for row in TierStore(str(db))._conn.execute(
+            "SELECT entity_id FROM entity_stats WHERE kind = ?",
+            (EntityKind.TOOL,),
+        ).fetchall()
+    }
+    assert len(remaining) == 10

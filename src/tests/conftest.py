@@ -202,6 +202,27 @@ def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.fixture(autouse=True)
+def _isolate_tier_state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests must not read or mutate the developer's ~/.config/cyt/tier_state.db."""
+    import cyt.tiers.config as tier_config
+
+    isolated_db = tmp_path / "tier_state.db"
+    real_tier_state_db_path = tier_config.tier_state_db_path
+
+    def isolated_tier_state_db_path(cfg: dict) -> str:
+        tools = cfg.get("tools")
+        tiers = tools.get("tiers") if isinstance(tools, dict) else None
+        database = tiers.get("database") if isinstance(tiers, dict) else None
+        if isinstance(database, dict):
+            path = database.get("path")
+            if isinstance(path, str) and path.strip():
+                return real_tier_state_db_path(cfg)
+        return str(isolated_db)
+
+    monkeypatch.setattr(tier_config, "tier_state_db_path", isolated_tier_state_db_path)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
     from cyt.cloudflare.catalog import clear_cloudflare_catalog_cache
