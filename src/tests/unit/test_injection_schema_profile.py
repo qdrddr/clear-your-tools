@@ -6,6 +6,7 @@ import pytest
 
 from cyt.pruners.tools_filter import merge_api_tool_onto_original
 from cyt.tiers.adapters.tools import merge_t4_tools
+from cyt.tiers.tool_token_materialization import CYT_BACKEND_INPUT_SCHEMA, stamp_tool_dual_schema
 from cyt.tools.inject import format_tool_item
 from cyt.tools.injection_schema import (
     _validate_t2_required_schema,
@@ -16,7 +17,6 @@ from cyt.tools.injection_schema import (
     ensure_tool_injection_schema,
     injection_needs_definitions_lookup,
 )
-from cyt.tiers.tool_token_materialization import CYT_BACKEND_INPUT_SCHEMA, stamp_tool_dual_schema
 
 
 def _tool(

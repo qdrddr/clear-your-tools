@@ -372,6 +372,26 @@ def _skipped_cyt_mcp_unavailable_outcome(
     return "skipped_cyt_mcp_unavailable", {}, ""
 
 
+def _no_pruned_tools_outcome(
+    *,
+    model: str,
+    result: PruneResult,
+    catalog: list[dict[str, Any]],
+    catalog_session_log: list[dict[str, Any]],
+    debug: bool,
+) -> tuple[str, dict[str, Any], str]:
+    details: dict[str, Any] = {
+        "resolved_model": model,
+        "prune_status": result.status,
+        "tools_inject_enabled": True,
+        "session_log": catalog_session_log,
+    }
+    if debug:
+        details["catalog_tool_count"] = len(catalog)
+        details["pruned_tool_count"] = 0
+    return ("user_prompt_no_tool_matches", details, "")
+
+
 def handle_user_prompt_tools(
     payload: dict[str, Any],
     config: dict[str, Any],
@@ -425,16 +445,13 @@ def handle_user_prompt_tools(
     catalog_session_log = catalog_session_details.get("session_log") or []
 
     if not pruned:
-        details: dict[str, Any] = {
-            "resolved_model": model,
-            "prune_status": result.status,
-            "tools_inject_enabled": True,
-            "session_log": catalog_session_log,
-        }
-        if debug:
-            details["catalog_tool_count"] = len(catalog)
-            details["pruned_tool_count"] = 0
-        return ("user_prompt_no_tool_matches", details, "")
+        return _no_pruned_tools_outcome(
+            model=model,
+            result=result,
+            catalog=catalog,
+            catalog_session_log=catalog_session_log,
+            debug=debug,
+        )
 
     session_text = session_text_from_hook_payload(
         payload,

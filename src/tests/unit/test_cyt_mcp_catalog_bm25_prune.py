@@ -18,6 +18,7 @@ from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
 from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.tiers.manager import NoOpTierManager, _managers
+from cyt.tiers.tool_token_materialization import strip_internal_tool_fields_list
 from cyt_core.types.prune import PruneResult
 from tests.support.paths import FIXTURES_DIR
 
@@ -189,8 +190,8 @@ def test_cyt_mcp_catalog_bm25_prune_matches_golden(
     assert result.tool_properties_count_out == golden["optional_properties_out"]
     assert result.decomposed == golden["decomposed"]
     assert golden["tokenizer"] == "tiktoken_compact_json"
-    assert count_json_tokens(result.tools) == golden["tokens_out"]
     assert result.tools is not None
+    assert count_json_tokens(strip_internal_tool_fields_list(result.tools)) == golden["tokens_out"]
 
     actual = _normalize_pruned_tools(result.tools)
     _write_prune_output(

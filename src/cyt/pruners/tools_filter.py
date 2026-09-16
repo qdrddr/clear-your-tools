@@ -1138,7 +1138,10 @@ def _finalize_applied_prune_result(
             tier_apply=tier_apply,
             manager=tier_manager,
         )
-    tokens_out = count_json_tokens(pruned)
+    from cyt.tiers.tool_token_materialization import strip_internal_tool_fields_list
+
+    tools_for_token_count = strip_internal_tool_fields_list(pruned)
+    tokens_out = count_json_tokens(tools_for_token_count)
     tokens_saved = tokens_in - tokens_out
     if log_token_counts:
         _log_tool_token_counts(tokens_in, tokens_out)

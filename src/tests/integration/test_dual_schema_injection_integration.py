@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +17,7 @@ from cyt.tools.inject import format_tool_item
 from cyt.tools.master_catalog import clear_master_catalog_cache
 from tests.support.dual_schema_injection_fixtures import (
     DualSchemaFixturePack,
+    IntegrationInjectionExpectation,
     IntegrationScenario,
     live_tier_config,
     load_integration_scenarios,
@@ -63,7 +65,10 @@ def _tool_by_name(tools: list[dict], name: str) -> dict:
     raise KeyError(name)
 
 
-def _assert_injection_expectation(tool: dict, expectation) -> None:
+def _assert_injection_expectation(
+    tool: dict[str, Any],
+    expectation: IntegrationInjectionExpectation,
+) -> None:
     item = format_tool_item(tool)
     if expectation.hint:
         assert "get-tool-definitions" in item, item
@@ -112,10 +117,7 @@ def test_filter_tools_for_query_dual_schema_integration(
     for tool_name in scenario.must_include_tools:
         assert tool_name in by_name, sorted(by_name)
 
-    stamped = {
-        name: str(tool.get("cyt_injection_tier") or "")
-        for name, tool in by_name.items()
-    }
+    stamped = {name: str(tool.get("cyt_injection_tier") or "") for name, tool in by_name.items()}
     for tool_name, expected_tier in scenario.expected_stamped_tiers.items():
         assert stamped.get(tool_name) == expected_tier
 

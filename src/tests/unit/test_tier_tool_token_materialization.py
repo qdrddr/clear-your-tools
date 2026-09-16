@@ -77,7 +77,9 @@ def test_effective_never_exceeds_carried_for_fixture_catalog() -> None:
     for tier in ("T1", "T2", "T3", "T4"):
         effective = effective_tool_token_count(tool, tier)
         assert effective <= carried
-    assert effective_tool_token_count(tool, "T3") == effective_tool_token_count(tool, "T4") == carried
+    assert (
+        effective_tool_token_count(tool, "T3") == effective_tool_token_count(tool, "T4") == carried
+    )
 
 
 def test_stamp_tool_dual_schema_preserves_backend_and_tier_scope() -> None:

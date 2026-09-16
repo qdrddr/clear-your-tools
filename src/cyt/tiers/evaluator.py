@@ -180,7 +180,9 @@ def evaluate_slow_clock(  # noqa: C901
                     state.stats.injected >= cfg.emergency_t4_inject_min
                     and u < cfg.emergency_t4_utility_max
                 ):
-                    transitions.append(_demote_tier(state, Tier.HOT, reason="emergency_t4_eviction"))
+                    transitions.append(
+                        _demote_tier(state, Tier.HOT, reason="emergency_t4_eviction"),
+                    )
                 elif _min_injections_met(state, cfg.min_injections_before_reconsider) and (
                     d < cfg.thresholds_t34.demote_demand or u < cfg.thresholds_t34.demote_utility
                 ):
@@ -197,10 +199,14 @@ def evaluate_slow_clock(  # noqa: C901
                         temporary=False,
                     ),
                 )
-            elif not skip_demotion and _min_injections_met(
-                state,
-                cfg.min_injections_before_reconsider,
-            ) and (d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility):
+            elif (
+                not skip_demotion
+                and _min_injections_met(
+                    state,
+                    cfg.min_injections_before_reconsider,
+                )
+                and (d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility)
+            ):
                 transitions.append(_demote_tier(state, Tier.ACTIVE, reason="slow_demote_t3_t2"))
             continue
 

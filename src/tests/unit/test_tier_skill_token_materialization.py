@@ -105,7 +105,11 @@ def test_effective_never_exceeds_carried_for_sample_skill(tmp_path: Path) -> Non
         effective = effective_skill_token_count(entity, tier)
         assert effective is not None
         assert effective <= carried
-    assert effective_skill_token_count(entity, "T3") == effective_skill_token_count(entity, "T4") == carried
+    assert (
+        effective_skill_token_count(entity, "T3")
+        == effective_skill_token_count(entity, "T4")
+        == carried
+    )
 
 
 def test_carried_equals_effective_at_t4(tmp_path: Path) -> None:

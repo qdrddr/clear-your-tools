@@ -42,7 +42,8 @@ def test_prepare_tool_stamps_backend_and_tier_scoped_schema(case: StampCase) -> 
     tool = tool_by_name(case.tool_ref)
     prepared = prepare_tool_for_tier_pipeline(tool, case.tier)
     backend = prepared.get(CYT_BACKEND_INPUT_SCHEMA) or {}
-    backend_props = backend.get("properties") if isinstance(backend, dict) else {}
+    backend_props_raw = backend.get("properties") if isinstance(backend, dict) else None
+    backend_props = backend_props_raw if isinstance(backend_props_raw, dict) else {}
     tier_schema = prepared.get("input_schema") or {}
     tier_props_raw = tier_schema.get("properties") if isinstance(tier_schema, dict) else None
     tier_props = tier_props_raw if isinstance(tier_props_raw, dict) else {}
@@ -96,7 +97,7 @@ def test_format_tool_item_never_emits_internal_backend_key() -> None:
             id="internal_key_check",
             tool_ref="dual_tool_required_optional",
             tier="t3",
-            injected_property_keys=["query", "limit"],
+            injected_property_keys=("query", "limit"),
             expects_hint=False,
             expects_explicit_empty_schema=False,
             expects_required_keys=(),

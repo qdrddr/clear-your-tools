@@ -11,6 +11,15 @@ _carried_token_memo: dict[str, int] = {}
 CYT_BACKEND_INPUT_SCHEMA = "cyt_backend_input_schema"
 
 
+def strip_internal_tool_fields(tool: dict[str, Any]) -> dict[str, Any]:
+    """Drop pipeline-only metadata before API payloads or token accounting."""
+    return {key: value for key, value in tool.items() if key != CYT_BACKEND_INPUT_SCHEMA}
+
+
+def strip_internal_tool_fields_list(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [strip_internal_tool_fields(tool) for tool in tools if isinstance(tool, dict)]
+
+
 def clear_carried_token_memo() -> None:
     """Reset memo used by :func:`carried_tool_token_count` (tests)."""
     _carried_token_memo.clear()
@@ -158,5 +167,9 @@ def attach_tool_token_count(
         return
     catalog_tool = catalog_tool_for_entity(entity_id, catalog_tools)
     if catalog_tool is None:
+        return
+    precomputed = catalog_tool.get("token_count")
+    if isinstance(precomputed, int) and precomputed >= 0:
+        record["token_count"] = precomputed
         return
     record["token_count"] = carried_tool_token_count(catalog_tool)

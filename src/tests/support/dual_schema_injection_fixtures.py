@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tiers.models import Tier
 from cyt.tiers.tool_token_materialization import CYT_BACKEND_INPUT_SCHEMA
@@ -231,13 +233,10 @@ def build_injection_table_tool(
         backend_props = {}
     if case.injected_property_keys:
         props = {
-            key: backend_props.get(key, {"type": "string"})
-            for key in case.injected_property_keys
+            key: backend_props.get(key, {"type": "string"}) for key in case.injected_property_keys
         }
         required = [
-            name
-            for name in backend.get("required", [])
-            if isinstance(name, str) and name in props
+            name for name in backend.get("required", []) if isinstance(name, str) and name in props
         ]
         prepared["input_schema"] = {
             "type": "object",
@@ -272,7 +271,12 @@ def assert_injection_table_format(item: str, case: InjectionTableCase) -> None:
         assert "'type':'object'" in item, item
         assert "get-tool-definitions" not in item, item
         return
-    if expected in {"required_schema", "optional_only_schema", "required_and_optional_schema", "full_backend_schema"}:
+    if expected in {
+        "required_schema",
+        "optional_only_schema",
+        "required_and_optional_schema",
+        "full_backend_schema",
+    }:
         assert "get-tool-definitions" not in item, item
         assert "'input_schema':" in item, item
         for key in case.expected_keys:
@@ -305,7 +309,9 @@ def load_stamp_cases(path: Path = SCENARIOS_PATH) -> tuple[StampCase, ...]:
                 id=str(row["id"]),
                 tool_ref=str(row["tool_ref"]),
                 tier=_TIER_BY_NAME[tier_name],
-                backend_property_keys=tuple(str(key) for key in row.get("backend_property_keys", [])),
+                backend_property_keys=tuple(
+                    str(key) for key in row.get("backend_property_keys", [])
+                ),
                 tier_scoped_property_keys=tuple(
                     str(key) for key in row.get("tier_scoped_property_keys", [])
                 ),
@@ -385,7 +391,8 @@ def load_integration_scenarios(path: Path = SCENARIOS_PATH) -> tuple[Integration
                 tool_tiers=tier_map,
                 must_include_tools=tuple(str(name) for name in row.get("must_include_tools", [])),
                 expected_stamped_tiers={
-                    str(name): str(tier) for name, tier in dict(row.get("expected_stamped_tiers") or {}).items()
+                    str(name): str(tier)
+                    for name, tier in dict(row.get("expected_stamped_tiers") or {}).items()
                 },
                 expected_has_backend_schema=tuple(
                     str(name) for name in row.get("expected_has_backend_schema", [])
@@ -408,9 +415,7 @@ def build_hint_tool(case: HintCase, catalog: list[dict[str, Any]] | None = None)
         for key in case.injected_property_keys
     }
     required = [
-        name
-        for name in backend.get("required", [])
-        if isinstance(name, str) and name in props
+        name for name in backend.get("required", []) if isinstance(name, str) and name in props
     ]
     prepared["input_schema"] = {
         "type": "object",
@@ -490,7 +495,7 @@ def live_tier_config(pack: DualSchemaFixturePack) -> dict[str, Any]:
                 "cyt_mcp_catalog_cache_dir": str(pack.catalog_cache_dir),
             },
         },
-        str(pack.workspace),
+        pack.workspace,
     )
 
 
@@ -510,7 +515,7 @@ def seed_tool_tiers(pack: DualSchemaFixturePack, tier_map: dict[str, Tier]) -> N
     )
 
 
-def patch_paths(monkeypatch: Any, pack: DualSchemaFixturePack) -> None:
+def patch_paths(monkeypatch: pytest.MonkeyPatch, pack: DualSchemaFixturePack) -> None:
     patch_cyt_mcp_paths(monkeypatch, pack)
 
 
@@ -528,7 +533,6 @@ __all__ = [
     "build_injection_table_tool",
     "injection_table_cases_by_expected",
     "injection_table_format_cases",
-    "tier_map_for_injection_table_prune",
     "live_tier_config",
     "load_ensure_merge_cases",
     "load_hint_cases",
@@ -539,6 +543,7 @@ __all__ = [
     "materialize_fixture_pack",
     "patch_paths",
     "seed_tool_tiers",
+    "tier_map_for_injection_table_prune",
     "tool_by_name",
     "write_disk_catalog",
 ]

@@ -53,7 +53,7 @@ def normalize_json_text(value: str) -> str:
     return value.translate(_UNICODE_JSON_NORMALIZE)
 
 
-def normalize_json_value(value: Any) -> Any:
+def normalize_json_value(value: object) -> object:
     if isinstance(value, str):
         return normalize_json_text(value)
     if isinstance(value, dict):
@@ -61,6 +61,7 @@ def normalize_json_value(value: Any) -> Any:
     if isinstance(value, list):
         return [normalize_json_value(item) for item in value]
     return value
+
 
 _SKILL_HASH_BY_SOURCE: dict[str, str] | None = None
 

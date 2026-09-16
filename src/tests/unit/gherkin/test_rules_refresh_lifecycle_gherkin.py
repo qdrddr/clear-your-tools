@@ -15,7 +15,6 @@ from cyt.injection.rules_refresh import bypass_injection_pre_exposure
 from cyt.injection.session_log_build import build_session_state_entry, build_tool_log_entry
 from cyt.tools.inject import format_tool_item
 from cyt_client.rules_file import (
-    build_rules_mdc,
     build_rules_mdc_placeholder,
     is_substantive_rules_injection,
     read_cursor_rules_injection,
@@ -33,9 +32,7 @@ scenarios(str(FEATURES))
 pytestmark = pytest.mark.gherkin
 
 _SESSION_ID = "rules-refresh-sess"
-_PROMPT = (
-    "Locate primary code implementing BM25, use MCP: codebase-memory, semble, graphify."
-)
+_PROMPT = "Locate primary code implementing BM25, use MCP: codebase-memory, semble, graphify."
 
 
 def _demo_tool() -> dict[str, Any]:
@@ -87,7 +84,7 @@ def _hook_gate(
     payload: dict[str, Any],
     *,
     session_entries: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str] | None]:
     ctx = PreExposureContext.from_entries(
         payload_text=str(payload.get("prompt") or ""),
         entries=session_entries,
@@ -156,7 +153,11 @@ def _run_submit_cycle(
 
     if gated:
         append_session_log(path, log_entries, agent="cursor")
-        append_session_log(path, [build_session_state_entry(tools_inject_enabled=True)], agent="cursor")
+        append_session_log(
+            path,
+            [build_session_state_entry(tools_inject_enabled=True)],
+            agent="cursor",
+        )
         fragment = format_tool_item(gated[0])
         sync_cursor_rules_file(workspace, f"<agent-tools>{fragment}</agent-tools>")
     else:
@@ -274,7 +275,11 @@ def when_hook_first_prompt_inject(gherkin_context: GherkinContext) -> None:
         assert path is not None
         path.parent.mkdir(parents=True, exist_ok=True)
         append_session_log(path, log_entries, agent="cursor")
-        append_session_log(path, [build_session_state_entry(tools_inject_enabled=True)], agent="cursor")
+        append_session_log(
+            path,
+            [build_session_state_entry(tools_inject_enabled=True)],
+            agent="cursor",
+        )
         fragment = format_tool_item(gated[0])
         sync_cursor_rules_file(workspace, f"<agent-tools>{fragment}</agent-tools>")
 
@@ -355,10 +360,7 @@ def then_session_log_has_tool(gherkin_context: GherkinContext) -> None:
     path = session_log_path(_base_payload(workspace))
     assert path is not None
     _agent, entries = read_session_log_file(path)
-    assert any(
-        entry.get("kind") == "tool" and entry.get("name") == "fff_grep"
-        for entry in entries
-    )
+    assert any(entry.get("kind") == "tool" and entry.get("name") == "fff_grep" for entry in entries)
 
 
 @then("force refresh should only be true on the first iteration")

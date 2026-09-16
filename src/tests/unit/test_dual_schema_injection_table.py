@@ -8,13 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
+from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.tiers.adapters.tools import apply_tool_tiers, tool_entity_id
 from cyt.tiers.manager import _managers
 from cyt.tiers.models import Tier
 from cyt.tools.inject import format_tool_item
-from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.tools.master_catalog import clear_master_catalog_cache
 from tests.support.dual_schema_injection_fixtures import (
     DualSchemaFixturePack,
@@ -33,6 +33,7 @@ from tests.support.dual_schema_injection_fixtures import (
     tool_by_name,
     write_disk_catalog,
 )
+
 
 @pytest.fixture(autouse=True)
 def clear_tier_managers() -> Iterator[None]:

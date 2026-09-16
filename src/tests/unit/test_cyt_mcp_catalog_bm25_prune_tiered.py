@@ -15,6 +15,7 @@ from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
 from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.tiers.manager import _managers
+from cyt.tiers.tool_token_materialization import strip_internal_tool_fields_list
 from cyt_core.types.prune import PruneResult
 from tests.support.bm25_tier_fixtures import (
     TIERED_OUTPUT_DIR,
@@ -186,7 +187,10 @@ def test_cyt_mcp_catalog_bm25_tier_prune_matches_golden(
     assert result.tokens_out == expected["tokens_out"]
     assert result.tokens_saved == expected["tokens_saved"]
     assert result.tool_properties_count_out == expected["optional_properties_out"]
-    assert count_json_tokens(result.tools) == expected["tokens_out"]
+    assert result.tools is not None
+    assert (
+        count_json_tokens(strip_internal_tool_fields_list(result.tools)) == expected["tokens_out"]
+    )
 
     for tool_name in expected.get("must_exclude_tools", []):
         assert str(tool_name) not in kept_names

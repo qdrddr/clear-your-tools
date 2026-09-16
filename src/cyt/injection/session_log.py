@@ -126,12 +126,7 @@ def resolve_injection_mode(
     promotion_pass = invocation == FULL_PROMOTION_THRESHOLD + 1
     post_promotion = invocation > FULL_PROMOTION_THRESHOLD + 1
 
-    if (
-        promotion_pass
-        and count >= 1
-        and latest is not None
-        and latest == current_hash
-    ):
+    if promotion_pass and count >= 1 and latest is not None and latest == current_hash:
         return "full"
 
     if post_promotion and count >= 1 and latest is not None and latest == current_hash:

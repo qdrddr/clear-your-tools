@@ -187,10 +187,7 @@ def _session_log_has_injection_items(payload: dict[str, Any]) -> bool:
         return False
     _agent, entries = read_session_log_file(path)
     sliced = entries_after_latest_compaction(entries)
-    return any(
-        entry.get("kind") in {"tool", "skill", "resource"}
-        for entry in sliced
-    )
+    return any(entry.get("kind") in {"tool", "skill", "resource"} for entry in sliced)
 
 
 def _session_log_has_completed_assistant_turn(payload: dict[str, Any]) -> bool:
@@ -238,9 +235,7 @@ def read_prior_rules_injection_for_hook(
         or is_rules_placeholder_body(body)
         or rules_injection_needs_format_refresh(body)
     ):
-        force_refresh = not (
-            payload is not None and _session_log_suppresses_rules_refresh(payload)
-        )
+        force_refresh = not (payload is not None and _session_log_suppresses_rules_refresh(payload))
         return "", force_refresh
     return body, False
 
