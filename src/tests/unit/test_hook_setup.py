@@ -1162,6 +1162,7 @@ def test_run_hook_uninstall_removes_hooks_from_agent_configs(
 ) -> None:
     claude_path = tmp_path / "claude" / "settings.json"
     codex_path = tmp_path / "codex" / "hooks.json"
+    cursor_path = tmp_path / "cursor" / "hooks.json"
     claude_path.parent.mkdir(parents=True)
     codex_path.parent.mkdir(parents=True)
     entry = hook_setup.cyt_client_entry()
@@ -1170,11 +1171,13 @@ def test_run_hook_uninstall_removes_hooks_from_agent_configs(
 
     monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
     monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", codex_path)
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
 
     hook_setup.run_hook_uninstall()
 
     assert "hooks" not in json.loads(claude_path.read_text(encoding="utf-8"))
     assert "hooks" not in json.loads(codex_path.read_text(encoding="utf-8"))
+    assert not cursor_path.is_file()
 
 
 def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:

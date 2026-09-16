@@ -59,6 +59,26 @@ _REPAIRED_SESSIONS: set[tuple[str, str]] = set()
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
+    # #region agent log
+    if path.name == "hooks.json":
+        from cyt.hook.debug_hooks_audit import log_hooks_json_mutation
+
+        event_count = 0
+        empty_hooks = True
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and isinstance(parsed.get("hooks"), dict):
+                event_count = len(parsed["hooks"])
+                empty_hooks = not parsed["hooks"]
+        except json.JSONDecodeError:
+            pass
+        log_hooks_json_mutation(
+            path,
+            action="pairing_atomic_write_text",
+            hypothesis_id="C",
+            data={"event_count": event_count, "empty_hooks": empty_hooks},
+        )
+    # #endregion
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     replaced = False
