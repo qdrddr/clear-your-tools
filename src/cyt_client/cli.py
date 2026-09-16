@@ -538,18 +538,19 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _verbose_log(format_phase_timing_verbose(phase_timing))
 
     injection = extract_additional_context(body)
+    merge_sections = extract_rules_merge_sections(body)
     if not injection.strip():
         if is_substantive_rules_injection(prior_rules_injection):
             _verbose_log(
                 "cyt-client: hook returned no additionalContext; "
-                "tools already present in rules file (pre-exposure skip)",
+                "resetting rules file to lifecycle placeholder (pre-exposure skip)",
             )
         else:
             _verbose_log(
                 "cyt-client: hook returned no additionalContext; "
                 "keeping session lifecycle placeholder",
             )
-            reset_cursor_rules_file_to_placeholder(workspace)
+        reset_cursor_rules_file_to_placeholder(workspace)
         _emit_cursor_hook_stdout(body)
         return
 
@@ -557,7 +558,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         sync_cursor_rules_file(
             workspace,
             injection,
-            merge_sections=extract_rules_merge_sections(body),
+            merge_sections=merge_sections,
         )
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to sync rules file: {exc}")

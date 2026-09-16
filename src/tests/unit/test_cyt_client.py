@@ -935,15 +935,20 @@ def test_cli_before_submit_keeps_placeholder_on_empty_injection(
         assert "keeping session lifecycle placeholder" in captured.err
 
 
-def test_cli_before_submit_deletes_rules_file_on_empty_injection(
+def test_cli_before_submit_resets_placeholder_on_empty_injection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    from cyt_client.rules_file import build_rules_mdc, build_rules_mdc_placeholder
+
     with tempfile.TemporaryDirectory() as tmp:
         workspace = Path(tmp) / "project"
         workspace.mkdir()
         rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
         rules_path.parent.mkdir(parents=True)
-        rules_path.write_text("<agent-tools>existing pruned tools</agent-tools>", encoding="utf-8")
+        rules_path.write_text(
+            build_rules_mdc("<agent-tools>existing pruned tools</agent-tools>"),
+            encoding="utf-8",
+        )
         payload = {
             "hook_event_name": "beforeSubmitPrompt",
             "prompt": "hello",
@@ -978,8 +983,9 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
 
         captured = capsys.readouterr()
         assert rules_path.is_file()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
         assert json.loads(captured.out) == {"continue": True}
-        assert "pre-exposure skip" in captured.err
+        assert "resetting rules file to lifecycle placeholder (pre-exposure skip)" in captured.err
 
 
 def test_cli_before_submit_fresh_skips_prior_rules_injection(
