@@ -224,13 +224,21 @@ def _preview_hook_payload(
     session_id: str,
     agent: str,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "cwd": str(workspace),
         "workspace_roots": [str(workspace)],
         "prompt": query,
         "session_id": session_id,
         "cyt_agent": agent,
     }
+    from cyt_client.rules_file import read_prior_rules_injection_for_hook
+
+    injection, force_refresh = read_prior_rules_injection_for_hook(workspace)
+    if injection:
+        payload["cyt_rules_injection"] = injection
+    if force_refresh:
+        payload["cyt_force_rules_refresh"] = True
+    return payload
 
 
 def resolve_preview_session_log(

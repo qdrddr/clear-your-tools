@@ -42,6 +42,30 @@ def test_config_for_inject_preview_sets_hook_workspace(tmp_path: Path) -> None:
     assert hook_workspace_from_config(config) == workspace
 
 
+def test_preview_hook_payload_includes_prior_rules_injection(tmp_path: Path) -> None:
+    from cyt_client.rules_file import build_rules_mdc
+
+    workspace = (tmp_path / "project").resolve()
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    injection_body = (
+        "<agent-tools>\n<cyt-mcp>\n<cyt-mcp-usr>\n"
+        "<tool name='demo'>{'input_schema':{}}\n</tool>\n"
+        "</cyt-mcp-usr>\n</cyt-mcp>\n</agent-tools>"
+    )
+    rules_path.write_text(build_rules_mdc(injection_body), encoding="utf-8")
+
+    payload = _preview_hook_payload(
+        workspace=workspace,
+        query="hello",
+        session_id="session-1",
+        agent="cursor",
+    )
+
+    assert payload["cyt_rules_injection"] == injection_body
+    assert payload.get("cyt_force_rules_refresh") is not True
+
+
 def test_workspace_only_disk_catalog_invisible_without_hook_workspace(
     inject_preview_pack: InjectPreviewFixturePack,
     monkeypatch: pytest.MonkeyPatch,
