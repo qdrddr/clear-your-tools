@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from cyt.tiers.adapters.tools import prepare_tool_for_tier_pipeline
 from cyt.tiers.models import Tier
-from cyt.tools.inject import format_agent_tools, format_tool_item
+from cyt.tools.inject import format_agent_tools, format_tool_item, format_tools_grouped_by_tier
 
 
 def _sample_tool(*, name: str = "demo_tool", with_schema: bool = True) -> dict:
@@ -54,11 +54,46 @@ def test_t2_prepared_tool_formats_required_properties_only() -> None:
     assert "'limit'" not in item
 
 
-def test_format_tool_item_includes_tier_attribute() -> None:
+def test_format_tool_item_omits_tier_attribute() -> None:
     tool = _sample_tool(with_schema=True)
     tool["cyt_injection_tier"] = "t2"
     item = format_tool_item(tool)
-    assert "tier='t2'" in item
+    assert "tier='" not in item
+
+
+def test_format_tools_grouped_by_tier_wraps_tools() -> None:
+    t2 = _sample_tool(name="t2_tool", with_schema=True)
+    t2["cyt_injection_tier"] = "t2"
+    t3 = _sample_tool(name="t3_tool", with_schema=True)
+    t3["cyt_injection_tier"] = "t3"
+    block = format_tools_grouped_by_tier([t3, t2])
+    assert "<tier_t3>" in block
+    assert "</tier_t3>" in block
+    assert "<tier_t2>" in block
+    assert "</tier_t2>" in block
+    assert block.index("<tier_t3>") < block.index("<tier_t2>")
+    for line in block.splitlines():
+        if line.lstrip().startswith("<tool "):
+            assert "tier='" not in line
+    assert "name='t3_tool'" in block
+    assert "name='t2_tool'" in block
+
+
+def test_format_tools_grouped_by_tier_tx_for_t2_without_required() -> None:
+    tool = _sample_tool(with_schema=False)
+    tool["name"] = "ctx_doctor"
+    tool["cyt_injection_tier"] = "t2"
+    block = format_tools_grouped_by_tier([tool])
+    assert "<tier_tx>" in block
+    assert "</tier_tx>" in block
+    assert "tier='" not in block
+
+
+def test_format_tools_grouped_by_tier_untiered_tools_append_unwrapped() -> None:
+    tool = _sample_tool(name="plain_tool", with_schema=True)
+    block = format_tools_grouped_by_tier([tool])
+    assert "<tier" not in block
+    assert "name='plain_tool'" in block
 
 
 def test_format_tool_item_omits_examples_when_absent() -> None:

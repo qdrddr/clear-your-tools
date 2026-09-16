@@ -83,6 +83,8 @@ def test_format_tool_item_omits_empty_input_schema() -> None:
 
 
 def test_format_tool_item_t2_without_required_uses_tx_tier() -> None:
+    from cyt.tools.inject import format_tools_grouped_by_tier
+
     tool = {
         "name": "context-mode_ctx_doctor",
         "description": "Diagnose context-mode installation.",
@@ -90,12 +92,16 @@ def test_format_tool_item_t2_without_required_uses_tx_tier() -> None:
         "input_schema": {"type": "object", "properties": {}},
     }
     item = format_tool_item(tool)
-    assert "tier='tx'" in item
+    assert "tier='" not in item
     assert "use `get-tool-definitions` with `{tool_name='context-mode_ctx_doctor'}`" in item
     assert "input_schema" not in item
+    block = format_tools_grouped_by_tier([tool])
+    assert "<tier_tx>" in block
 
 
 def test_format_tool_item_t2_with_required_keeps_schema() -> None:
+    from cyt.tools.inject import format_tools_grouped_by_tier
+
     tool = {
         "name": "context-mode_ctx_purge",
         "description": "Purge indexed content.",
@@ -109,10 +115,12 @@ def test_format_tool_item_t2_with_required_keeps_schema() -> None:
         },
     }
     item = format_tool_item(tool)
-    assert "tier='t2'" in item
-    assert "tier='tx'" not in item
+    assert "tier='" not in item
     assert "'confirm'" in item
     assert "get-tool-definitions" not in item
+    block = format_tools_grouped_by_tier([tool])
+    assert "<tier_t2>" in block
+    assert "<tier_tx>" not in block
 
 
 def test_format_tool_item_includes_non_empty_input_schema() -> None:

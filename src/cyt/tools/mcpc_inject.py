@@ -233,9 +233,6 @@ def _format_mcpc_tool_item(
     ]
     if include_description and description:
         attrs.append(f"description='{_xml_single_quoted_attr(description)}'")
-    tier = tool.get("cyt_injection_tier")
-    if isinstance(tier, str) and tier.strip():
-        attrs.append(f"tier='{_xml_single_quoted_attr(tier.strip().lower())}'")
     cli_line = _cli_example(session, tool_name, schema_body)
     lines = [
         f"<tool {' '.join(attrs)}>",
@@ -288,21 +285,23 @@ def _format_server_block(
         attrs.append(f"instructions='{_xml_single_quoted_attr(instructions)}'")
     if server_description:
         attrs.append(f"description='{_xml_single_quoted_attr(server_description)}'")
-    item_lines = [
-        _format_mcpc_tool_item(
+    from cyt.tools.inject import format_tools_grouped_by_tier
+
+    def _format_item(tool: dict[str, Any], *, include_tool_description: bool = True) -> str:
+        return _format_mcpc_tool_item(
             tool,
-            include_description=not (
+            include_description=include_tool_description
+            and not (
                 pre_exposure is not None
                 and (session, str(tool.get("tool_name") or tool.get("name") or "").strip())
                 in pre_exposure.omit_tool_description
             ),
         )
-        for tool in tools
-    ]
-    item_lines = [line for line in item_lines if line]
-    if not item_lines:
+
+    body = format_tools_grouped_by_tier(tools, format_item=_format_item)
+    if not body.strip():
         return ""
-    return "\n".join([f"<server {' '.join(attrs)}>", *item_lines, "</server>"])
+    return "\n".join([f"<server {' '.join(attrs)}>", body, "</server>"])
 
 
 def format_mcpc_agent_tools(

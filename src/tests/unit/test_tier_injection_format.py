@@ -7,8 +7,8 @@ import pytest
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
 from cyt.injection.tier_legend import TOOL_TIER_LEGEND
 from cyt.skills.inject import format_agent_skills_empty
-from cyt.tools.inject import format_tool_item
-from cyt.tools.mcpc_inject import _format_mcpc_tool_item
+from cyt.tools.inject import format_tool_item, format_tools_grouped_by_tier
+from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _format_server_block
 from cyt.tools.source_inject import format_cyt_mcp_source_section
 from tests.support.tier_injection_fixtures import (
     PreExposureCase,
@@ -19,23 +19,36 @@ from tests.support.tier_injection_fixtures import (
 
 
 @pytest.mark.parametrize("tool", load_sample_tools(), ids=lambda tool: str(tool.get("name")))
-def test_sample_tools_emit_tier_attribute_in_xml(tool: dict) -> None:
+def test_sample_tools_emit_tier_wrapper_not_tool_attribute(tool: dict) -> None:
     item = format_tool_item(tool)
+    assert "tier='" not in item
     tier = str(tool.get("cyt_injection_tier") or "")
-    assert f"tier='{tier}'" in item
+    if tier:
+        grouped = format_tools_grouped_by_tier([tool])
+        assert f"<tier_{tier}>" in grouped
+        assert f"</tier_{tier}>" in grouped
 
 
-def test_mcpc_tool_item_emits_tier_attribute() -> None:
-    tool = {
+def test_mcpc_server_block_groups_tools_by_tier() -> None:
+    t2_tool = {
         "name": "@demo/demo_tool",
         "tool_name": "demo_tool",
         "mcpc_session": "@demo",
         "description": "Demo MCPC tool",
         "cyt_injection_tier": "t2",
-        "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
+        "input_schema": {
+            "type": "object",
+            "properties": {"q": {"type": "string"}},
+            "required": ["q"],
+        },
+        "server_name": "demo",
     }
-    item = _format_mcpc_tool_item(tool)
-    assert "tier='t2'" in item
+    item = _format_mcpc_tool_item(t2_tool)
+    assert "tier='" not in item
+    block = _format_server_block("@demo", [t2_tool])
+    assert "<tier_t2>" in block
+    assert "</tier_t2>" in block
+    assert "<server" in block
 
 
 @pytest.mark.parametrize("case", load_pre_exposure_cases(), ids=lambda case: case.id)

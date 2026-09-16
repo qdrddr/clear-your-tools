@@ -16,7 +16,7 @@ from cyt.tools.inject import (
     _agent_tools_open_tag,
     _format_workspace_roots_block,
     ensure_agent_tools_starts_on_new_line,
-    format_tool_item,
+    format_tools_grouped_by_tier,
 )
 from cyt.tools.mcpc_inject import (
     _MCPC_WORKSPACE_NOTE,
@@ -83,14 +83,12 @@ def _format_scope_tool_block(
 ) -> str:
     if not tools:
         return ""
-    item_lines = [
-        line
-        for tool in tools
-        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
-    ]
-    if not item_lines:
+    body = format_tools_grouped_by_tier(
+        tools,
+        include_tool_description=include_tool_description,
+    )
+    if not body.strip():
         return ""
-    body = "\n".join(item_lines)
     return f"<{tag}>\n{body}\n</{tag}>"
 
 
@@ -102,14 +100,12 @@ def format_cloudflare_source_section(
 ) -> str:
     if not tools:
         return ""
-    item_lines = [
-        line
-        for tool in tools
-        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
-    ]
-    if not item_lines:
+    body = format_tools_grouped_by_tier(
+        tools,
+        include_tool_description=include_tool_description,
+    )
+    if not body.strip():
         return ""
-    body = "\n".join(item_lines)
     prompt = _CLOUDFLARE_WORKSPACE_NOTE
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) > 1:
@@ -177,14 +173,12 @@ def format_executor_source_section(
     """Return executor prompt + ``<executor>…</executor>`` body."""
     if not tools:
         return ""
-    item_lines = [
-        line
-        for tool in tools
-        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
-    ]
-    if not item_lines:
+    body = format_tools_grouped_by_tier(
+        tools,
+        include_tool_description=include_tool_description,
+    )
+    if not body.strip():
         return ""
-    body = "\n".join(item_lines)
     prompt = _EXECUTOR_WORKSPACE_NOTE
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) > 1:
@@ -203,14 +197,12 @@ def format_definitions_source_section(
     """Return definitions prompt + ``<definitions>…</definitions>`` body."""
     if not tools:
         return ""
-    item_lines = [
-        line
-        for tool in tools
-        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
-    ]
-    if not item_lines:
+    body = format_tools_grouped_by_tier(
+        tools,
+        include_tool_description=include_tool_description,
+    )
+    if not body.strip():
         return ""
-    body = "\n".join(item_lines)
     prompt = _DEFINITIONS_WORKSPACE_NOTE
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) > 1:

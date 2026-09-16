@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any
 
 from cyt.executor.tool_names import agent_visible_tool_name
@@ -89,13 +91,70 @@ def ensure_agent_tools_starts_on_new_line(injection: str, *, after: str = "") ->
     return "\n" + stripped
 
 
-def _tool_open_tag(name: str, description: str, *, tier: str | None = None) -> str:
+TIER_GROUP_ORDER: tuple[str, ...] = ("t4", "t3", "t2", "tx", "t1", "t0")
+
+
+def _tool_open_tag(name: str, description: str) -> str:
     attrs = [f"name='{_xml_single_quoted_attr(name)}'"]
     if description:
         attrs.append(f"description='{_xml_single_quoted_attr(description)}'")
-    if tier:
-        attrs.append(f"tier='{_xml_single_quoted_attr(tier)}'")
     return f"<tool {' '.join(attrs)}>"
+
+
+def injection_tier_for_tool(tool: dict[str, Any]) -> str | None:
+    """Resolve injection tier label (t0-t4, tx) for grouping — not emitted on ``<tool>`` tags."""
+    tier = tool.get("cyt_injection_tier")
+    tier_attr = str(tier).strip().lower() if isinstance(tier, str) and tier.strip() else None
+    schema = _tool_input_schema(tool)
+    if injection_tier_needs_definitions_lookup(schema, tier_attr):
+        return "tx"
+    return tier_attr
+
+
+def tier_wrapper_tag(tier: str) -> str:
+    """XML wrapper tag for a tier bucket, e.g. ``tier_t3`` → ``<tier_t3>…</tier_t3>``."""
+    label = str(tier or "").strip().lower()
+    return f"tier_{label}" if label else "tier"
+
+
+def _format_tier_group(tier: str, items: list[str]) -> str:
+    tag = tier_wrapper_tag(tier)
+    body = "\n".join(items)
+    return f"<{tag}>\n{body}\n</{tag}>"
+
+
+def format_tools_grouped_by_tier(
+    tools: list[dict[str, Any]],
+    *,
+    include_tool_description: bool = True,
+    format_item: Callable[..., str] | None = None,
+) -> str:
+    """Format tools wrapped in ``<tier_tN>`` groups; tier-free tools append unwrapped."""
+    render = format_item or format_tool_item
+    buckets: OrderedDict[str, list[str]] = OrderedDict(
+        (tier, []) for tier in TIER_GROUP_ORDER
+    )
+    untiered: list[str] = []
+
+    for tool in tools:
+        item = render(tool, include_tool_description=include_tool_description)
+        if not item:
+            continue
+        tier = injection_tier_for_tool(tool)
+        if tier and tier in buckets:
+            buckets[tier].append(item)
+        elif tier:
+            untiered.append(item)
+        else:
+            untiered.append(item)
+
+    blocks: list[str] = []
+    for tier in TIER_GROUP_ORDER:
+        items = buckets[tier]
+        if items:
+            blocks.append(_format_tier_group(tier, items))
+    blocks.extend(untiered)
+    return "\n".join(blocks)
 
 
 def _tool_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
@@ -136,12 +195,9 @@ def format_tool_item(
     if include_tool_description:
         description = str(tool.get("description", "") or "").strip()
     schema = _tool_input_schema(tool)
-    tier = tool.get("cyt_injection_tier")
-    tier_attr = str(tier).strip().lower() if isinstance(tier, str) and tier.strip() else None
-    needs_definitions = injection_tier_needs_definitions_lookup(schema, tier_attr)
-    if needs_definitions:
-        tier_attr = "tx"
-    lines = [_tool_open_tag(name, description, tier=tier_attr)]
+    tier_attr = injection_tier_for_tool(tool)
+    needs_definitions = tier_attr == "tx"
+    lines = [_tool_open_tag(name, description)]
     if needs_definitions:
         lines.append(format_get_tool_definitions_hint(name))
     elif schema:
@@ -162,12 +218,11 @@ def format_agent_tools(
 ) -> str:
     if not pruned_tools:
         return ""
-    item_lines: list[str] = []
-    for tool in pruned_tools:
-        item = format_tool_item(tool, include_tool_description=include_tool_description)
-        if item:
-            item_lines.append(item)
-    if not item_lines:
+    body = format_tools_grouped_by_tier(
+        pruned_tools,
+        include_tool_description=include_tool_description,
+    )
+    if not body.strip():
         return ""
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     intro = _agent_tools_description(
@@ -183,7 +238,7 @@ def format_agent_tools(
         roots_block = _format_workspace_roots_block(paths)
         if roots_block:
             lines.append(roots_block)
-    lines.extend(item_lines)
+    lines.append(body)
     lines.append("</agent-tools>")
     return ensure_agent_tools_starts_on_new_line("\n".join(lines))
 

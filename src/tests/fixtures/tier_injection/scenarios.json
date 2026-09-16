@@ -8,7 +8,7 @@
   ],
   "legend_snippets": {
     "tool": [
-      "Tool tiers:",
+      "Tool tiers are grouped in <tier_tN>",
       "t4=full unfiltered inputSchema",
       "t3=optional props pruned",
       "t2=required props only",
@@ -16,7 +16,7 @@
       "t0=dormant"
     ],
     "skill": [
-      "Skill tiers:",
+      "Skill tiers are grouped in <tier_tN>",
       "t4=full skill always included",
       "t3=skill shell",
       "t2=description + headers",

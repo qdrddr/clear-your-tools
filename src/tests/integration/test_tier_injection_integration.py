@@ -214,7 +214,11 @@ def test_gate_and_format_hook_tools_emits_legend_and_tier_attrs(
         assert f"name='{tool_name}'" in formatted
         tool = next(item for item in cyt_tools if item.get("name") == tool_name)
         tier = str(tool.get("cyt_injection_tier") or "")
-        assert f"tier='{tier}'" in formatted
+        assert f"<tier_{tier}>" in formatted
+        assert f"</tier_{tier}>" in formatted
+        tool_fragment_start = formatted.index(f"name='{tool_name}'")
+        tool_line = formatted[max(0, tool_fragment_start - 200) : tool_fragment_start + 80]
+        assert "tier='" not in tool_line.split("name=")[0]
 
 
 def test_second_turn_pre_exposure_skips_t4_tool_and_skill(

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
+from typing import Callable
 
 import yaml
 
@@ -10,6 +12,7 @@ from cyt.common.paths import shorten_home_path
 from cyt.indexer.tokens import count_tokens
 from cyt.skills.frontmatter import injection_markdown_body
 from cyt.skills.search import MatchedSkill
+from cyt.tools.inject import TIER_GROUP_ORDER, _format_tier_group
 
 _INTRO_SKINNY = (
     "Based on the user query added chunks of descriptions of skills (not entire skill). "
@@ -72,24 +75,61 @@ def _skill_open_tag(
     name: str | None,
     *,
     command: str | None = None,
-    tier: str | None = None,
 ) -> str:
-    tier_attr = ""
-    if tier:
-        tier_attr = f' tier="{tier}"'
     if command:
         attrs = []
         if name:
             attrs.append(f'name="{name}"')
         attrs.append(f"command='{command}'")
-        if tier:
-            attrs.append(f'tier="{tier}"')
         return f"<skill {' '.join(attrs)}>"
     if name:
-        return f'<skill name="{name}" path="{path}"{tier_attr}>'
-    if tier:
-        return f'<skill path="{path}" tier="{tier}">'
+        return f'<skill name="{name}" path="{path}">'
     return f'<skill path="{path}">'
+
+
+def injection_tier_for_skill(match: MatchedSkill) -> str | None:
+    """Resolve injection tier label (t0-t4) for grouping — not emitted on ``<skill>`` tags."""
+    tier = match.injection_tier
+    if isinstance(tier, str) and tier.strip():
+        return tier.strip().lower()
+    return None
+
+
+def format_skills_grouped_by_tier(
+    matches: list[MatchedSkill],
+    *,
+    full_flags: dict[str, bool] | None = None,
+    format_item: Callable[..., str] | None = None,
+) -> str:
+    """Format skills wrapped in ``<tier_tN>`` groups; tier-free skills append unwrapped."""
+    from cyt.injection.session_log_build import skill_item_key
+
+    render = format_item or format_skill_item
+    buckets: OrderedDict[str, list[str]] = OrderedDict(
+        (tier, []) for tier in TIER_GROUP_ORDER
+    )
+    untiered: list[str] = []
+
+    for match in matches:
+        command = _resolve_skill_command(match)
+        key = skill_item_key(match, command=command)
+        full = bool(full_flags.get(key)) if full_flags else False
+        item = render(match, full=full)
+        if not item:
+            continue
+        tier = injection_tier_for_skill(match)
+        if tier and tier in buckets:
+            buckets[tier].append(item)
+        else:
+            untiered.append(item)
+
+    blocks: list[str] = []
+    for tier in TIER_GROUP_ORDER:
+        items = buckets[tier]
+        if items:
+            blocks.append(_format_tier_group(tier, items))
+    blocks.extend(untiered)
+    return "\n".join(blocks)
 
 
 def _skill_has_injection_body(match: MatchedSkill) -> bool:
@@ -119,10 +159,9 @@ def format_skill_item(match: MatchedSkill, *, full: bool = False) -> str:
     command = _resolve_skill_command(match)
     if command:
         command = _xml_single_quoted_attr(command)
-    tier = match.injection_tier.strip().lower() if match.injection_tier else None
     return "\n".join(
         [
-            _skill_open_tag(path, match.name, command=command, tier=tier),
+            _skill_open_tag(path, match.name, command=command),
             body,
             "</skill>",
         ],
@@ -143,7 +182,7 @@ def format_agent_skills(
     injectable = [match for match in matches if _skill_has_injection_body(match) or full_flags]
     if not injectable:
         injectable = list(matches)
-    item_lines: list[str] = []
+    eligible: list[MatchedSkill] = []
     emitted_full_flags: list[bool] = []
     for match in injectable:
         command = _resolve_skill_command(match)
@@ -151,11 +190,12 @@ def format_agent_skills(
         full = bool(full_flags.get(key)) if full_flags else False
         if not full and not _skill_has_injection_body(match):
             continue
-        item = format_skill_item(match, full=full)
-        if item:
-            item_lines.append(item)
-            emitted_full_flags.append(full)
-    if not any(item_lines):
+        eligible.append(match)
+        emitted_full_flags.append(full)
+    if not eligible:
+        return ""
+    body = format_skills_grouped_by_tier(eligible, full_flags=full_flags)
+    if not body.strip():
         return ""
     from cyt.injection.header_pre_exposed import skill_tier_legend_pre_exposed
     from cyt.injection.pre_exposed import is_pre_exposed
@@ -167,7 +207,7 @@ def format_agent_skills(
     inner_lines: list[str] = []
     if include_tier_legend:
         inner_lines.append(SKILL_TIER_LEGEND)
-    inner_lines.extend(item_lines)
+    inner_lines.append(body)
     if include_intro:
         return "\n".join([intro, "", "<agent-skills>", *inner_lines, "</agent-skills>"])
     return "\n".join(["<agent-skills>", *inner_lines, "</agent-skills>"])

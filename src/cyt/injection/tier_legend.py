@@ -5,7 +5,8 @@ from __future__ import annotations
 from cyt.tiers.models import Tier
 
 TOOL_TIER_LEGEND = (
-    "Tool tiers: t4=full unfiltered inputSchema; "
+    "Tool tiers are grouped in <tier_tN>…</tier_tN> wrappers. "
+    "t4=full unfiltered inputSchema; "
     "t3=optional props pruned by prompt similarity (required props always listed; some optionals may survive); "
     "t2=required props only (call get-tool-definitions(tool-name) for full optional schema); "
     "tx=T2 tool with no required properties — call get-tool-definitions(tool-name) before use; "
@@ -15,7 +16,8 @@ TOOL_TIER_LEGEND = (
 )
 
 SKILL_TIER_LEGEND = (
-    "Skill tiers: t4=full skill always included; "
+    "Skill tiers are grouped in <tier_tN>…</tier_tN> wrappers. "
+    "t4=full skill always included; "
     "t3=skill shell + survived chunks/nodes; "
     "t2=description + headers (most relevant, min 6); "
     "t1=description only; "

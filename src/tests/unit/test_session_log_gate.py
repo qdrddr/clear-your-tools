@@ -137,7 +137,7 @@ def test_matching_hash_after_skinny_log_skips_reinjection() -> None:
         current_hash="hash-v1",
         index=index,
         session_text="",
-        formatted_skinny="<tool name='fff_grep' tier='t3'>with examples</tool>",
+        formatted_skinny="<tool name='fff_grep'>with examples</tool>",
         formatted_full="<tool name='fff_grep'>full</tool>",
     )
     assert mode == "skip"
