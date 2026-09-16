@@ -262,7 +262,7 @@ async def fetch_cloudflare_tools_list_async(
         await _notify_initialized(client, session_id=session_id)
         raw_tools = await _tools_list(client, session_id=session_id)
     tools = normalize_cloudflare_tools(raw_tools)
-    logger.info("cloudflare MCP tools/list fetched count=%d", len(tools))
+    logger.debug("cloudflare MCP tools/list fetched count=%d", len(tools))
     return tools
 
 

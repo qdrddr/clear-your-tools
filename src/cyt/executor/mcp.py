@@ -212,7 +212,7 @@ async def fetch_executor_mcp_cache_async(
         tools_list = await _tools_list(client, session_id=session_id)
         execute_skill = await _skills_execute(client, session_id=session_id)
 
-    logger.info(
+    logger.debug(
         "executor MCP cache fetched tools_list=%d execute_skill_chars=%d",
         len(tools_list),
         len(execute_skill),

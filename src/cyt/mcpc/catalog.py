@@ -288,7 +288,7 @@ def _load_catalog_from_disk(
         else None,
         config=config,
     )
-    logger.info(
+    logger.debug(
         "mcpc catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d",
         cache_key.slug,
         content_hash[:12],
@@ -333,7 +333,7 @@ def _blocking_cli_fetch(
         )
 
     try:
-        logger.info("mcpc catalog cli_fetch slug=%s blocking=true", cache_key.slug)
+        logger.debug("mcpc catalog cli_fetch slug=%s blocking=true", cache_key.slug)
         tools, sessions = _fetch_catalog_from_cli(
             cache_key.executable,
             cache_key.slug,

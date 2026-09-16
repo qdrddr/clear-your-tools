@@ -1,5 +1,6 @@
 """Tests for cyt.indexer.tokens (tiktoken cl100k_base)."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -101,8 +102,17 @@ def test_count_rerank_request_tokens_with_docs() -> None:
     )
 
 
-def test_log_token_usage_writes_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
-    log_token_usage("pruning model tokens (llm)", 42)
+def test_log_token_usage_writes_to_stderr_when_proxy_debug_active(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    from cyt.proxy.transport import debug_endpoint_proxy_log_path
+
+    token = debug_endpoint_proxy_log_path.set(tmp_path / "anthropic-proxy.log")
+    try:
+        log_token_usage("pruning model tokens (llm)", 42)
+    finally:
+        debug_endpoint_proxy_log_path.reset(token)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "pruning model tokens (llm): 42 tokens" in captured.err

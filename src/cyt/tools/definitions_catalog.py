@@ -112,7 +112,7 @@ def _load_catalog_from_disk(
     fingerprint = _definitions_fingerprint(path)
     state = _get_state(cache_key)
     _apply_catalog_to_state(state, copy.deepcopy(tools), fingerprint=fingerprint, config=cfg)
-    logger.info(
+    logger.debug(
         "definitions catalog disk_hit path=%s fingerprint=%s tool_count=%d",
         path,
         fingerprint[:24],

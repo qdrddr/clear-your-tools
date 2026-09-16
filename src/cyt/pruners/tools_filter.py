@@ -957,12 +957,12 @@ def _run_pruning_pipeline(
 
 
 def _log_operator_message(msg: str) -> None:
-    """Mirror a message to the module logger, stdout, and the proxy debug log file."""
+    """Mirror a message to debug logs when proxy debug logging is active."""
     from cyt.proxy.transport import append_debug_log_block, debug_endpoint_proxy_log_path
 
-    logger.info(msg)
-    print(msg, file=sys.stderr, flush=True)
+    logger.debug(msg)
     if (log_path := debug_endpoint_proxy_log_path.get()) is not None:
+        print(msg, file=sys.stderr, flush=True)
         append_debug_log_block(log_path, label="operator", content=msg)
 
 

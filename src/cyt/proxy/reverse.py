@@ -46,14 +46,11 @@ from cyt.proxy.pruning_debug import (
 from cyt.proxy.setup_wizard import upstream_entry_endpoint, upstream_protocol_kind
 from cyt.proxy.transform_context import ProxyTransformContext
 from cyt.proxy.transport import (
-    agent_trace_log_path,
-    append_agent_trace_log,
     append_debug_log_block,
     debug_endpoint_proxy_log_path,
     forward_upstream,
     header_content_encoding,
     http2_package_available,
-    new_debug_session_id,
     reverse_debug_log_path,
     reverse_debug_original_log_path,
     reverse_debug_proxy_log_path,
@@ -72,31 +69,6 @@ _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 logger = logging.getLogger(__name__)
 
 _debug_request_seq = 0
-
-
-@dataclass(frozen=True)
-class DebugTrace:
-    log_path: Path
-    session_id: str
-    run_id: str
-
-    def log(
-        self,
-        *,
-        hypothesis_id: str,
-        location: str,
-        message: str,
-        data: dict[str, Any],
-    ) -> None:
-        append_agent_trace_log(
-            self.log_path,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            hypothesis_id=hypothesis_id,
-            location=location,
-            message=message,
-            data=data,
-        )
 
 
 CONNECT_FLAG_COMPRESSED = 0x01
@@ -859,7 +831,6 @@ async def _handle_debug_snapshot(
     debug_strict: bool,
     debug_log_max_body_bytes: int | None,
     debug_log_dir: Path | None,
-    debug_trace: DebugTrace | None,
 ) -> Response | None:
     if pruning_meta and pruning_meta.get("status") != "applied":
         logger.warning(
@@ -912,22 +883,6 @@ async def _handle_debug_snapshot(
         pruning_meta=pruning_meta,
         saved_to=saved_to,
         body=body,
-        debug_trace=debug_trace,
-    )
-
-
-def _log_proxy_request_entry(debug_trace: DebugTrace | None, request: Request) -> None:
-    if debug_trace is None:
-        return
-    debug_trace.log(
-        hypothesis_id="D",
-        location="reverse.py:_proxy_request:entry",
-        message="valid HTTP request reached proxy handler",
-        data={
-            "method": request.method,
-            "path": request.url.path,
-            "scheme": request.url.scheme,
-        },
     )
 
 
@@ -1068,29 +1023,6 @@ async def _process_buffered_proxy_body(
     return body, pruning, input_tools, pruning_meta, debug_request_seq, skills_meta
 
 
-def _log_proxy_forward_upstream(
-    debug_trace: DebugTrace | None,
-    *,
-    endpoint_name: str,
-    request_path: str,
-    target_url: str,
-    buffer_body: bool,
-) -> None:
-    if debug_trace is None:
-        return
-    debug_trace.log(
-        hypothesis_id="B",
-        location="reverse.py:_proxy_request:forward_upstream",
-        message="forwarding request to upstream",
-        data={
-            "endpoint": endpoint_name,
-            "path": request_path,
-            "target_url": target_url,
-            "buffer_body": buffer_body,
-        },
-    )
-
-
 async def _debug_terminate_response(
     *,
     endpoint_name: str,
@@ -1100,22 +1032,9 @@ async def _debug_terminate_response(
     pruning_meta: dict[str, Any] | None,
     saved_to: Path,
     body: bytes,
-    debug_trace: DebugTrace | None = None,
 ) -> JSONResponse:
     from starlette.responses import JSONResponse
 
-    if debug_trace is not None:
-        debug_trace.log(
-            hypothesis_id="A",
-            location="reverse.py:_debug_terminate_response",
-            message="returning debug JSONResponse instead of upstream",
-            data={
-                "endpoint": endpoint_name,
-                "path": request_path,
-                "target_url": target_url,
-                "response_preview": '{"debug":true,...}',
-            },
-        )
     if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
         return JSONResponse(
             {
@@ -1146,7 +1065,6 @@ async def _proxy_request(
     debug_strict: bool,
     debug_log_max_body_bytes: int | None,
     debug_log_dir: Path | None,
-    debug_trace: DebugTrace | None,
     stats_db: StatsDB | None,
     store_full_tools: bool,
 ) -> Response:
@@ -1159,7 +1077,6 @@ async def _proxy_request(
         None,
     )
 
-    _log_proxy_request_entry(debug_trace, request)
     match = resolve_upstream(request.url.path, routes)
     if match is None:
         return Response("Not Found", status_code=404)
@@ -1269,19 +1186,11 @@ async def _proxy_request(
             debug_strict=debug_strict,
             debug_log_max_body_bytes=debug_log_max_body_bytes,
             debug_log_dir=debug_log_dir,
-            debug_trace=debug_trace,
         )
         if early is not None:
             return early
 
     client: httpx.AsyncClient = request.app.state.http_client
-    _log_proxy_forward_upstream(
-        debug_trace,
-        endpoint_name=endpoint_name,
-        request_path=request.url.path,
-        target_url=target_url,
-        buffer_body=buffer_body,
-    )
     return await forward_upstream(
         client,
         method=request.method,
@@ -1338,7 +1247,6 @@ def create_app(
     debug_strict: bool = False,
     debug_log_max_body_bytes: int | None = None,
     debug_log_dir: Path | None = None,
-    debug_trace: DebugTrace | None = None,
     stats_db: StatsDB | None = None,
     store_full_tools: bool = False,
     config: dict[str, Any] | None = None,
@@ -1412,7 +1320,6 @@ def create_app(
             debug_strict=debug_strict,
             debug_log_max_body_bytes=debug_log_max_body_bytes,
             debug_log_dir=debug_log_dir,
-            debug_trace=debug_trace,
             stats_db=stats_db,
             store_full_tools=store_full_tools,
         )
@@ -1438,10 +1345,6 @@ def create_app(
     if pruner_settings is not None:
         app.state.pruner_settings = pruner_settings
     return app
-
-
-def _ssl_file_exists(path: str | None) -> bool:
-    return bool(path and Path(path).is_file())
 
 
 async def serve_reverse_async(
@@ -1480,35 +1383,9 @@ async def serve_reverse_async(
             logger.warning("stats database unavailable: %s", exc)
 
     debug_log_dir: Path | None = None
-    debug_trace: DebugTrace | None = None
     if debug:
         debug_log_dir = reverse_debug_log_dir(config)
         debug_log_dir.mkdir(parents=True, exist_ok=True)
-        session_id = new_debug_session_id()
-        debug_trace = DebugTrace(
-            log_path=agent_trace_log_path(debug_log_dir, session_id),
-            session_id=session_id,
-            run_id=session_id,
-        )
-        from cyt.config import inject_via_map
-
-        debug_trace.log(
-            hypothesis_id="A",
-            location="reverse.py:serve_reverse_async:startup",
-            message="proxy server starting",
-            data={
-                "host": host,
-                "port": port,
-                "inject_via": inject_via_map(config),
-                "http2_serve": http2_serve,
-                "http2_upstream": http2_upstream,
-                "ssl_keyfile": ssl_keyfile,
-                "ssl_certfile": ssl_certfile,
-                "ssl_key_exists": _ssl_file_exists(ssl_keyfile),
-                "ssl_cert_exists": _ssl_file_exists(ssl_certfile),
-                "transport": "hypercorn+tls" if http2_serve else "uvicorn+plain-http",
-            },
-        )
 
     app = create_app(
         routes,
@@ -1518,7 +1395,6 @@ async def serve_reverse_async(
         debug_strict=debug_strict,
         debug_log_max_body_bytes=debug_log_max_body_bytes(config),
         debug_log_dir=debug_log_dir,
-        debug_trace=debug_trace,
         stats_db=stats_db,
         store_full_tools=store_full_tools,
         config=config,

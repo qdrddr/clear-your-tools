@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-import sys
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -106,7 +105,7 @@ def process_response(
             # Store as string with 20 decimal places to avoid scientific notation in JSON
             items[original_idx]["score"] = f"{relevance_score:.20f}"
         except (KeyError, TypeError, IndexError) as e:
-            print(f"Debug: Error processing result {result}: {e}", file=sys.stderr)
+            logger.debug("error processing rerank result %r: %s", result, e)
             continue
 
 
@@ -130,7 +129,7 @@ def _rerank_single_bulk(
     bulk_indices = [x[0] for x in bulk]
     bulk_docs = [x[1] for x in bulk]
     bulk_tokens = count_rerank_request_tokens(query, bulk_docs)
-    logger.info(
+    logger.debug(
         "rerank request tokens: %d (query + %d documents)",
         bulk_tokens,
         len(bulk_docs),
@@ -157,7 +156,7 @@ def _rerank_single_bulk(
         process_response(response, bulk_indices, items)
         return usage, True, None
     except Exception as bulk_exc:
-        print(f"Error during reranking bulk: {bulk_exc}", file=sys.stderr)
+        logger.warning("error during reranking bulk: %s", bulk_exc)
         return usage, False, bulk_exc
 
 
@@ -310,7 +309,7 @@ def rerank_items(
     except RuntimeError:
         raise
     except Exception as e:
-        print(f"Error during reranking: {e}", file=sys.stderr)
+        logger.warning("error during reranking: %s", e)
 
     return items, empty_usage()
 

@@ -431,7 +431,7 @@ def _load_catalog_from_disk(
         executor_mcp=executor_mcp,
         config=config,
     )
-    logger.info(
+    logger.debug(
         "executor catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d mcp=%s",
         cache_key.slug,
         content_hash[:12],
@@ -486,7 +486,7 @@ def _blocking_network_fetch(
 
     state = _get_state(cache_key)
     try:
-        logger.info("executor catalog network_fetch slug=%s blocking=true", cache_key.slug)
+        logger.debug("executor catalog network_fetch slug=%s blocking=true", cache_key.slug)
         tools, executor_mcp = asyncio.run(
             _fetch_catalog_and_mcp_async(
                 base_url=cache_key.base_url,

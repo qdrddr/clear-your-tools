@@ -222,7 +222,7 @@ def _load_catalog_from_disk(
         else None,
         config=config,
     )
-    logger.info(
+    logger.debug(
         "cloudflare catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d",
         cache_key.slug,
         state.catalog_content_hash[:12],
@@ -272,7 +272,7 @@ def _blocking_network_fetch(
 ) -> list[dict[str, Any]]:
     state = _get_state(cache_key)
     try:
-        logger.info("cloudflare catalog network_fetch slug=%s blocking=true", cache_key.slug)
+        logger.debug("cloudflare catalog network_fetch slug=%s blocking=true", cache_key.slug)
         tools = _fetch_catalog_from_network(cfg, allow_prompt=allow_prompt)
     except Exception as exc:
         logger.warning("cloudflare catalog fetch failed: %s", exc)

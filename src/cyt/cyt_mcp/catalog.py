@@ -413,7 +413,7 @@ def _load_catalog_from_disk(
         content_hash=content_hash,
         config=config,
     )
-    logger.info(
+    logger.debug(
         "cyt-mcp catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d",
         cache_key.slug,
         content_hash[:12],

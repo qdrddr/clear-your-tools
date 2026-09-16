@@ -6,13 +6,11 @@ import asyncio
 import json
 import os
 import sys
-import time
 from collections.abc import AsyncIterator, Coroutine
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from uuid import uuid4
 
 import httpx
 import uvicorn
@@ -115,12 +113,6 @@ async def save_debug_snapshot(
     return path
 
 
-def new_debug_session_id() -> str:
-    if env_value := os.environ.get("CYT_DEBUG_SESSION_ID"):
-        return env_value
-    return uuid4().hex[:12]
-
-
 def reverse_debug_log_path(
     endpoint_name: str,
     *,
@@ -179,37 +171,6 @@ async def save_original_debug_snapshot(
         max_bytes=max_bytes,
     )
     return path
-
-
-def agent_trace_log_path(debug_log_dir: Path, session_id: str) -> Path:
-    return debug_log_dir / f"trace-{session_id}.log"
-
-
-def append_agent_trace_log(
-    path: Path,
-    *,
-    session_id: str,
-    run_id: str,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "sessionId": session_id,
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, default=str) + "\n")
-    except OSError:
-        pass
 
 
 async def iter_request_body(request: Request) -> AsyncIterator[bytes]:

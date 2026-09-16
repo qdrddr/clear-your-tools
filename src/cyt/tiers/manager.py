@@ -574,7 +574,7 @@ class TierManager:
                 transitions=transitions,
             )
             if cfg.mode == TierMode.SHADOW:
-                logger.info(
+                logger.debug(
                     "tier shadow epoch %s transitions: %d",
                     self._epoch.epoch_id,
                     len(transitions),

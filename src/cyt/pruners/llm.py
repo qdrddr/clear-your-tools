@@ -600,7 +600,7 @@ def _run_llm_selector_bulk(
         system_prompt=bulk_system_prompt,
         cached_content_tokens=cached_content_tokens,
     )
-    logger.info("llm request tokens: %d", bulk_tokens)
+    logger.debug("llm request tokens: %d", bulk_tokens)
     parsed_response, bulk_usage = call_llm(
         resolved_settings,
         query,
@@ -960,7 +960,7 @@ def main() -> None:
         else:
             print(output_data)
     except Exception as e:
-        print(f"Error during LLM processing: {e}", file=sys.stderr)
+        logger.warning("error during LLM processing: %s", e)
         sys.exit(1)
 
 

@@ -60,7 +60,7 @@ def _maybe_purge_stale_catalog_tools(
         persisted_tool_count=persisted_tool_count,
         catalog_rebuild_in_progress=master_catalog_rebuild_in_progress(config),
     ):
-        logger.warning(
+        logger.debug(
             "skipping stale catalog tool purge: catalog=%d persisted=%d rebuild_in_progress=%s",
             len(catalog_entity_ids),
             persisted_tool_count,

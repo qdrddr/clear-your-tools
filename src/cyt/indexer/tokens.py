@@ -34,7 +34,11 @@ def compact_json(obj: object) -> str:
 
 
 def log_token_usage(label: str, tokens: int) -> None:
-    """Log a token count line to stderr (stdout is reserved for hook JSON)."""
+    """Log pruning token usage; stderr output only when proxy debug logging is active."""
     msg = f"{label}: {tokens} tokens"
-    logger.info(msg)
-    print(msg, file=sys.stderr, flush=True)  # ast-grep-ignore: no-print-statements
+    logger.debug(msg)
+    from cyt.proxy.transport import append_debug_log_block, debug_endpoint_proxy_log_path
+
+    if (log_path := debug_endpoint_proxy_log_path.get()) is not None:
+        print(msg, file=sys.stderr, flush=True)  # ast-grep-ignore: no-print-statements
+        append_debug_log_block(log_path, label="operator", content=msg)

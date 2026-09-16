@@ -425,18 +425,16 @@ def handle_user_prompt_tools(
     catalog_session_log = catalog_session_details.get("session_log") or []
 
     if not pruned:
-        return (
-            "user_prompt_no_tool_matches",
-            {
-                "resolved_model": model,
-                "prune_status": result.status,
-                "catalog_tool_count": len(catalog),
-                "pruned_tool_count": 0,
-                "tools_inject_enabled": True,
-                "session_log": catalog_session_log,
-            },
-            "",
-        )
+        details: dict[str, Any] = {
+            "resolved_model": model,
+            "prune_status": result.status,
+            "tools_inject_enabled": True,
+            "session_log": catalog_session_log,
+        }
+        if debug:
+            details["catalog_tool_count"] = len(catalog)
+            details["pruned_tool_count"] = 0
+        return ("user_prompt_no_tool_matches", details, "")
 
     session_text = session_text_from_hook_payload(
         payload,
@@ -521,11 +519,11 @@ def _finish_tools_hook_injection(
         "resolved_model": model,
         "prune_status": result.status,
         "request_tokens": request_tokens,
-        "budget_debug": budget_debug,
-        "catalog_tool_count": len(catalog),
-        "pruned_tool_count": len(result.tools or []),
     }
     if debug:
+        details["budget_debug"] = budget_debug
+        details["catalog_tool_count"] = len(catalog)
+        details["pruned_tool_count"] = len(result.tools or [])
         pruned_names = [str(tool.get("name", "")) for tool in (result.tools or [])[:20]]
         details["pruned_tool_names"] = pruned_names
         details["injected_tools"] = injected

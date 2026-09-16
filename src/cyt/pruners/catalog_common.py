@@ -75,7 +75,7 @@ def catalog_below_minimum_tools(
     """Return True when tool count is below the stage minimum (pruning should skip)."""
     tool_count = catalog_tool_count(data)
     if tool_count < minimum_tools:
-        logger.info(
+        logger.debug(
             "%s pruning skipped: %d tools below minimum %d",
             stage,
             tool_count,
