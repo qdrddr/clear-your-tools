@@ -79,21 +79,21 @@ def test_format_tools_grouped_by_tier_wraps_tools() -> None:
     assert "name='t2_tool'" in block
 
 
-def test_format_tools_grouped_by_tier_tx_for_t2_without_required() -> None:
+def test_format_tools_grouped_by_tier_t2_without_required_stays_t2() -> None:
     tool = _sample_tool(with_schema=False)
     tool["name"] = "ctx_doctor"
     tool["cyt_injection_tier"] = "t2"
     block = format_tools_grouped_by_tier([tool])
-    assert "<tier_tx>" in block
-    assert "</tier_tx>" in block
+    assert "<tier_t2>" in block
+    assert "</tier_t2>" in block
+    assert "<tier_tx>" not in block
     assert "tier='" not in block
 
 
-def test_format_tools_grouped_by_tier_untiered_tools_append_unwrapped() -> None:
+def test_format_tools_grouped_by_tier_skips_tools_without_tier() -> None:
     tool = _sample_tool(name="plain_tool", with_schema=True)
     block = format_tools_grouped_by_tier([tool])
-    assert "<tier" not in block
-    assert "name='plain_tool'" in block
+    assert block == ""
 
 
 def test_format_tool_item_omits_examples_when_absent() -> None:
@@ -160,10 +160,12 @@ def test_format_agent_tools_mixed_t1_and_t3_tools() -> None:
         _sample_tool(name="cold_tool", with_schema=True),
         Tier.COLD,
     )
+    t1["cyt_injection_tier"] = "t1"
     t3 = prepare_tool_for_tier_pipeline(
         _sample_tool(name="hot_tool", with_schema=True),
         Tier.HOT,
     )
+    t3["cyt_injection_tier"] = "t3"
     block = format_agent_tools([t1, t3])
     assert "<agent-tools" in block
     assert "cold_tool" in block

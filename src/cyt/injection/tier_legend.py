@@ -9,7 +9,6 @@ TOOL_TIER_LEGEND = (
     "t4=full unfiltered inputSchema; "
     "t3=optional props pruned by prompt similarity (required props always listed; some optionals may survive); "
     "t2=required props only (call get-tool-definitions(tool-name) for full optional schema); "
-    "tx=T2 tool with no required properties — call get-tool-definitions(tool-name) before use; "
     "t1=description only, no input_schema (call get-tool-definitions(tool-name) before use); "
     "t0=dormant. Never guess argument property names — use listed input_schema keys or "
     "get-tool-definitions(tool-name)."

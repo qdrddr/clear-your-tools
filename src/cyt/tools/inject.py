@@ -10,11 +10,7 @@ from typing import Any
 from cyt.executor.tool_names import agent_visible_tool_name
 from cyt.indexer.tokens import count_tokens
 from cyt.tiers.tool_token_materialization import input_schema_from_tool
-from cyt.tools.injection_schema import (
-    entangle_examples_with_schema,
-    format_get_tool_definitions_hint,
-    injection_tier_needs_definitions_lookup,
-)
+from cyt.tools.injection_schema import entangle_examples_with_schema
 from cyt.tools.serialize import format_examples_block, minimize_json_single_quotes
 
 _EXECUTOR_WORKSPACE_NOTE = (
@@ -91,7 +87,7 @@ def ensure_agent_tools_starts_on_new_line(injection: str, *, after: str = "") ->
     return "\n" + stripped
 
 
-TIER_GROUP_ORDER: tuple[str, ...] = ("t4", "t3", "t2", "tx", "t1", "t0")
+TIER_GROUP_ORDER: tuple[str, ...] = ("t4", "t3", "t2", "t1", "t0")
 
 
 def _tool_open_tag(name: str, description: str) -> str:
@@ -102,13 +98,14 @@ def _tool_open_tag(name: str, description: str) -> str:
 
 
 def injection_tier_for_tool(tool: dict[str, Any]) -> str | None:
-    """Resolve injection tier label (t0-t4, tx) for grouping — not emitted on ``<tool>`` tags."""
+    """Return ``cyt_injection_tier`` (t0-t4) stamped by the tier manager for grouping."""
     tier = tool.get("cyt_injection_tier")
-    tier_attr = str(tier).strip().lower() if isinstance(tier, str) and tier.strip() else None
-    schema = _tool_input_schema(tool)
-    if injection_tier_needs_definitions_lookup(schema, tier_attr):
-        return "tx"
-    return tier_attr
+    if not isinstance(tier, str) or not tier.strip():
+        return None
+    label = tier.strip().lower()
+    if label in TIER_GROUP_ORDER:
+        return label
+    return None
 
 
 def tier_wrapper_tag(tier: str) -> str:
@@ -129,31 +126,26 @@ def format_tools_grouped_by_tier(
     include_tool_description: bool = True,
     format_item: Callable[..., str] | None = None,
 ) -> str:
-    """Format tools wrapped in ``<tier_tN>`` groups; tier-free tools append unwrapped."""
+    """Format tools wrapped in ``<tier_tN>`` groups (t0-t4 only; skip tools without a tier)."""
     render = format_item or format_tool_item
     buckets: OrderedDict[str, list[str]] = OrderedDict(
         (tier, []) for tier in TIER_GROUP_ORDER
     )
-    untiered: list[str] = []
 
     for tool in tools:
+        tier = injection_tier_for_tool(tool)
+        if tier is None:
+            continue
         item = render(tool, include_tool_description=include_tool_description)
         if not item:
             continue
-        tier = injection_tier_for_tool(tool)
-        if tier and tier in buckets:
-            buckets[tier].append(item)
-        elif tier:
-            untiered.append(item)
-        else:
-            untiered.append(item)
+        buckets[tier].append(item)
 
     blocks: list[str] = []
     for tier in TIER_GROUP_ORDER:
         items = buckets[tier]
         if items:
             blocks.append(_format_tier_group(tier, items))
-    blocks.extend(untiered)
     return "\n".join(blocks)
 
 
@@ -195,12 +187,8 @@ def format_tool_item(
     if include_tool_description:
         description = str(tool.get("description", "") or "").strip()
     schema = _tool_input_schema(tool)
-    tier_attr = injection_tier_for_tool(tool)
-    needs_definitions = tier_attr == "tx"
     lines = [_tool_open_tag(name, description)]
-    if needs_definitions:
-        lines.append(format_get_tool_definitions_hint(name))
-    elif schema:
+    if schema:
         lines.append(minimize_json_single_quotes({"input_schema": schema}))
     if examples_block := _format_examples_block(tool):
         lines.append(examples_block)

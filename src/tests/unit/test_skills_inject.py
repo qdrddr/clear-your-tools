@@ -19,6 +19,7 @@ def _match(
     *,
     name: str | None = "create-hook",
     markdown: str = _FULL_MARKDOWN,
+    injection_tier: str = "t3",
 ) -> MatchedSkill:
     return MatchedSkill(
         doc_id="create-hook",
@@ -27,6 +28,7 @@ def _match(
         name=name,
         score=1.0,
         token_count=10,
+        injection_tier=injection_tier,
     )
 
 

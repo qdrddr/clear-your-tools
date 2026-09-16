@@ -88,10 +88,13 @@ def _skill_open_tag(
 
 
 def injection_tier_for_skill(match: MatchedSkill) -> str | None:
-    """Resolve injection tier label (t0-t4) for grouping — not emitted on ``<skill>`` tags."""
+    """Return ``injection_tier`` (t0-t4) stamped by the tier manager for grouping."""
     tier = match.injection_tier
-    if isinstance(tier, str) and tier.strip():
-        return tier.strip().lower()
+    if not isinstance(tier, str) or not tier.strip():
+        return None
+    label = tier.strip().lower()
+    if label in TIER_GROUP_ORDER:
+        return label
     return None
 
 
@@ -101,34 +104,31 @@ def format_skills_grouped_by_tier(
     full_flags: dict[str, bool] | None = None,
     format_item: Callable[..., str] | None = None,
 ) -> str:
-    """Format skills wrapped in ``<tier_tN>`` groups; tier-free skills append unwrapped."""
+    """Format skills wrapped in ``<tier_tN>`` groups (t0-t4 only; skip skills without a tier)."""
     from cyt.injection.session_log_build import skill_item_key
 
     render = format_item or format_skill_item
     buckets: OrderedDict[str, list[str]] = OrderedDict(
         (tier, []) for tier in TIER_GROUP_ORDER
     )
-    untiered: list[str] = []
 
     for match in matches:
+        tier = injection_tier_for_skill(match)
+        if tier is None:
+            continue
         command = _resolve_skill_command(match)
         key = skill_item_key(match, command=command)
         full = bool(full_flags.get(key)) if full_flags else False
         item = render(match, full=full)
         if not item:
             continue
-        tier = injection_tier_for_skill(match)
-        if tier and tier in buckets:
-            buckets[tier].append(item)
-        else:
-            untiered.append(item)
+        buckets[tier].append(item)
 
     blocks: list[str] = []
     for tier in TIER_GROUP_ORDER:
         items = buckets[tier]
         if items:
             blocks.append(_format_tier_group(tier, items))
-    blocks.extend(untiered)
     return "\n".join(blocks)
 
 

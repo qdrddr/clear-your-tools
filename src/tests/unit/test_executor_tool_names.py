@@ -82,7 +82,7 @@ def test_format_tool_item_omits_empty_input_schema() -> None:
     assert "\n{'input_schema':{}}\n" not in item
 
 
-def test_format_tool_item_t2_without_required_uses_tx_tier() -> None:
+def test_format_tool_item_t2_without_required_stays_t2() -> None:
     from cyt.tools.inject import format_tools_grouped_by_tier
 
     tool = {
@@ -93,10 +93,11 @@ def test_format_tool_item_t2_without_required_uses_tx_tier() -> None:
     }
     item = format_tool_item(tool)
     assert "tier='" not in item
-    assert "use `get-tool-definitions` with `{tool_name='context-mode_ctx_doctor'}`" in item
-    assert "input_schema" not in item
+    assert "get-tool-definitions" not in item
+    assert "'properties':{}" in item
     block = format_tools_grouped_by_tier([tool])
-    assert "<tier_tx>" in block
+    assert "<tier_t2>" in block
+    assert "<tier_tx>" not in block
 
 
 def test_format_tool_item_t2_with_required_keeps_schema() -> None:

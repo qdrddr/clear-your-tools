@@ -38,7 +38,7 @@ _CYT_MCP_WORKSPACE_NOTE = (
     "Listed below are the pre-filtered tool definitions and relevant optional properties for this request. "
     "Use the listed definitions directly. Do not guess or invent argument property names — use only keys "
     "that appear in each tool's input_schema or in its <examples> block. "
-    "When a tool's input_schema is omitted (tier t1 or tx) or lacks the properties you need, call "
+    "When a tool's input_schema is omitted (tier t1) or lacks the properties you need, call "
     "`get-tool-definitions(tool-name)` for the full backend input_schema before invoking the tool. "
     "Do not use `get-tool-definitions` when the listed input_schema and examples already contain "
     "the properties you need. Also call it when:\n"
