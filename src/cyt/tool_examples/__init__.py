@@ -7,7 +7,6 @@ and workspace-origin MCP tools share the same project pool — injection scope
 """
 
 from cyt.tool_examples.config import examples_active, tool_examples_db_path
-from cyt.tool_examples.enrich import enrich_tools_with_examples
 from cyt.tool_examples.store import ToolExamplesStore
 
 __all__ = [
@@ -16,3 +15,11 @@ __all__ = [
     "examples_active",
     "tool_examples_db_path",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name == "enrich_tools_with_examples":
+        from cyt.tool_examples.enrich import enrich_tools_with_examples
+
+        return enrich_tools_with_examples
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

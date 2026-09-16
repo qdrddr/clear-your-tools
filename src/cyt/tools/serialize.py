@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from cyt.tool_examples.hash_utils import canonical_json
+
+def _canonical_json(value: object) -> str:
+    """Canonical JSON string (same contract as cyt.tool_examples.hash_utils.canonical_json)."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def canonicalize_json_value(value: object) -> object:
     """Return a deep copy with object keys in canonical JSON order."""
-    return json.loads(canonical_json(value))
+    return json.loads(_canonical_json(value))
 
 
 def minimize_json_single_quotes(value: object) -> str:
