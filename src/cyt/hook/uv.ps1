@@ -88,44 +88,6 @@ function Test-ScriptIsPackagedCytHook([string]$ScriptRoot) {
 
 
 
-function Add-HookWorkspaceArg {
-
-    param(
-
-        [string[]]$CytArgs,
-
-        [string]$WorkspaceRoot
-
-    )
-
-    if (-not $WorkspaceRoot) {
-
-        return $CytArgs
-
-    }
-
-    if ($CytArgs.Count -lt 2 -or $CytArgs[0] -ne 'hook') {
-
-        return $CytArgs
-
-    }
-
-    for ($i = 0; $i -lt $CytArgs.Count; $i++) {
-
-        if ($CytArgs[$i] -eq '--workspace') {
-
-            return $CytArgs
-
-        }
-
-    }
-
-    return @($CytArgs + @('--workspace', $WorkspaceRoot))
-
-}
-
-
-
 function Read-CytInvocationSidecar {
 
     $path = Join-Path $PSScriptRoot 'cyt-invocation.json'
@@ -288,10 +250,6 @@ if ($shellWorkspace) {
 
 
 
-$cytArgs = Add-HookWorkspaceArg -CytArgs $Args -WorkspaceRoot $shellWorkspace
-
-
-
 $terminalWorkspace = $env:CYT_WORKSPACE
 
 if ($terminalWorkspace -and -not ($terminalWorkspace -match '^\$\{.+}$')) {
@@ -326,7 +284,7 @@ if ($terminalWorkspace -and -not ($terminalWorkspace -match '^\$\{.+}$')) {
 
             "vs shell CYT_SHELL_WORKSPACE=$shellWorkspace. " +
 
-            "Use --workspace to override or align .vscode/settings.json CYT_WORKSPACE."
+            "Set CYT_SHELL_WORKSPACE to override or align .vscode/settings.json CYT_WORKSPACE."
 
         )
 
@@ -338,6 +296,6 @@ if ($terminalWorkspace -and -not ($terminalWorkspace -match '^\$\{.+}$')) {
 
 
 
-Invoke-CytViaUv -CytArgs $cytArgs
+Invoke-CytViaUv -CytArgs $Args
 
 

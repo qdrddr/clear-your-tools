@@ -35,23 +35,6 @@ script_is_packaged_cyt_hook() {
   esac
 }
 
-append_hook_workspace_args() {
-  local workspace="$1"
-  shift
-  local -a cyt_args=("$@")
-  if [[ -z "${workspace}" || ${#cyt_args[@]} -lt 2 || "${cyt_args[0]}" != "hook" ]]; then
-    printf '%s\n' "${cyt_args[@]}"
-    return
-  fi
-  for arg in "${cyt_args[@]}"; do
-    if [[ "${arg}" == "--workspace" ]]; then
-      printf '%s\n' "${cyt_args[@]}"
-      return
-    fi
-  done
-  printf '%s\n' "${cyt_args[@]}" "--workspace" "${workspace}"
-}
-
 read_cyt_invocation_sidecar() {
   local sidecar="${1}/cyt-invocation.json"
   if [[ ! -f "${sidecar}" ]]; then
@@ -129,7 +112,6 @@ if [[ -n "${shell_workspace}" ]]; then
 fi
 
 terminal_workspace="${CYT_WORKSPACE:-}"
-mapfile -t cyt_args < <(append_hook_workspace_args "${shell_workspace}" "$@")
 
 if [[ -n "${terminal_workspace}" && "${terminal_workspace}" != \$\{*\} ]]; then
   if [[ "${terminal_workspace}" == ~* || "${terminal_workspace}" == . || "${terminal_workspace}" == .. || "${terminal_workspace}" == ./* || "${terminal_workspace}" == ../* ]]; then
@@ -138,9 +120,9 @@ if [[ -n "${terminal_workspace}" && "${terminal_workspace}" != \$\{*\} ]]; then
   fi
   terminal_resolved="$(resolve_absolute_path "${terminal_workspace}")"
   if [[ -n "${shell_workspace}" && "${terminal_resolved}" != "${shell_workspace}" ]]; then
-    echo "CYT workspace conflict: terminal CYT_WORKSPACE=${terminal_resolved} vs shell CYT_SHELL_WORKSPACE=${shell_workspace}. Use --workspace to override or align .vscode/settings.json CYT_WORKSPACE." >&2
+    echo "CYT workspace conflict: terminal CYT_WORKSPACE=${terminal_resolved} vs shell CYT_SHELL_WORKSPACE=${shell_workspace}. Set CYT_SHELL_WORKSPACE to override or align .vscode/settings.json CYT_WORKSPACE." >&2
     exit 1
   fi
 fi
 
-invoke_cyt_via_uv "${cyt_args[@]}"
+invoke_cyt_via_uv "$@"
