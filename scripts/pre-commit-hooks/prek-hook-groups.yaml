@@ -4,6 +4,9 @@
 # Integration tests (src/tests/integration) are manual-only:
 #   uv run pytest -m integration --run-integration
 # prek-loop.sh unsets CYT_RUN_INTEGRATION_TESTS; do not add integration pytest hooks here.
+# MCP restore/uninstall unit tests use autouse isolation in src/tests/conftest.py
+# (_isolate_agent_hook_paths + _isolate_cyt_mcp_user_config) so pre-commit never
+# touches ~/.cursor/mcp.json, ~/.config/cyt/mcp/, or workspace .agents/cyt/config/mcp/.
 #
 # Hooks may appear in more than one group. The `suggestion` hook is omitted
 # intentionally (informational only).

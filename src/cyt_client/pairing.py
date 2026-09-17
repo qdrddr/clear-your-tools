@@ -381,6 +381,14 @@ def _repair_user_mcp_pairing(
     verbose: bool,
     runtime_repo: Path | None,
 ) -> None:
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.tools.cyt_mcp_setup import has_migratable_mcp_backends
+
+    use_dev, _ = _resolve_dev_context(agent, runtime_repo=runtime_repo)
+    scope = CytInstallScope(workspace_root=workspace_root)
+    if not use_dev and not has_migratable_mcp_backends(agent, scope):
+        return
+
     mcp_path = _AGENT_MCP_PATHS.get(agent)
     if mcp_path is None:
         return

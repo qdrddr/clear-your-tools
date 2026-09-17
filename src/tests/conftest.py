@@ -176,27 +176,50 @@ def _isolate_cyt_mcp_user_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 @pytest.fixture(autouse=True)
 def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep hook install/uninstall tests from mutating developer agent config files."""
+    """Keep hook/MCP install, restore, and uninstall tests off real agent config files."""
+    import cyt.hook.install_scope as install_scope
     import cyt.hook.setup_wizard as hook_setup
     import cyt_client.pairing as cyt_client_pairing
 
-    root = tmp_path / "isolated-agent-hooks"
-    isolated_cursor = root / "cursor" / "hooks.json"
-    isolated_claude = root / "claude" / "settings.json"
-    isolated_codex = root / "codex" / "hooks.json"
-    for parent in (isolated_cursor, isolated_claude, isolated_codex):
+    root = tmp_path / "isolated-agent-config"
+    isolated_cursor_hooks = root / "cursor" / "hooks.json"
+    isolated_claude_settings = root / "claude" / "settings.json"
+    isolated_codex_hooks = root / "codex" / "hooks.json"
+    isolated_cursor_mcp = root / "cursor" / "mcp.json"
+    isolated_claude_mcp = root / "claude" / "claude.json"
+    isolated_codex_mcp = root / "codex" / "config.toml"
+    for parent in (
+        isolated_cursor_hooks,
+        isolated_claude_settings,
+        isolated_codex_hooks,
+        isolated_cursor_mcp,
+        isolated_claude_mcp,
+        isolated_codex_mcp,
+    ):
         parent.parent.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", isolated_cursor)
-    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", isolated_claude)
-    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", isolated_codex)
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", isolated_cursor_hooks)
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", isolated_claude_settings)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", isolated_codex_hooks)
+    monkeypatch.setitem(install_scope.GLOBAL_AGENT_MCP_PATHS, "cursor", isolated_cursor_mcp)
+    monkeypatch.setitem(install_scope.GLOBAL_AGENT_MCP_PATHS, "claude", isolated_claude_mcp)
+    monkeypatch.setitem(install_scope.GLOBAL_AGENT_MCP_PATHS, "codex", isolated_codex_mcp)
     monkeypatch.setattr(
         cyt_client_pairing,
         "_AGENT_HOOK_PATHS",
         {
-            "cursor": isolated_cursor,
-            "claude": isolated_claude,
-            "codex": isolated_codex,
+            "cursor": isolated_cursor_hooks,
+            "claude": isolated_claude_settings,
+            "codex": isolated_codex_hooks,
+        },
+    )
+    monkeypatch.setattr(
+        cyt_client_pairing,
+        "_AGENT_MCP_PATHS",
+        {
+            "cursor": isolated_cursor_mcp,
+            "claude": isolated_claude_mcp,
+            "codex": isolated_codex_mcp,
         },
     )
 

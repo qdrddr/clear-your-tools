@@ -2226,7 +2226,12 @@ def _apply_prevent_hallucinations_config(
     agents: list[HookAgentName],
 ) -> dict[str, Any]:
     from cyt.config import save_user_config, sync_config_in_place
-    from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent, write_mcp_aggregator_yaml
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.tools.cyt_mcp_setup import (
+        has_migratable_mcp_backends,
+        setup_cyt_mcp_for_agent,
+        write_mcp_aggregator_yaml,
+    )
 
     inject_map: dict[str, str] = {
         "cursor": "hook",
@@ -2251,6 +2256,7 @@ def _apply_prevent_hallucinations_config(
     sync_config_in_place(config, config_path)
 
     invocation = detect_hook_cli_invocation()
+    scope = CytInstallScope.from_cwd()
     if invocation.is_dev and invocation.repo_root is not None:
         print(
             f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
@@ -2260,6 +2266,12 @@ def _apply_prevent_hallucinations_config(
     for agent in agents:
         if inject_map.get(agent) != "hook":
             write_mcp_aggregator_yaml(agent, transport="stdio", verify_only=True)
+            continue
+        if not invocation.is_dev and not has_migratable_mcp_backends(agent, scope):
+            print(
+                f"No MCP backend servers found; skipping cyt-mcp injection for {agent}.",
+                file=sys.stderr,
+            )
             continue
         migrate_backends = _prompt_prevent_hallucinations_mcp_migration(agent)
         setup_cyt_mcp_for_agent(
@@ -2603,9 +2615,9 @@ def run_hook_uninstall_workspace(
     agents: list[HookAgentName] | None = None,
     workspace_root: Path | None = None,
 ) -> None:
-    """Remove workspace-scoped cyt-mcp artifacts from the current or given project."""
+    """Restore workspace-scoped agent MCP configs from cyt backend defs."""
     from cyt.hook.install_scope import CytInstallScope
-    from cyt.tools.cyt_mcp_setup import remove_workspace_cyt_mcp_for_agent
+    from cyt.tools.cyt_mcp_setup import restore_workspace_cyt_mcp_for_agent
 
     selected_agents = _resolve_hook_setup_agents(agents)
     scope = CytInstallScope(
@@ -2618,7 +2630,7 @@ def run_hook_uninstall_workspace(
     print("CYT workspace MCP uninstall\n")
     any_changed = False
     for agent in selected_agents:
-        if remove_workspace_cyt_mcp_for_agent(agent, scope):
+        if restore_workspace_cyt_mcp_for_agent(agent, scope):
             any_changed = True
 
     if any_changed:
@@ -2628,8 +2640,15 @@ def run_hook_uninstall_workspace(
 
 
 def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
-    """Remove CYT agent hooks from Claude, Codex, and/or Cursor config files."""
+    """Remove CYT agent hooks and restore migrated MCP configs."""
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.tools.cyt_mcp_setup import (
+        restore_user_cyt_mcp_for_agent,
+        restore_workspace_cyt_mcp_for_agent,
+    )
+
     selected_agents = _resolve_hook_setup_agents(agents)
+    scope = CytInstallScope.from_cwd()
 
     if len(selected_agents) == 1:
         print(f"CYT hook uninstall ({selected_agents[0]})\n")
@@ -2642,16 +2661,24 @@ def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
         path = _agent_hook_path(agent)
         if not path.is_file():
             print(f"{label}: skipped ({path} not found)")
-            continue
-        preserve_empty_hooks_object = agent == "cursor"
-        if uninstall_hooks_from_file(
-            path,
-            preserve_empty_hooks_object=preserve_empty_hooks_object,
-        ):
-            print(f"{label}: removed CYT hook from {path}")
-            any_changed = True
         else:
-            print(f"{label}: no CYT hook in {path}")
+            preserve_empty_hooks_object = agent == "cursor"
+            if uninstall_hooks_from_file(
+                path,
+                preserve_empty_hooks_object=preserve_empty_hooks_object,
+            ):
+                print(f"{label}: removed CYT hook from {path}")
+                any_changed = True
+            else:
+                print(f"{label}: no CYT hook in {path}")
+
+        if restore_user_cyt_mcp_for_agent(agent, scope):
+            print(f"{label}: restored user MCP config")
+            any_changed = True
+
+        if scope.has_workspace and restore_workspace_cyt_mcp_for_agent(agent, scope):
+            print(f"{label}: restored workspace MCP config")
+            any_changed = True
 
     if "cursor" in selected_agents:
         removed = remove_windows_hook_wrappers()
@@ -2659,6 +2686,6 @@ def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
             print(f"Cursor: removed {len(removed)} Windows hook wrapper(s)")
 
     if any_changed:
-        print("\nRestart your agent so hook changes take effect.")
+        print("\nRestart your agent so hook and MCP changes take effect.")
     else:
-        print("\nNo hook files were modified.")
+        print("\nNo hook or MCP files were modified.")

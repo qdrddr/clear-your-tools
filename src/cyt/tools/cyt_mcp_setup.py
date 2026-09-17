@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 import uuid
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,193 @@ def _extract_mcp_servers_from_json(path: Path) -> dict[str, Any]:
     return servers if isinstance(servers, dict) else {}
 
 
+def _extract_mcp_servers_from_codex_toml(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    servers = payload.get("mcp_servers")
+    return servers if isinstance(servers, dict) else {}
+
+
+def _extract_mcp_servers_from_agent_path(path: Path, agent: str) -> dict[str, Any]:
+    if (agent or "cursor").strip() == "codex":
+        return _extract_mcp_servers_from_codex_toml(path)
+    return _extract_mcp_servers_from_json(path)
+
+
+def _backend_servers_from_agent_path(path: Path, agent: str) -> dict[str, Any]:
+    return backend_mcp_servers(_extract_mcp_servers_from_agent_path(path, agent))
+
+
+def has_migratable_mcp_backends(agent: str, scope: CytInstallScope) -> bool:
+    """Return True when at least one non-cyt-mcp backend exists in cyt storage or agent MCP."""
+    agent = agent.strip() or "cursor"
+    defs_locations: list[Path] = [scope.user_server_defs_path(agent)]
+    workspace_defs = scope.resolve_workspace_server_defs_path(agent)
+    if workspace_defs is not None:
+        defs_locations.append(workspace_defs)
+    for path in defs_locations:
+        if backend_mcp_servers(_extract_mcp_servers_from_json(path)):
+            return True
+    agent_locations: list[Path] = [scope.global_agent_mcp_path(agent)]
+    workspace_mcp = scope.workspace_agent_mcp_path(agent)
+    if workspace_mcp is not None:
+        agent_locations.append(workspace_mcp)
+    for path in agent_locations:
+        if _backend_servers_from_agent_path(path, agent):
+            return True
+    return False
+
+
+def _strip_codex_mcp_server_sections(text: str, server_keys: frozenset[str]) -> tuple[str, bool]:
+    changed = False
+    for key in server_keys:
+        marker = f"[mcp_servers.{key}]"
+        if marker not in text:
+            continue
+        before, _, after = text.partition(marker)
+        next_section = after.find("\n[mcp_servers.")
+        if next_section >= 0:
+            text = before.rstrip() + after[next_section:]
+        else:
+            text = before.rstrip() + "\n"
+        changed = True
+    return text, changed
+
+
+def _codex_mcp_server_toml_block(server_key: str, spec: dict[str, Any]) -> str:
+    section = f"[mcp_servers.{server_key}]"
+    url = spec.get("url")
+    if isinstance(url, str) and url.strip():
+        return f'\n{section}\nurl = "{url.strip()}"\n'
+    command = str(spec.get("command", "")).strip()
+    args = spec.get("args")
+    if not isinstance(args, list):
+        args = []
+    lines = [f"\n{section}"]
+    if command:
+        lines.append(f'command = "{command}"')
+    if args:
+        lines.append(f"args = {json.dumps(args)}")
+    cwd = spec.get("cwd")
+    if isinstance(cwd, str) and cwd.strip():
+        lines.append(f'cwd = "{cwd.strip()}"')
+    env = spec.get("env")
+    if isinstance(env, dict) and env:
+        lines.append("env = {")
+        for key, value in env.items():
+            lines.append(f'  {json.dumps(str(key))} = {json.dumps(str(value))}')
+        lines.append("}")
+    enabled = spec.get("enabled")
+    if isinstance(enabled, bool):
+        lines.append(f"enabled = {'true' if enabled else 'false'}")
+    server_type = spec.get("type")
+    if isinstance(server_type, str) and server_type.strip():
+        lines.append(f'type = "{server_type.strip()}"')
+    return "\n".join(lines) + "\n"
+
+
+def _restore_json_mcp_backends(backends: dict[str, Any], target_path: Path) -> bool:
+    if target_path.is_file():
+        try:
+            raw = json.loads(target_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+    else:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    existing = raw.get("mcpServers")
+    if not isinstance(existing, dict):
+        existing = {}
+    cleaned, removed = _remove_cyt_mcp_frontend_keys(dict(existing))
+    merged = dict(cleaned)
+    changed = bool(removed)
+    for name, spec in backends.items():
+        if merged.get(name) != spec:
+            changed = True
+        merged[name] = spec
+    if not changed:
+        return False
+    raw["mcpServers"] = merged
+    _atomic_write_text(target_path, json.dumps(raw, indent=2) + "\n")
+    print(f"Restored MCP backends to {target_path}", file=sys.stderr)
+    return True
+
+
+def _restore_codex_mcp_backends(backends: dict[str, Any], target_path: Path) -> bool:
+    text = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
+    text, changed = _strip_codex_mcp_server_sections(text, CYT_MCP_FRONTEND_SERVER_KEYS)
+    for name, spec in backends.items():
+        if not isinstance(spec, dict):
+            continue
+        marker = f"[mcp_servers.{name}]"
+        if marker in text:
+            before, _, after = text.partition(marker)
+            next_section = after.find("\n[mcp_servers.")
+            if next_section >= 0:
+                text = before.rstrip() + after[next_section:]
+            else:
+                text = before.rstrip() + "\n"
+            changed = True
+        block = _codex_mcp_server_toml_block(name, spec)
+        if block.strip() not in text:
+            changed = True
+        text = text.rstrip() + block
+    if not changed:
+        return False
+    _atomic_write_text(target_path, text)
+    print(f"Restored MCP backends to {target_path}", file=sys.stderr)
+    return True
+
+
+def restore_agent_mcp_backends_from(
+    defs_path: Path,
+    target_path: Path,
+    *,
+    agent: str = "cursor",
+) -> bool:
+    """Merge backends from cyt defs into agent MCP config; strip cyt-mcp frontend keys."""
+    agent = agent.strip() or "cursor"
+    backends = backend_mcp_servers(_extract_mcp_servers_from_json(defs_path))
+    if agent == "codex":
+        return _restore_codex_mcp_backends(backends, target_path)
+    return _restore_json_mcp_backends(backends, target_path)
+
+
+def restore_user_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
+    """Restore user-scoped agent MCP from cyt backend defs and remove cyt-mcp frontend."""
+    agent = agent.strip() or "cursor"
+    defs_path = scope.user_server_defs_path(agent)
+    target_path = scope.global_agent_mcp_path(agent)
+    if defs_path.is_file():
+        return restore_agent_mcp_backends_from(defs_path, target_path, agent=agent)
+    if agent == "codex":
+        return _restore_codex_mcp_backends({}, target_path)
+    return _restore_json_mcp_backends({}, target_path)
+
+
+def restore_workspace_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
+    """Restore workspace agent MCP from cyt backend defs and remove cyt-mcp frontend."""
+    if not scope.has_workspace:
+        return False
+    agent = agent.strip() or "cursor"
+    target_path = scope.workspace_agent_mcp_path(agent)
+    if target_path is None:
+        return False
+    defs_path = scope.resolve_workspace_server_defs_path(agent)
+    if defs_path is not None and defs_path.is_file():
+        return restore_agent_mcp_backends_from(defs_path, target_path, agent=agent)
+    if agent == "codex":
+        return _restore_codex_mcp_backends({}, target_path)
+    return _restore_json_mcp_backends({}, target_path)
+
+
 def migrate_agent_backends_from(
     source_path: Path,
     target_path: Path,
@@ -109,7 +297,7 @@ def migrate_agent_backends_from(
     """Copy backend MCP servers from *source_path* into *target_path*."""
     from cyt.permissions.mcp_defs import disabled_server_names, import_disabled_servers_to_deny
 
-    servers = backend_mcp_servers(_extract_mcp_servers_from_json(source_path))
+    servers = _backend_servers_from_agent_path(source_path, agent)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     if not servers:
         if not target_path.is_file():
@@ -514,6 +702,9 @@ def setup_cyt_mcp_workspace_for_agent(
     if not scope.has_workspace:
         return
     agent = agent.strip() or "cursor"
+    resolved = invocation or detect_hook_cli_invocation()
+    if not resolved.is_dev and not has_migratable_mcp_backends(agent, scope):
+        return
 
     cyt_dir = scope.workspace_cyt_dir(agent)
     mcp_path = scope.workspace_agent_mcp_path(agent)
@@ -577,6 +768,15 @@ def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool
     mcp_path = scope.workspace_agent_mcp_path(agent)
     if mcp_path is None or not mcp_path.is_file():
         return False
+    agent = agent.strip() or "cursor"
+    if agent == "codex":
+        text = mcp_path.read_text(encoding="utf-8")
+        text, changed = _strip_codex_mcp_server_sections(text, CYT_MCP_FRONTEND_SERVER_KEYS)
+        if not changed:
+            return False
+        _atomic_write_text(mcp_path, text)
+        print(f"Removed cyt-mcp frontend from {mcp_path}", file=sys.stderr)
+        return True
     try:
         raw = json.loads(mcp_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -607,6 +807,8 @@ def setup_cyt_mcp_for_agent(
 ) -> None:
     resolved = invocation or detect_hook_cli_invocation()
     install_scope = scope or CytInstallScope.from_cwd()
+    if not resolved.is_dev and not has_migratable_mcp_backends(agent, install_scope):
+        return
 
     if migrate_backends:
         backends = migrate_agent_backends(agent)
@@ -643,23 +845,5 @@ def setup_cyt_mcp_for_agent(
 
 
 def remove_workspace_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
-    """Remove workspace cyt-mcp backend artifacts; return True when anything changed."""
-    if not scope.has_workspace:
-        return False
-    changed = remove_project_cyt_mcp_for_agent(agent, scope)
-
-    defs_path = scope.workspace_all_agents_cyt_mcp_defs_path(agent)
-    if defs_path is not None and defs_path.is_file():
-        defs_path.unlink()
-        changed = True
-        print(f"Removed workspace MCP server defs {defs_path}", file=sys.stderr)
-
-    cyt_dir = scope.workspace_cyt_dir(agent)
-    if cyt_dir is not None and cyt_dir.is_dir():
-        import shutil
-
-        shutil.rmtree(cyt_dir)
-        changed = True
-        print(f"Removed legacy workspace CYT directory {cyt_dir}", file=sys.stderr)
-
-    return changed
+    """Restore workspace agent MCP from cyt backend defs; return True when anything changed."""
+    return restore_workspace_cyt_mcp_for_agent(agent, scope)

@@ -391,12 +391,12 @@ def _build_parser() -> argparse.ArgumentParser:
     hook_uninstall_parent.add_argument(
         "--uninstall",
         action="store_true",
-        help="Remove CYT hooks from agent config file(s)",
+        help="Remove CYT hooks and restore migrated MCP configs (user and workspace)",
     )
     hook_uninstall_parent.add_argument(
         "--uninstall-workspace",
         action="store_true",
-        help="Remove workspace-scoped cyt-mcp from the current project only",
+        help="Restore workspace-scoped agent MCP configs from cyt backend defs only",
     )
 
     hook_parser = subparsers.add_parser(

@@ -217,8 +217,10 @@ def prompt_tools_hook_config(
         cyt_mcp_overlay: dict[str, Any] | None = None
         if "cyt_mcp" in selected:
             from cyt.hook.cli_invocation import detect_hook_cli_invocation
+            from cyt.hook.install_scope import CytInstallScope
             from cyt.tools.cyt_mcp_setup import (
                 cyt_mcp_hook_settings_overlay,
+                has_migratable_mcp_backends,
                 prompt_cyt_mcp_transport,
                 setup_cyt_mcp_for_agent,
                 write_agent_cyt_mcp_entry,
@@ -227,36 +229,46 @@ def prompt_tools_hook_config(
             launch_agent = (
                 (agent or "").strip() or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
             )
-            transport = prompt_cyt_mcp_transport()
-            cyt_mcp_overlay = cyt_mcp_hook_settings_overlay(
-                transport=transport,
-                agent=launch_agent,
-            )
             invocation = detect_hook_cli_invocation()
-            if invocation.is_dev and invocation.repo_root is not None:
+            scope = CytInstallScope.from_cwd()
+            if not invocation.is_dev and not has_migratable_mcp_backends(launch_agent, scope):
                 print(
-                    f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
+                    "No MCP backend servers found; skipping cyt-mcp injection.",
                     file=sys.stderr,
                 )
-                write_agent_cyt_mcp_entry(
-                    launch_agent,
-                    invocation=invocation,
+            else:
+                transport = prompt_cyt_mcp_transport()
+                cyt_mcp_overlay = cyt_mcp_hook_settings_overlay(
                     transport=transport,
+                    agent=launch_agent,
                 )
-            print(f"\n--- Migrate ({launch_agent})'s MCP config ---")
-            if _prompt_yes_no("Migrate agent MCP config to cyt-mcp aggregator?", default_yes=True):
-                setup_cyt_mcp_for_agent(
-                    launch_agent,
-                    invocation=invocation,
-                    transport=transport,
-                    verify_only=False,
-                )
-            elif not (invocation.is_dev and invocation.repo_root is not None):
-                write_agent_cyt_mcp_entry(
-                    launch_agent,
-                    invocation=invocation,
-                    transport=transport,
-                )
+                if invocation.is_dev and invocation.repo_root is not None:
+                    print(
+                        f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
+                        file=sys.stderr,
+                    )
+                    write_agent_cyt_mcp_entry(
+                        launch_agent,
+                        invocation=invocation,
+                        transport=transport,
+                    )
+                print(f"\n--- Migrate ({launch_agent})'s MCP config ---")
+                if _prompt_yes_no(
+                    "Migrate agent MCP config to cyt-mcp aggregator?",
+                    default_yes=True,
+                ):
+                    setup_cyt_mcp_for_agent(
+                        launch_agent,
+                        invocation=invocation,
+                        transport=transport,
+                        verify_only=False,
+                    )
+                elif not (invocation.is_dev and invocation.repo_root is not None):
+                    write_agent_cyt_mcp_entry(
+                        launch_agent,
+                        invocation=invocation,
+                        transport=transport,
+                    )
         tools_from = selected
         executor_default, definitions_default, cloudflare_default = _prompt_hook_source_paths(
             selected,

@@ -1227,6 +1227,77 @@ def test_hook_uninstall_cli_routing_for_agents(
     assert called["agents"] == expected_agents
 
 
+def test_run_hook_uninstall_restores_mcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook.install_scope import CytInstallScope
+
+    home = tmp_path / "home"
+    home.mkdir()
+    user_mcp = home / ".cursor" / "mcp.json"
+    user_mcp.parent.mkdir(parents=True)
+    user_mcp.write_text(
+        json.dumps({"mcpServers": {CYT_MCP_SERVER_KEY: {"command": "cyt-mcp"}}}),
+        encoding="utf-8",
+    )
+    defs_path = home / "cyt" / "mcp" / "cursor.json"
+    defs_path.parent.mkdir(parents=True)
+    defs_path.write_text(
+        json.dumps({"mcpServers": {"backend-a": {"command": "echo", "args": ["a"]}}}),
+        encoding="utf-8",
+    )
+    cursor_hooks = home / ".cursor" / "hooks.json"
+    entries = hook_setup.cursor_hook_entries(agent="cursor")
+    hook_setup.upsert_cursor_hooks_into_file(
+        cursor_hooks,
+        before_submit_entry=entries["before_submit"],
+        session_start_entries=entries["session_start"],
+        session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
+    )
+
+    import cyt.hook.install_scope as install_scope
+
+    monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
+    monkeypatch.setitem(
+        install_scope.GLOBAL_AGENT_MCP_PATHS,
+        "cursor",
+        Path(str(user_mcp)),
+    )
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_hooks)
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", home / "missing" / "settings.json")
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", home / "missing" / "hooks.json")
+    monkeypatch.setattr(
+        install_scope.CytInstallScope,
+        "from_cwd",
+        classmethod(lambda cls, *, cwd=None: CytInstallScope(workspace_root=tmp_path.resolve())),
+    )
+    (tmp_path / ".git").mkdir()
+    project_mcp = tmp_path / ".cursor" / "mcp.json"
+    project_mcp.parent.mkdir(parents=True)
+    workspace_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    workspace_defs.parent.mkdir(parents=True)
+    workspace_defs.write_text(
+        json.dumps({"mcpServers": {"backend-b": {"command": "echo", "args": ["b"]}}}),
+        encoding="utf-8",
+    )
+    project_mcp.write_text(
+        json.dumps({"mcpServers": {CYT_MCP_SERVER_KEY: {"command": "cyt-mcp"}}}),
+        encoding="utf-8",
+    )
+
+    hook_setup.run_hook_uninstall(agents=["cursor"])
+
+    user_payload = json.loads(user_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_SERVER_KEY not in user_payload["mcpServers"]
+    assert user_payload["mcpServers"]["backend-a"]["command"] == "echo"
+    project_payload = json.loads(project_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_SERVER_KEY not in project_payload["mcpServers"]
+    assert project_payload["mcpServers"]["backend-b"]["command"] == "echo"
+
+
 def test_run_hook_uninstall_only_removes_selected_agent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1645,6 +1716,12 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
     config_path = tmp_path / "config.yaml"
     claude_path.parent.mkdir(parents=True)
     claude_path.write_text("{}\n", encoding="utf-8")
+    claude_mcp = tmp_path / "isolated-agent-config" / "claude" / "claude.json"
+    claude_mcp.parent.mkdir(parents=True, exist_ok=True)
+    claude_mcp.write_text(
+        json.dumps({"mcpServers": {"backend-a": {"command": "echo", "args": ["a"]}}}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
     monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", tmp_path / "missing" / "hooks.json")
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", tmp_path / "missing" / "hooks.json")
