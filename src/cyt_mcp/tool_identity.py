@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,41 @@ class CytMcpToolIdentity:
 
 def wire_name_for(server_key: str, backend_tool_name: str) -> str:
     return f"{server_key}_{backend_tool_name}"
+
+
+def server_key_candidates_from_wire_name(wire_name: str) -> list[str]:
+    """Derive possible MCP server keys from a catalog wire name (longest prefix first)."""
+    name = str(wire_name or "").strip()
+    if "_" not in name:
+        return []
+    parts = name.split("_")
+    return ["_".join(parts[:index]) for index in range(1, len(parts))]
+
+
+def collect_server_keys_from_tools(tools: Sequence[Any]) -> list[str]:
+    """Collect explicit and wire-name-derived server keys for identity enrichment."""
+    keys: set[str] = set()
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        server_key = item.get("server_key")
+        if isinstance(server_key, str) and server_key.strip():
+            keys.add(server_key.strip())
+        wire = str(item.get("name") or "").strip()
+        keys.update(server_key_candidates_from_wire_name(wire))
+    return sorted(keys, key=len, reverse=True)
+
+
+def server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
+    """Server keys for ``enrich_tool_identity`` (configured keys + wire-name hints)."""
+    keys = set(collect_server_keys_from_tools(tools))
+    try:
+        from cyt_mcp.config import load_known_mcp_server_keys
+
+        keys.update(load_known_mcp_server_keys())
+    except Exception:
+        pass
+    return sorted(keys, key=len, reverse=True)
 
 
 def split_wire_name(wire_name: str, server_keys: list[str]) -> CytMcpToolIdentity | None:

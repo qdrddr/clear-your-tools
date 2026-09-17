@@ -215,25 +215,8 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
     return normalized
 
 
-def _server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
-    keys: set[str] = set()
-    for item in tools:
-        if not isinstance(item, dict):
-            continue
-        server_key = item.get("server_key")
-        if isinstance(server_key, str) and server_key.strip():
-            keys.add(server_key.strip())
-    try:
-        from cyt_mcp.config import load_known_mcp_server_keys
-
-        keys.update(load_known_mcp_server_keys())
-    except Exception:
-        pass
-    return sorted(keys, key=len, reverse=True)
-
-
 def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
-    from cyt_mcp.tool_identity import enrich_tool_identity
+    from cyt_mcp.tool_identity import enrich_tool_identity, server_keys_for_enrichment
 
     normalized: list[dict[str, Any]] = []
     for item in tools:
@@ -244,7 +227,7 @@ def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
             normalized.append(tool)
     if not normalized:
         return []
-    server_keys = _server_keys_for_enrichment(normalized)
+    server_keys = server_keys_for_enrichment(normalized)
     return [enrich_tool_identity(tool, server_keys) for tool in normalized]
 
 
@@ -427,11 +410,14 @@ def _load_catalog_from_disk(
     tools = envelope.get("tools")
     if not isinstance(tools, list):
         return False
-    content_hash = str(envelope.get("catalog_content_hash") or raw_catalog_content_hash(tools))
+    normalized = _normalize_tools_list(tools)
+    content_hash = str(
+        envelope.get("catalog_content_hash") or raw_catalog_content_hash(normalized)
+    )
     state = _get_state(cache_key)
     _apply_catalog_to_state(
         state,
-        copy.deepcopy(tools),
+        copy.deepcopy(normalized),
         content_hash=content_hash,
         config=config,
     )
@@ -439,7 +425,7 @@ def _load_catalog_from_disk(
         "cyt-mcp catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d",
         cache_key.slug,
         content_hash[:12],
-        len(tools),
+        len(normalized),
     )
     return True
 

@@ -8,6 +8,7 @@ from cyt_mcp.tool_identity import (
     enrich_tool_identity,
     is_canonical_schema_identity,
     resolve_backend_identity,
+    server_keys_for_enrichment,
     split_wire_name,
     wire_name_for,
 )
@@ -103,3 +104,22 @@ def test_is_canonical_schema_identity_rejects_partial_split() -> None:
     server_keys = ["codebase-memory", "semble", "fff"]
     assert not is_canonical_schema_identity("search", "graph", server_keys)
     assert is_canonical_schema_identity("codebase-memory", "search_graph", server_keys)
+
+
+def test_server_keys_for_enrichment_derives_prefix_from_wire_names() -> None:
+    tools = [{"name": "hedl_batch"}, {"name": "context-mode_ctx_search"}]
+    keys = server_keys_for_enrichment(tools)
+    assert "hedl" in keys
+    assert "context-mode" in keys
+
+
+def test_enrich_hedl_batch_without_configured_server_keys() -> None:
+    tool = {
+        "name": "hedl_batch",
+        "description": "HEDL batch tool (single-underscore catalog name; backend tool is batch)",
+        "input_schema": {"type": "object", "properties": {}},
+    }
+    enriched = enrich_tool_identity(tool, server_keys_for_enrichment([tool]))
+    assert enriched["server_key"] == "hedl"
+    assert enriched["tool_name"] == "batch"
+    assert enriched["name"] == "hedl_batch"
