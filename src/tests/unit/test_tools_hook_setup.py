@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from cyt.config import load_config
+from cyt.testing.inject_via_maps import apply_inject_via_overlay
 from cyt.tools import hook_setup
 from cyt.tools.hook_setup import prompt_tools_hook_config
 
@@ -15,7 +16,10 @@ def test_prompt_tools_hook_config_preserves_multi_source_list_when_not_hook_mode
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
+    apply_inject_via_overlay(
+        config,
+        {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+    )
     config["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
 
     overlay = prompt_tools_hook_config(config, context="setup", inject_mode="proxy")
@@ -27,7 +31,10 @@ def test_prompt_tools_hook_config_preserves_single_source_as_list_when_not_hook_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
+    apply_inject_via_overlay(
+        config,
+        {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+    )
     config["tools"]["hook"]["tools_from"] = ["mcpc"]
 
     overlay = prompt_tools_hook_config(config, context="setup", inject_mode="proxy")
@@ -78,7 +85,10 @@ def test_ensure_tools_hook_file_interactive_prompts_for_missing_cloudflare_url(
 
     config_path = tmp_path / "config.yaml"
     config = load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
+    apply_inject_via_overlay(
+        config,
+        {"cursor": "hook", "claude": "hook", "codex": "hook"},
+    )
     config["tools"]["hook"]["tools_from"] = ["cloudflare"]
     config["tools"]["hook"]["cloudflare_url"] = ""
 

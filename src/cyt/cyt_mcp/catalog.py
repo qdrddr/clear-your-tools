@@ -215,7 +215,26 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
     return normalized
 
 
+def _server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
+    keys: set[str] = set()
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        server_key = item.get("server_key")
+        if isinstance(server_key, str) and server_key.strip():
+            keys.add(server_key.strip())
+    try:
+        from cyt_mcp.config import load_known_mcp_server_keys
+
+        keys.update(load_known_mcp_server_keys())
+    except Exception:
+        pass
+    return sorted(keys, key=len, reverse=True)
+
+
 def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
+    from cyt_mcp.tool_identity import enrich_tool_identity
+
     normalized: list[dict[str, Any]] = []
     for item in tools:
         if not isinstance(item, dict):
@@ -223,7 +242,10 @@ def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
         tool = _normalize_tool(item)
         if tool is not None:
             normalized.append(tool)
-    return normalized
+    if not normalized:
+        return []
+    server_keys = _server_keys_for_enrichment(normalized)
+    return [enrich_tool_identity(tool, server_keys) for tool in normalized]
 
 
 def _filter_tools_by_permissions(

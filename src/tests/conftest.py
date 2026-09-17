@@ -279,6 +279,7 @@ def _isolate_tier_maintenance_marker(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
     from cyt.cloudflare.catalog import clear_cloudflare_catalog_cache
+    from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
     from cyt.executor.http import clear_executor_catalog_cache
     from cyt.mcpc.catalog import clear_mcpc_catalog_cache
     from cyt.tools.catalog_cache import clear_decomposed_catalog_cache
@@ -311,6 +312,7 @@ def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
 
     def _clear_all_hook_catalog_state() -> None:
         clear_cloudflare_catalog_cache()
+        clear_cyt_mcp_catalog_cache()
         clear_executor_catalog_cache()
         clear_mcpc_catalog_cache()
         clear_master_catalog_cache()

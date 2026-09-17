@@ -629,6 +629,7 @@ def _build_registry_from_inline_sources(
     inline_sources: list[dict[str, str]],
     *,
     original_by_hash: dict[str, Path],
+    allow_ephemeral_paths: bool = False,
 ) -> list[SkillEntryRef]:
     """Build a skills registry from inline ``{path, content, content_sha256}`` sources."""
     if not inline_sources:
@@ -657,7 +658,7 @@ def _build_registry_from_inline_sources(
             continue
         from cyt.tiers.adapters.skills import is_ephemeral_skill_path
 
-        if is_ephemeral_skill_path(str(original_path)):
+        if not allow_ephemeral_paths and is_ephemeral_skill_path(str(original_path)):
             continue
         entry = _entry_from_rust_ref(
             ref,
@@ -699,10 +700,6 @@ def _build_registry_from_client_skills(
 
     for skill in client_skills:
         original_path = Path(skill["path"]).expanduser()
-        from cyt.tiers.adapters.skills import is_ephemeral_skill_path
-
-        if is_ephemeral_skill_path(str(original_path)):
-            continue
         content = skill["content"]
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if content_hash in seen_content:
@@ -722,6 +719,7 @@ def _build_registry_from_client_skills(
         cfg,
         inline_sources,
         original_by_hash=original_by_hash,
+        allow_ephemeral_paths=True,
     )
 
 
