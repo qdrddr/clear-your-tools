@@ -335,6 +335,22 @@ class TierStore:
         ).fetchone()
         return row is not None
 
+    def list_projects(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT project_id, root_path, created_ms, last_seen_ms "
+                "FROM tier_project ORDER BY last_seen_ms DESC",
+            ).fetchall()
+        return [
+            {
+                "project_id": int(project_id),
+                "root_path": str(root_path),
+                "created_ms": int(created_ms),
+                "last_seen_ms": int(last_seen_ms),
+            }
+            for project_id, root_path, created_ms, last_seen_ms in rows
+        ]
+
     def get_or_create_project(self, root_path: str) -> int:
         canonical = str(Path(root_path).expanduser().resolve())
         now_ms = int(time.time() * 1000)

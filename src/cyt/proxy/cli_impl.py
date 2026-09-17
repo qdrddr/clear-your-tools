@@ -398,6 +398,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Restore workspace-scoped agent MCP configs from cyt backend defs only",
     )
+    from cyt.hook.workspace_resolution import absolute_workspace_arg
+
+    hook_uninstall_parent.add_argument(
+        "--workspace",
+        type=absolute_workspace_arg,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Full absolute consumer project root for workspace setup (.vscode CYT_WORKSPACE). "
+            "Required when running via uv --directory unless ~/.cursor/hooks/cyt/uv sets "
+            "CYT_SHELL_WORKSPACE. Not ./, ../, or ~."
+        ),
+    )
 
     hook_parser = subparsers.add_parser(
         "hook",
@@ -827,6 +840,7 @@ def _run_hook_setup_command(args: argparse.Namespace) -> None:
         config_path=getattr(args, "config", None),
         agents=_hook_agents_for_command(hook_cmd),
         prevent_hallucinations=bool(getattr(args, "prevent_hallucinations", False)),
+        workspace=getattr(args, "workspace", None),
     )
 
 

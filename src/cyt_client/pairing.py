@@ -21,7 +21,6 @@ from cyt_client.hook_invocation import (
     strip_cyt_hook_entries,
 )
 from cyt_client.mcp_entry import (
-    CURSOR_WORKSPACE_FOLDER,
     CYT_MCP_FRONTEND_SERVER_KEYS,
     CYT_MCP_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
@@ -86,18 +85,11 @@ def _resolve_dev_context(
     )
 
 
-def _cyt_mcp_workspace_cwd(agent: str) -> str | None:
-    if agent == "cursor":
-        return CURSOR_WORKSPACE_FOLDER
-    return None
-
-
 def _canonical_cyt_mcp_entry(
     agent: str,
     *,
     runtime_repo: Path | None = None,
     aggregator_config: Path | str | None = None,
-    workspace_cwd: str | None = None,
 ) -> dict[str, Any]:
     agg_path = aggregator_config if isinstance(aggregator_config, Path) else None
     transport, host, port, mcp_path, _catalog_path = load_aggregator_transport_settings(agg_path)
@@ -114,7 +106,6 @@ def _canonical_cyt_mcp_entry(
         http_port=port,
         http_mcp_path=mcp_path,
         aggregator_config=aggregator_config,
-        workspace_cwd=workspace_cwd,
     )
 
 
@@ -188,7 +179,6 @@ def _ensure_json_mcp_server(
     runtime_repo: Path | None = None,
     server_key: str = CYT_MCP_SERVER_KEY,
     aggregator_config: Path | str | None = None,
-    workspace_cwd: str | None = None,
 ) -> bool:
     if not path.parent.exists():
         return False
@@ -208,7 +198,6 @@ def _ensure_json_mcp_server(
         agent,
         runtime_repo=runtime_repo,
         aggregator_config=aggregator_config,
-        workspace_cwd=workspace_cwd,
     )
     existing = servers.get(server_key)
     if mcp_entries_equivalent(existing, desired):
@@ -234,7 +223,6 @@ def _ensure_codex_mcp_server(
     runtime_repo: Path | None = None,
     server_key: str = CYT_MCP_SERVER_KEY,
     aggregator_config: Path | str | None = None,
-    workspace_cwd: str | None = None,
 ) -> bool:
     if not path.parent.exists():
         return False
@@ -244,7 +232,6 @@ def _ensure_codex_mcp_server(
         agent,
         runtime_repo=runtime_repo,
         aggregator_config=aggregator_config,
-        workspace_cwd=workspace_cwd,
     )
     block = codex_cyt_mcp_toml_block(agent, desired, server_key=server_key)
     for legacy_key in (
@@ -394,7 +381,6 @@ def _repair_user_mcp_pairing(
         return
     expanded = mcp_path.expanduser()
     agg_ref = workspace_aggregator_config_ref(agent, workspace_root)
-    workspace_cwd = _cyt_mcp_workspace_cwd(agent)
     if agent == "codex":
         _ensure_codex_mcp_server(
             expanded,
@@ -402,7 +388,6 @@ def _repair_user_mcp_pairing(
             verbose=verbose,
             runtime_repo=runtime_repo,
             aggregator_config=agg_ref,
-            workspace_cwd=workspace_cwd,
         )
         return
     _ensure_json_mcp_server(
@@ -411,7 +396,6 @@ def _repair_user_mcp_pairing(
         verbose=verbose,
         runtime_repo=runtime_repo,
         aggregator_config=agg_ref,
-        workspace_cwd=workspace_cwd,
     )
 
 

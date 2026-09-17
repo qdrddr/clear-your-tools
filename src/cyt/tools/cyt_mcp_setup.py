@@ -22,7 +22,6 @@ from cyt.hook.install_scope import (
 from cyt.permissions.paths import PermissionScope
 from cyt.proxy.setup_wizard import _prompt
 from cyt_client.mcp_entry import (
-    CURSOR_WORKSPACE_FOLDER,
     CYT_MCP_FRONTEND_SERVER_KEYS,
     CYT_MCP_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
@@ -52,12 +51,6 @@ DEFAULT_CATALOG_PATH = "/catalog"
 _AGENT_SOURCE_PATHS: dict[str, Path] = GLOBAL_AGENT_MCP_PATHS
 
 
-def _cyt_mcp_workspace_cwd(agent: str) -> str | None:
-    if agent == "cursor":
-        return CURSOR_WORKSPACE_FOLDER
-    return None
-
-
 def _remove_cyt_mcp_frontend_keys(servers: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     removed = [key for key in servers if key in CYT_MCP_FRONTEND_SERVER_KEYS]
     if not removed:
@@ -77,13 +70,26 @@ def prompt_cyt_mcp_transport(*, default: CytMcpTransport = "stdio") -> CytMcpTra
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
+    import time
+
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     replaced = False
     try:
         tmp.write_text(text, encoding="utf-8")
-        tmp.replace(path)
-        replaced = True
+        last_error: OSError | None = None
+        for attempt in range(5):
+            try:
+                tmp.replace(path)
+                replaced = True
+                break
+            except PermissionError as exc:
+                last_error = exc
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+        if not replaced and last_error is not None:
+            raise last_error
     finally:
         if not replaced:
             tmp.unlink(missing_ok=True)
@@ -653,7 +659,6 @@ def write_agent_cyt_mcp_entry(
         transport=transport,
         server_key=CYT_MCP_SERVER_KEY,
         aggregator_config=workspace_aggregator_config_ref(agent, workspace_root),
-        workspace_cwd=_cyt_mcp_workspace_cwd(agent),
         frontend_only=frontend_only,
     )
 

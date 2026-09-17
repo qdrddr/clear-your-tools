@@ -5,11 +5,13 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from cyt.config import load_config
+from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tiers.tool_token_materialization import clear_carried_token_memo
 from cyt.tools.master_catalog import (
     _cache_key_for_config,
@@ -27,6 +29,17 @@ def _reset_master_cache() -> Iterator[None]:
     clear_master_catalog_cache()
     yield
     clear_master_catalog_cache()
+
+
+def test_cache_key_includes_workspace(tmp_path: Path) -> None:
+    workspace_a = tmp_path / "a"
+    workspace_b = tmp_path / "b"
+    workspace_a.mkdir()
+    workspace_b.mkdir()
+    base = load_config()
+    key_a = _cache_key_for_config(set_hook_workspace_in_config(base, workspace_a))
+    key_b = _cache_key_for_config(set_hook_workspace_in_config(base, workspace_b))
+    assert key_a.workspace != key_b.workspace
 
 
 def test_build_master_tools_stamps_cyt_catalog_source() -> None:

@@ -173,6 +173,45 @@ def test_build_status_overview_groups_servers(
     assert counts["gitnexus"] == 1
 
 
+def test_build_status_overview_troubleshooting_flags_project_scoping(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    _mock_catalog(monkeypatch, [])
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.master_catalog_health_snapshot",
+        lambda config: {"configured_sources": ["cyt_mcp"], "catalog_tool_count": 0},
+    )
+    overview = build_status_overview(
+        {
+            "project_id": 42,
+            "tools": {"mode": "shadow"},
+            "skills": {"mode": "shadow"},
+        },
+        config={},
+        workspace_root=tmp_path,
+        agent="cursor",
+    )
+    troubleshooting = overview["troubleshooting"]
+    assert troubleshooting["scoped_project_id"] == 42
+    assert troubleshooting["catalog_user_global_only"] is True
+
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text('{"mcpServers": {"local": {"command": "echo"}}}', encoding="utf-8")
+    overview_with_ws = build_status_overview(
+        {
+            "project_id": 42,
+            "tools": {"mode": "shadow"},
+            "skills": {"mode": "shadow"},
+        },
+        config={},
+        workspace_root=tmp_path,
+        agent="cursor",
+    )
+    assert overview_with_ws["troubleshooting"]["catalog_user_global_only"] is False
+
+
 def test_format_overview_text_omits_individual_tools(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

@@ -24,6 +24,7 @@ from cyt.config.sections import (
     build_agents_inject_via_overlay,
     tools_dict,
 )
+from cyt.hook.install_scope import CytInstallScope
 from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 
 __all__ = [
@@ -169,6 +170,7 @@ def prompt_tools_hook_config(
     context: ToolsSetupContext,
     inject_mode: str | None = None,
     agent: str | None = None,
+    install_scope: CytInstallScope | None = None,
 ) -> dict[str, Any]:
     """Prompt for tools hook settings; return ``tools.hook`` overlay fragment."""
     tools = tools_dict(existing)
@@ -217,7 +219,6 @@ def prompt_tools_hook_config(
         cyt_mcp_overlay: dict[str, Any] | None = None
         if "cyt_mcp" in selected:
             from cyt.hook.cli_invocation import detect_hook_cli_invocation
-            from cyt.hook.install_scope import CytInstallScope
             from cyt.tools.cyt_mcp_setup import (
                 cyt_mcp_hook_settings_overlay,
                 has_migratable_mcp_backends,
@@ -230,7 +231,7 @@ def prompt_tools_hook_config(
                 (agent or "").strip() or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
             )
             invocation = detect_hook_cli_invocation()
-            scope = CytInstallScope.from_cwd()
+            scope = install_scope or CytInstallScope.from_cwd()
             if not invocation.is_dev and not has_migratable_mcp_backends(launch_agent, scope):
                 print(
                     "No MCP backend servers found; skipping cyt-mcp injection.",
@@ -262,6 +263,7 @@ def prompt_tools_hook_config(
                         invocation=invocation,
                         transport=transport,
                         verify_only=False,
+                        scope=scope,
                     )
                 elif not (invocation.is_dev and invocation.repo_root is not None):
                     write_agent_cyt_mcp_entry(

@@ -12,7 +12,9 @@ from cyt_client.hook_executable import (
     build_uv_run_dev_command,
 )
 from cyt_client.mcp_entry import (
+    CURSOR_WORKSPACE_FOLDER,
     CYT_MCP_SCRIPT_REL,
+    CYT_WORKSPACE_ENV,
     _strip_env_prefix,
     dev_invocation_from_hooks_file,
     dev_invocation_from_mcp_file,
@@ -60,19 +62,66 @@ def cursor_hooks_dir() -> Path:
     return Path("~/.cursor/hooks").expanduser()
 
 
+_AGENT_WORKSPACE_ENV_VARS: tuple[str, ...] = (
+    "CURSOR_PROJECT_DIR",
+    "CURSOR_WORKSPACE_FOLDER",
+    "CLAUDE_PROJECT_DIR",
+    "CODEX_PROJECT_DIR",
+)
+
+
 def prefix_command_env(env: dict[str, str], command: str) -> str:
     if not env:
         return command
     if is_windows():
-        parts = [f'set "{key}={value}"' for key, value in env.items()]
-        return 'cmd /c "' + "&& ".join([*parts, f'call "{command}"']) + '"'
+        if is_windows_hook_wrapper_command(command):
+            return command
+        parts: list[str] = []
+        for key, value in env.items():
+            if any(char in value for char in (' ', '"', "&", "|", "<", ">", "^")):
+                escaped = value.replace('"', '""')
+                parts.append(f'set "{key}={escaped}"')
+            else:
+                parts.append(f"set {key}={value}")
+        if command.lower().endswith(".cmd"):
+            tail = f'call "{command}"'
+        elif any(char in command for char in (" ", "&", "|", "<", ">")):
+            tail = f'"{command}"'
+        else:
+            tail = command
+        return "cmd /c " + " && ".join([*parts, tail])
     prefix = " ".join(f"{key}={value}" for key, value in env.items())
     return f"{prefix} {command}"
 
 
-def _write_windows_wrapper(path: Path, inner_command: str) -> None:
+def _windows_wrapper_env_lines(env: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    for key, value in env.items():
+        if value == CURSOR_WORKSPACE_FOLDER and key == CYT_WORKSPACE_ENV:
+            lines.append(f"if not defined {key} (")
+            for index, agent_var in enumerate(_AGENT_WORKSPACE_ENV_VARS):
+                prefix = "  " if index == 0 else "  else "
+                lines.append(
+                    f'{prefix}if defined {agent_var} set "{key}=!{agent_var}!"',
+                )
+            lines.append(")")
+            continue
+        escaped = value.replace("%", "%%")
+        lines.append(f'set "{key}={escaped}"')
+    return lines
+
+
+def _write_windows_wrapper(
+    path: Path,
+    inner_command: str,
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ("@echo off", inner_command)
+    lines = ["@echo off", "setlocal EnableDelayedExpansion"]
+    if env:
+        lines.extend(_windows_wrapper_env_lines(env))
+    lines.append(inner_command)
     path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
 
 
@@ -80,6 +129,7 @@ def install_windows_hook_wrappers(
     *,
     use_dev: bool,
     dev_repo_root: Path | None,
+    hook_env: dict[str, str] | None = None,
 ) -> dict[str, Path]:
     """Write Cursor hook wrapper ``.cmd`` scripts and return name → path mapping."""
     hooks_dir = cursor_hooks_dir()
@@ -87,14 +137,20 @@ def install_windows_hook_wrappers(
 
     client_inner = _inline_cyt_client_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
     daemon_inner = _inline_cyt_daemon_start_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
+    wrapper_env = dict(
+        hook_env
+        or {
+            CYT_WORKSPACE_ENV: CURSOR_WORKSPACE_FOLDER,
+        },
+    )
 
     client_name = WINDOWS_CLIENT_DEV_WRAPPER if use_dev else WINDOWS_CLIENT_WRAPPER
     daemon_name = WINDOWS_DAEMON_START_DEV_WRAPPER if use_dev else WINDOWS_DAEMON_START_WRAPPER
 
     client_path = hooks_dir / client_name
     daemon_path = hooks_dir / daemon_name
-    _write_windows_wrapper(client_path, client_inner)
-    _write_windows_wrapper(daemon_path, daemon_inner)
+    _write_windows_wrapper(client_path, client_inner, env=wrapper_env)
+    _write_windows_wrapper(daemon_path, daemon_inner, env=wrapper_env)
 
     for stale_name in _WINDOWS_HOOK_WRAPPER_NAMES:
         if stale_name in {client_name, daemon_name}:
@@ -132,9 +188,14 @@ def _cursor_hook_client_command(
     *,
     use_dev: bool,
     dev_repo_root: Path | None,
+    hook_env: dict[str, str] | None = None,
 ) -> str:
     if use_windows_hook_wrappers(use_dev=use_dev):
-        wrappers = install_windows_hook_wrappers(use_dev=use_dev, dev_repo_root=dev_repo_root)
+        wrappers = install_windows_hook_wrappers(
+            use_dev=use_dev,
+            dev_repo_root=dev_repo_root,
+            hook_env=hook_env,
+        )
         return str(wrappers["client"])
     return _inline_cyt_client_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
 
@@ -143,9 +204,14 @@ def _cursor_hook_daemon_start_command(
     *,
     use_dev: bool,
     dev_repo_root: Path | None,
+    hook_env: dict[str, str] | None = None,
 ) -> str:
     if use_windows_hook_wrappers(use_dev=use_dev):
-        wrappers = install_windows_hook_wrappers(use_dev=use_dev, dev_repo_root=dev_repo_root)
+        wrappers = install_windows_hook_wrappers(
+            use_dev=use_dev,
+            dev_repo_root=dev_repo_root,
+            hook_env=hook_env,
+        )
         return str(wrappers["daemon_start"])
     return _inline_cyt_daemon_start_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
 
@@ -262,6 +328,20 @@ def resolve_pairing_dev_context(
     return False, None
 
 
+def _agent_hook_command_env(*, agent: str, set_launch_agent: bool) -> dict[str, str]:
+    env = {CYT_WORKSPACE_ENV: CURSOR_WORKSPACE_FOLDER}
+    if set_launch_agent:
+        env[CYT_LAUNCH_AGENT_ENV] = agent
+    return env
+
+
+def _prefix_agent_hook_command(command: str, *, agent: str, set_launch_agent: bool) -> str:
+    env = _agent_hook_command_env(agent=agent, set_launch_agent=set_launch_agent)
+    if is_windows() and is_windows_hook_wrapper_command(command):
+        return command
+    return prefix_command_env(env, command)
+
+
 def cyt_client_hook_command(
     agent: str,
     *,
@@ -269,10 +349,17 @@ def cyt_client_hook_command(
     dev_repo_root: Path | None,
     set_launch_agent: bool,
 ) -> str:
-    command = _cursor_hook_client_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
-    if set_launch_agent:
-        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
-    return command
+    hook_env = _agent_hook_command_env(agent=agent, set_launch_agent=set_launch_agent)
+    command = _cursor_hook_client_command(
+        use_dev=use_dev,
+        dev_repo_root=dev_repo_root,
+        hook_env=hook_env if is_windows() else None,
+    )
+    return _prefix_agent_hook_command(
+        command,
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+    )
 
 
 def cyt_daemon_start_hook_command(
@@ -282,10 +369,17 @@ def cyt_daemon_start_hook_command(
     dev_repo_root: Path | None,
     set_launch_agent: bool,
 ) -> str:
-    command = _cursor_hook_daemon_start_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
-    if set_launch_agent:
-        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
-    return command
+    hook_env = _agent_hook_command_env(agent=agent, set_launch_agent=set_launch_agent)
+    command = _cursor_hook_daemon_start_command(
+        use_dev=use_dev,
+        dev_repo_root=dev_repo_root,
+        hook_env=hook_env if is_windows() else None,
+    )
+    return _prefix_agent_hook_command(
+        command,
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+    )
 
 
 def cursor_pairing_hooks(

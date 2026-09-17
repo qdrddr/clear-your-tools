@@ -76,15 +76,16 @@ def normalize_registry_workspace_path(raw: object) -> str | None:
     text = str(raw).strip()
     if not text:
         return None
-    from cyt_client.rules_file import normalize_workspace_path_string
+    from cyt.hook.workspace_resolution import (
+        WorkspacePathNotAbsoluteError,
+        require_absolute_workspace_dir,
+    )
 
-    normalized = normalize_workspace_path_string(text)
-    path = Path(normalized).expanduser()
     try:
-        resolved = path.resolve()
-    except OSError:
+        resolved = require_absolute_workspace_dir(text, label="workspace")
+    except (WorkspacePathNotAbsoluteError, ValueError, OSError):
         return None
-    return str(resolved) if resolved.is_dir() else None
+    return str(resolved)
 
 
 def _registry_key(
@@ -281,6 +282,10 @@ def _register_hash_only(
 ) -> RegisterResult:
     if existing is None or not existing.tools:
         return RegisterResult(RegisterStatus.UNKNOWN_HASH, 404, "registration not found")
+    if existing.workspace_root:
+        from cyt.hook.active_workspace import touch_active_workspace
+
+        touch_active_workspace(existing.agent, existing.workspace_root)
     if existing.content_hash != content_hash:
         return RegisterResult(RegisterStatus.UNKNOWN_HASH, 404, "hash mismatch")
     existing.last_seen_at = time.monotonic()
@@ -369,7 +374,7 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
     if content_hash != computed_hash:
         content_hash = computed_hash
 
-    return _register_full_tools(
+    result = _register_full_tools(
         existing,
         agent=agent,
         scope="workspace",
@@ -378,6 +383,11 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
         content_hash=content_hash,
         instance_id=instance_id,
     )
+    if result.status in {RegisterStatus.STORED, RegisterStatus.UNCHANGED}:
+        from cyt.hook.active_workspace import touch_active_workspace
+
+        touch_active_workspace(agent, workspace_root)
+    return result
 
 
 def deregister_catalog(payload: dict[str, Any]) -> bool:

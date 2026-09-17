@@ -12,6 +12,7 @@ from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
+    prefix_agent_hook_command,
     cyt_client_cli_script_relpath,
     cyt_daemon_start_command,
     cyt_mcp_cli_script_relpath,
@@ -19,7 +20,6 @@ from cyt.hook.cli_invocation import (
 )
 from cyt.tools import cyt_mcp_setup
 from cyt_client.mcp_entry import (
-    CURSOR_WORKSPACE_FOLDER,
     CYT_MCP_SERVER_KEY,
     build_cyt_mcp_mcp_server_entry,
     workspace_aggregator_config_ref,
@@ -62,7 +62,9 @@ def when_build_hook_entries(gherkin_context: GherkinContext) -> None:
 @then("the cyt-client hook command should use uv run from the repo root")
 def then_client_hook_uses_uv(gherkin_context: GherkinContext) -> None:
     repo_root = gherkin_context.payload["repo_root"]
-    expected = build_uv_run_dev_command(repo_root, cyt_client_cli_script_relpath())
+    expected = prefix_agent_hook_command(
+        build_uv_run_dev_command(repo_root, cyt_client_cli_script_relpath()),
+    )
     assert gherkin_context.payload["client_command"] == expected
     assert str(repo_root) in gherkin_context.payload["client_command"]
 
@@ -71,7 +73,7 @@ def then_client_hook_uses_uv(gherkin_context: GherkinContext) -> None:
 def then_daemon_hook_uses_uv(gherkin_context: GherkinContext) -> None:
     repo_root = gherkin_context.payload["repo_root"]
     invocation = gherkin_context.payload["invocation"]
-    expected = cyt_daemon_start_command(invocation=invocation)
+    expected = prefix_agent_hook_command(cyt_daemon_start_command(invocation=invocation))
     assert gherkin_context.payload["daemon_command"] == expected
     assert str(repo_root) in gherkin_context.payload["daemon_command"]
 
@@ -105,7 +107,6 @@ def then_mcp_entry_uses_uv(gherkin_context: GherkinContext) -> None:
         dev_repo_root=repo_root,
         dev_script_rel=cyt_mcp_cli_script_relpath(),
         aggregator_config=aggregator_config,
-        workspace_cwd=CURSOR_WORKSPACE_FOLDER,
     )
     assert entry == expected
     assert entry["command"] == "uv"

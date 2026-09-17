@@ -73,7 +73,11 @@ def set_hook_workspace_in_config(
     if workspace is None:
         merged.pop(HOOK_WORKSPACE_CONFIG_KEY, None)
         return merged
-    merged[HOOK_WORKSPACE_CONFIG_KEY] = str(workspace)
+    from cyt.hook.workspace_resolution import require_absolute_workspace_dir
+
+    merged[HOOK_WORKSPACE_CONFIG_KEY] = str(
+        require_absolute_workspace_dir(workspace, label="hook workspace"),
+    )
     return merged
 
 
@@ -83,8 +87,12 @@ def hook_workspace_from_config(config: dict[str, Any] | None) -> Path | None:
     raw = config.get(HOOK_WORKSPACE_CONFIG_KEY)
     if not isinstance(raw, str) or not raw.strip():
         return None
-    path = Path(raw.strip()).expanduser()
+    from cyt.hook.workspace_resolution import (
+        WorkspacePathNotAbsoluteError,
+        require_absolute_workspace_dir,
+    )
+
     try:
-        return path.resolve() if path.is_dir() else None
-    except OSError:
+        return require_absolute_workspace_dir(raw.strip(), label="hook workspace")
+    except (WorkspacePathNotAbsoluteError, ValueError, OSError):
         return None

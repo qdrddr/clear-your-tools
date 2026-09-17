@@ -17,6 +17,17 @@ def test_detect_workspace_root_from_git(tmp_path: Path) -> None:
     assert detect_workspace_root(cwd=tmp_path) == tmp_path.resolve()
 
 
+def test_cyt_install_scope_from_consumer_root(tmp_path: Path) -> None:
+    consumer = tmp_path / "tra"
+    consumer.mkdir()
+    scope = CytInstallScope.from_consumer_root(consumer)
+    assert scope.workspace_root == consumer.resolve()
+    assert scope.workspace_aggregator_path("cursor") == (
+        consumer / ".agents/cyt/config/mcp-config.yaml"
+    )
+    assert CytInstallScope.from_consumer_root(None).workspace_root is None
+
+
 def test_detect_workspace_root_excludes_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     home.mkdir()

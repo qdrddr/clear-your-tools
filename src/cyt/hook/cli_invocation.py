@@ -56,6 +56,7 @@ __all__ = [
     "build_installed_cyt_client_command",
     "build_installed_cyt_daemon_restart_command",
     "build_installed_cyt_daemon_start_command",
+    "agent_hook_command_env",
     "build_uv_run_dev_command",
     "cursor_hooks_dir",
     "cyt_cli_script_path",
@@ -67,6 +68,7 @@ __all__ = [
     "cyt_mcp_cli_script_relpath",
     "cyt_mcp_mcp_server_entry",
     "detect_hook_cli_invocation",
+    "prefix_agent_hook_command",
     "invoked_via_cyt_cli_script",
     "is_uv_run_dev_hook_command",
     "proxy_cli_script_path",
@@ -220,21 +222,89 @@ def prefix_command_env(env: dict[str, str], command: str) -> str:
     if not env:
         return command
     if is_windows():
-        parts = [f'set "{key}={value}"' for key, value in env.items()]
-        return 'cmd /c "' + "&& ".join([*parts, f'call "{command}"']) + '"'
+        if is_windows_hook_wrapper_command(command):
+            return command
+        parts: list[str] = []
+        for key, value in env.items():
+            if any(char in value for char in (' ', '"', "&", "|", "<", ">", "^")):
+                escaped = value.replace('"', '""')
+                parts.append(f'set "{key}={escaped}"')
+            else:
+                parts.append(f"set {key}={value}")
+        if command.lower().endswith(".cmd"):
+            tail = f'call "{command}"'
+        elif any(char in command for char in (' ', "&", "|", "<", ">")):
+            tail = f'"{command}"'
+        else:
+            tail = command
+        return "cmd /c " + " && ".join([*parts, tail])
     prefix = " ".join(f"{key}={value}" for key, value in env.items())
     return f"{prefix} {command}"
 
 
-def _write_windows_wrapper(path: Path, inner_command: str) -> None:
+def agent_hook_command_env(*, agent: str | None = None) -> dict[str, str]:
+    """Env vars prefixed onto agent hook commands so ``uv --directory`` still scopes workspace."""
+    from cyt.agents._types import CYT_LAUNCH_AGENT_ENV
+    from cyt.hook.workspace_resolution import CYT_WORKSPACE_ENV
+
+    env: dict[str, str] = {CYT_WORKSPACE_ENV: "${workspaceFolder}"}
+    if agent:
+        env[CYT_LAUNCH_AGENT_ENV] = agent
+    return env
+
+
+def prefix_agent_hook_command(command: str, *, agent: str | None = None) -> str:
+    """Prefix ``CYT_WORKSPACE=${workspaceFolder}`` (and optional launch agent) onto a hook command."""
+    return prefix_command_env(agent_hook_command_env(agent=agent), command)
+
+
+_WORKSPACE_FOLDER_TEMPLATE = "${workspaceFolder}"
+_AGENT_WORKSPACE_ENV_VARS: tuple[str, ...] = (
+    "CURSOR_PROJECT_DIR",
+    "CURSOR_WORKSPACE_FOLDER",
+    "CLAUDE_PROJECT_DIR",
+    "CODEX_PROJECT_DIR",
+)
+
+
+def _windows_wrapper_env_lines(env: dict[str, str]) -> list[str]:
+    """Emit batch ``set`` lines for Windows hook wrapper scripts."""
+    from cyt.hook.workspace_resolution import CYT_WORKSPACE_ENV
+
+    lines: list[str] = []
+    for key, value in env.items():
+        if value == _WORKSPACE_FOLDER_TEMPLATE and key == CYT_WORKSPACE_ENV:
+            lines.append(f"if not defined {key} (")
+            for index, agent_var in enumerate(_AGENT_WORKSPACE_ENV_VARS):
+                prefix = "  " if index == 0 else "  else "
+                lines.append(
+                    f'{prefix}if defined {agent_var} set "{key}=!{agent_var}!"',
+                )
+            lines.append(")")
+            continue
+        escaped = value.replace("%", "%%")
+        lines.append(f'set "{key}={escaped}"')
+    return lines
+
+
+def _write_windows_wrapper(
+    path: Path,
+    inner_command: str,
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ("@echo off", inner_command)
+    lines = ["@echo off", "setlocal EnableDelayedExpansion"]
+    if env:
+        lines.extend(_windows_wrapper_env_lines(env))
+    lines.append(inner_command)
     path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
 
 
 def install_windows_hook_wrappers(
     *,
     invocation: HookCliInvocation | None = None,
+    hook_env: dict[str, str] | None = None,
 ) -> dict[str, Path]:
     """Write Cursor hook wrapper ``.cmd`` scripts and return name → path mapping."""
     invocation = invocation or detect_hook_cli_invocation()
@@ -243,6 +313,7 @@ def install_windows_hook_wrappers(
 
     client_inner = _inline_cyt_client_command(invocation=invocation)
     daemon_inner = _inline_cyt_daemon_start_command(invocation=invocation)
+    wrapper_env = dict(hook_env or agent_hook_command_env())
 
     client_name = WINDOWS_CLIENT_DEV_WRAPPER if invocation.is_dev else WINDOWS_CLIENT_WRAPPER
     daemon_name = (
@@ -251,8 +322,8 @@ def install_windows_hook_wrappers(
 
     client_path = hooks_dir / client_name
     daemon_path = hooks_dir / daemon_name
-    _write_windows_wrapper(client_path, client_inner)
-    _write_windows_wrapper(daemon_path, daemon_inner)
+    _write_windows_wrapper(client_path, client_inner, env=wrapper_env)
+    _write_windows_wrapper(daemon_path, daemon_inner, env=wrapper_env)
 
     for stale_name in _WINDOWS_WRAPPER_NAMES:
         if stale_name in {client_name, daemon_name}:
@@ -299,20 +370,34 @@ def cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> 
     return _inline_cyt_daemon_start_command(invocation=invocation)
 
 
-def cursor_hook_client_command(*, invocation: HookCliInvocation | None = None) -> str:
+def cursor_hook_client_command(
+    *,
+    invocation: HookCliInvocation | None = None,
+    hook_env: dict[str, str] | None = None,
+) -> str:
     """Return the command string written into Cursor ``hooks.json``."""
     invocation = invocation or detect_hook_cli_invocation()
     if use_windows_hook_wrappers(invocation=invocation):
-        wrappers = install_windows_hook_wrappers(invocation=invocation)
+        wrappers = install_windows_hook_wrappers(
+            invocation=invocation,
+            hook_env=hook_env,
+        )
         return str(wrappers["client"])
     return _inline_cyt_client_command(invocation=invocation)
 
 
-def cursor_hook_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> str:
+def cursor_hook_daemon_start_command(
+    *,
+    invocation: HookCliInvocation | None = None,
+    hook_env: dict[str, str] | None = None,
+) -> str:
     """Return the daemon start command written into Cursor ``hooks.json``."""
     invocation = invocation or detect_hook_cli_invocation()
     if use_windows_hook_wrappers(invocation=invocation):
-        wrappers = install_windows_hook_wrappers(invocation=invocation)
+        wrappers = install_windows_hook_wrappers(
+            invocation=invocation,
+            hook_env=hook_env,
+        )
         return str(wrappers["daemon_start"])
     return _inline_cyt_daemon_start_command(invocation=invocation)
 

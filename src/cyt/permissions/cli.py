@@ -54,11 +54,14 @@ def _add_shared_flags(parser: argparse.ArgumentParser, *, write: bool = False) -
         default=None,
         help="Override user config path (--scope user only)",
     )
+    from cyt.hook.workspace_resolution import absolute_workspace_arg
+
     parser.add_argument(
         "--workspace",
-        type=Path,
+        type=absolute_workspace_arg,
         default=None,
-        help="Workspace root (default: detected from cwd)",
+        metavar="PATH",
+        help="Full absolute workspace root (default: detected from cwd). Not ./, ../, or ~.",
     )
 
 

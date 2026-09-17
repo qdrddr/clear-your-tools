@@ -184,13 +184,18 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
 
 def _warm_tier_statistics(cfg: dict[str, Any]) -> None:
     try:
+        from cyt.hook.workspace_config import hook_workspace_from_config
         from cyt.tiers.config import tiers_active
         from cyt.tiers.flush_scheduler import start_tier_flush_scheduler
         from cyt.tiers.manager import get_tier_manager
 
-        if tiers_active(cfg, kind="tool"):
-            get_tier_manager(cfg)
-            start_tier_flush_scheduler(cfg)
+        if not tiers_active(cfg, kind="tool"):
+            return
+        workspace = hook_workspace_from_config(cfg)
+        if workspace is None:
+            return
+        get_tier_manager(cfg, workspace=workspace)
+        start_tier_flush_scheduler(cfg)
     except Exception as exc:
         logger.warning("tier statistics warm skipped: %s", exc)
 

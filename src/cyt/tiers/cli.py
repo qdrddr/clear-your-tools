@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -26,7 +27,18 @@ def _add_tiers_status_like_parser(
     help_text: str,
 ) -> None:
     parser = tiers_sub.add_parser(name, help=help_text)
-    parser.add_argument("--workspace", type=Path, default=None)
+    from cyt.hook.workspace_resolution import absolute_workspace_arg
+
+    parser.add_argument(
+        "--workspace",
+        type=absolute_workspace_arg,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Full absolute project directory or repo root; defaults to detected workspace "
+            "from cwd. Not ./, ../, or ~."
+        ),
+    )
     parser.add_argument("--json", action="store_true")
     add_status_filter_arguments(parser)
     parser.set_defaults(tiers_handler=run_tiers_status)
@@ -45,6 +57,12 @@ def add_tiers_parser(subparsers: argparse._SubParsersAction) -> None:
         "list",
         help_text="Alias for stats (same output and filters)",
     )
+    projects_parser = tiers_sub.add_parser(
+        "projects",
+        help="List all projects with tier statistics in the shared database",
+    )
+    projects_parser.add_argument("--json", action="store_true")
+    projects_parser.set_defaults(tiers_handler=run_tiers_projects)
 
 
 def _status_error(message: str, *, json_output: bool) -> int:
@@ -95,14 +113,69 @@ def _apply_skill_path_filter_to_status(
     )
 
 
+def _maybe_warn_ambiguous_cyt_repo_resolution(
+    *,
+    project_root: Path,
+    explicit_workspace: Path | None,
+    json_output: bool,
+) -> None:
+    if explicit_workspace is not None or json_output:
+        return
+    from cyt.tiers.config import cyt_package_git_root
+
+    cyt_root = cyt_package_git_root()
+    if cyt_root is None or project_root.resolve() != cyt_root.resolve():
+        return
+    from cyt.hook.workspace_resolution import CYT_WORKSPACE_ENV
+
+    if os.environ.get("CURSOR_WORKSPACE_LABEL") or os.environ.get(CYT_WORKSPACE_ENV):
+        return
+
+    from cyt.tiers.config import tier_state_db_path
+    from cyt.tiers.store import TierStore
+
+    config = load_config()
+    store = TierStore.open(tier_state_db_path(config))
+    try:
+        projects = store.list_projects()
+    finally:
+        store.close()
+    other_roots = [
+        row["root_path"]
+        for row in projects
+        if Path(str(row["root_path"])).resolve() != cyt_root.resolve()
+    ]
+    if not other_roots:
+        return
+    print(
+        "tiers stats: scoped to cyt source repo (uv --directory). "
+        "Set .vscode/settings.json terminal.integrated.env CYT_WORKSPACE=${workspaceFolder} "
+        "for your OS (run cyt hook cursor|claude|codex), pass --workspace <repo>, "
+        "or use ~/.cursor/hooks/cyt/uv.ps1 / uv.sh as fallback.",
+        file=sys.stderr,
+    )
+
+
 def run_tiers_status(args: argparse.Namespace) -> int:
     config = load_config()
-    project_root = resolve_tier_project(workspace=args.workspace)
+    try:
+        project_root = resolve_tier_project(workspace=args.workspace)
+    except Exception as exc:
+        from cyt.hook.workspace_resolution import WorkspaceResolutionConflictError
+
+        if isinstance(exc, WorkspaceResolutionConflictError):
+            return _status_error(str(exc), json_output=bool(args.json))
+        raise
     if project_root is None:
         return _status_error(
             "no project resolved (need a workspace with git root or workspace markers)",
             json_output=bool(args.json),
         )
+    _maybe_warn_ambiguous_cyt_repo_resolution(
+        project_root=project_root,
+        explicit_workspace=getattr(args, "workspace", None),
+        json_output=bool(args.json),
+    )
     try:
         status_agent = resolve_tier_status_agent(
             config,
@@ -112,13 +185,14 @@ def run_tiers_status(args: argparse.Namespace) -> int:
     except ValueError as exc:
         return _status_error(str(exc), json_output=bool(args.json))
 
-    from cyt.hook.workspace_config import resolve_hook_request_config
+    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
 
     config, _workspace = resolve_hook_request_config(
         {"workspace_root": str(project_root)},
         status_agent,
         base_config=config,
     )
+    config = set_hook_workspace_in_config(config, project_root)
 
     from cyt.tiers.status_detail import validate_status_path_filter
     from cyt.tiers.status_overview import build_status_overview
@@ -199,11 +273,44 @@ def run_tiers_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_tiers_projects(args: argparse.Namespace) -> int:
+    from cyt.tiers.config import tier_state_db_path
+    from cyt.tiers.store import TierStore
+
+    config = load_config()
+    db_path = tier_state_db_path(config)
+    store = TierStore.open(db_path)
+    try:
+        projects = store.list_projects()
+    finally:
+        store.close()
+
+    if args.json:
+        print(json.dumps({"tier_state_db": db_path, "projects": projects}, indent=2))
+        return 0
+
+    if not projects:
+        print(f"No tier projects in {db_path}")
+        return 0
+
+    print(f"tier_state_db: {db_path}")
+    print(f"projects: {len(projects)}")
+    for row in projects:
+        print(
+            f"  [{row['project_id']}] {row['root_path']}  "
+            f"last_seen_ms={row['last_seen_ms']}",
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cyt tiers")
     sub = parser.add_subparsers(dest="tiers_command", required=True)
     _add_tiers_status_like_parser(sub, "stats", help_text=argparse.SUPPRESS)
     _add_tiers_status_like_parser(sub, "list", help_text=argparse.SUPPRESS)
+    projects_parser = sub.add_parser("projects", help=argparse.SUPPRESS)
+    projects_parser.add_argument("--json", action="store_true")
+    projects_parser.set_defaults(tiers_handler=run_tiers_projects)
     args = parser.parse_args(argv)
     handler = getattr(args, "tiers_handler", None)
     if handler is None:

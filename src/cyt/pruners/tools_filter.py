@@ -1010,7 +1010,9 @@ def _tier_prune_context(
     TierManager | NoOpTierManager,
 ]:
     terminal_stage = configured_pipeline[-1] if configured_pipeline else None
-    tier_manager = get_tier_manager(config)
+    from cyt.tiers.manager import get_tier_manager_for_config
+
+    tier_manager = get_tier_manager_for_config(config)
     tier_apply = tier_manager.apply_tools(original_tools, config)
     tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
     from cyt.tiers.adapters.tools import prepare_tools_for_tier_pipeline

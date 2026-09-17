@@ -82,6 +82,13 @@ class CytInstallScope:
     def from_cwd(cls, *, cwd: Path | None = None) -> CytInstallScope:
         return cls(workspace_root=detect_workspace_root(cwd=cwd))
 
+    @classmethod
+    def from_consumer_root(cls, consumer_root: Path | None) -> CytInstallScope:
+        """Scope for hook setup when the consumer project is not process cwd."""
+        if consumer_root is None:
+            return cls(workspace_root=None)
+        return cls(workspace_root=consumer_root.resolve())
+
     @property
     def has_workspace(self) -> bool:
         return self.workspace_root is not None

@@ -279,6 +279,37 @@ def test_load_aggregator_config_expands_workspace_folder_token(
     assert set(config.mcp_servers) == {"context7"}
 
 
+def test_load_aggregator_config_resolves_relative_config_against_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_mcp_dir = tmp_path / "user-mcp"
+    user_mcp_dir.mkdir()
+    (user_mcp_dir / "cursor.json").write_text(
+        json.dumps({"mcpServers": {"context7": {"url": "https://example.com/mcp"}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-config.yaml"
+    agg.write_text(
+        "default_agent: cursor\ncatalog_scope: workspace\nagents:\n  cursor: mcp/cursor.json\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("cyt_mcp.config.DEFAULT_MCP_DIR", user_mcp_dir)
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(
+        agent="cursor",
+        aggregator_path=Path(".agents/cyt/config/mcp-config.yaml"),
+        workspace_folder=tmp_path,
+    )
+
+    assert config.aggregator_path == agg
+
+
 def test_unified_load_merges_user_and_workspace_defs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

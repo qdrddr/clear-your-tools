@@ -45,6 +45,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to mcp-aggregator.yaml",
     )
+    parser.add_argument(
+        "--workspace",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Full absolute consumer workspace path, or ${workspaceFolder} from agent MCP config. "
+            "Defaults to CYT_WORKSPACE / CYT_SHELL_WORKSPACE when unset."
+        ),
+    )
     sub = parser.add_subparsers(dest="command")
 
     permissions = sub.add_parser(
@@ -226,6 +236,10 @@ async def _run_server(config: AggregatorConfig) -> int:
             list_changed_middleware=list_changed_middleware,
         ),
     )
+    if config.workspace_root is not None:
+        from cyt.hook.active_workspace import touch_active_workspace
+
+        touch_active_workspace(config.agent, config.workspace_root)
     await refresh_runtime_cache(server, cache, config)
     try:
         if config.transport == "http":
@@ -239,9 +253,29 @@ async def _run_server(config: AggregatorConfig) -> int:
     return 0
 
 
+def _resolve_cyt_mcp_workspace_folder(raw: str | None) -> Path | None:
+    from cyt.hook.workspace_resolution import (
+        WorkspacePathNotAbsoluteError,
+        _is_template_workspace_value,
+        require_absolute_workspace_dir,
+        resolve_consumer_project_root,
+    )
+
+    if raw is not None and str(raw).strip():
+        text = str(raw).strip()
+        if _is_template_workspace_value(text):
+            return resolve_consumer_project_root()
+        try:
+            return require_absolute_workspace_dir(text, label="--workspace")
+        except WorkspacePathNotAbsoluteError:
+            return resolve_consumer_project_root()
+    return resolve_consumer_project_root()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    workspace_folder = _resolve_cyt_mcp_workspace_folder(getattr(args, "workspace", None))
 
     try:
         if args.command == "permissions":
@@ -251,17 +285,29 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "catalog":
-            config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+            config = load_aggregator_config(
+                agent=args.agent,
+                aggregator_path=args.config,
+                workspace_folder=workspace_folder,
+            )
             return asyncio.run(_run_catalog(config, args))
 
         if args.command == "search":
             if not args.json:
                 print("cyt-mcp search requires --json", file=sys.stderr)
                 return 1
-            config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+            config = load_aggregator_config(
+                agent=args.agent,
+                aggregator_path=args.config,
+                workspace_folder=workspace_folder,
+            )
             return asyncio.run(_run_search(config, args.tool_name))
 
-        config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+        config = load_aggregator_config(
+            agent=args.agent,
+            aggregator_path=args.config,
+            workspace_folder=workspace_folder,
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1

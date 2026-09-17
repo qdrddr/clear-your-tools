@@ -496,7 +496,10 @@ def _resolve_aggregator_cli_path(
     if not text:
         return default
     expanded = expand_mcp_value(text, workspace_folder=folder)
-    return Path(expanded)
+    path = Path(expanded)
+    if not path.is_absolute():
+        path = folder / path
+    return path
 
 
 def _resolve_workspace_root_for_scope(

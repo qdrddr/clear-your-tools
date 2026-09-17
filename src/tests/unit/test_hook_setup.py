@@ -14,6 +14,7 @@ from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
+    prefix_agent_hook_command,
     cyt_client_cli_script_relpath,
     cyt_client_command,
     cyt_daemon_restart_command,
@@ -381,9 +382,11 @@ def test_cyt_client_entry_uses_dev_command_when_invoked_via_script() -> None:
 
     entry = hook_setup.cyt_client_entry(agent="cursor", invocation=invocation)
 
-    assert entry["command"] == build_uv_run_dev_command(
-        repo_root,
-        cyt_client_cli_script_relpath(),
+    assert entry["command"] == prefix_agent_hook_command(
+        build_uv_run_dev_command(
+            repo_root,
+            cyt_client_cli_script_relpath(),
+        ),
     )
 
 
@@ -393,13 +396,15 @@ def test_cyt_daemon_start_entry_uses_dev_command_when_invoked_via_script() -> No
 
     entry = hook_setup.cyt_daemon_start_entry(agent="cursor", invocation=invocation)
 
-    assert entry["command"] == build_uv_run_dev_command(
-        repo_root,
-        proxy_cli_script_relpath(),
-        "hook",
-        "daemon",
-        "start",
-        "--unattended",
+    assert entry["command"] == prefix_agent_hook_command(
+        build_uv_run_dev_command(
+            repo_root,
+            proxy_cli_script_relpath(),
+            "hook",
+            "daemon",
+            "start",
+            "--unattended",
+        ),
     )
 
 
@@ -534,28 +539,34 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
         assert daemon_cmd.endswith("cyt-hook-daemon-start-dev.cmd")
         assert data["hooks"]["sessionStart"][1]["command"].endswith("cyt-client-dev.cmd")
         assert data["hooks"]["sessionEnd"][0]["command"].endswith("cyt-client-dev.cmd")
+        assert "cmd /c" not in client_cmd.casefold()
+        assert "cmd /c" not in daemon_cmd.casefold()
         client_wrapper = Path(client_cmd)
         assert client_wrapper.is_file()
         wrapper_text = client_wrapper.read_text(encoding="utf-8")
         assert " run --directory " in wrapper_text
+        assert "EnableDelayedExpansion" in wrapper_text
+        assert "CURSOR_PROJECT_DIR" in wrapper_text
         assert str(repo_root) in wrapper_text or "/tmp/clear-your-tools" in wrapper_text
     else:
-        assert client_cmd == build_uv_run_dev_command(repo_root, client_rel)
-        assert daemon_cmd == build_uv_run_dev_command(
-            repo_root,
-            proxy_rel,
-            "hook",
-            "daemon",
-            "start",
-            "--unattended",
+        assert client_cmd == prefix_agent_hook_command(
+            build_uv_run_dev_command(repo_root, client_rel),
         )
-        assert data["hooks"]["sessionStart"][1]["command"] == build_uv_run_dev_command(
-            repo_root,
-            client_rel,
+        assert daemon_cmd == prefix_agent_hook_command(
+            build_uv_run_dev_command(
+                repo_root,
+                proxy_rel,
+                "hook",
+                "daemon",
+                "start",
+                "--unattended",
+            ),
         )
-        assert data["hooks"]["sessionEnd"][0]["command"] == build_uv_run_dev_command(
-            repo_root,
-            client_rel,
+        assert data["hooks"]["sessionStart"][1]["command"] == prefix_agent_hook_command(
+            build_uv_run_dev_command(repo_root, client_rel),
+        )
+        assert data["hooks"]["sessionEnd"][0]["command"] == prefix_agent_hook_command(
+            build_uv_run_dev_command(repo_root, client_rel),
         )
 
     output = capsys.readouterr().out
@@ -2379,27 +2390,38 @@ def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
     before_submit_command = merged[hook_setup.CURSOR_BEFORE_SUBMIT_EVENT][0]["command"]
     if sys.platform == "win32":
         assert before_submit_command.endswith("cyt-client-dev.cmd")
+        assert "cmd /c" not in before_submit_command.casefold()
         assert any(
             str(command).endswith("cyt-hook-daemon-start-dev.cmd") for command in session_commands
         )
         assert any(str(command).endswith("cyt-client-dev.cmd") for command in session_commands)
         client_wrapper = Path(before_submit_command)
         assert client_wrapper.is_file()
-        assert " run --directory " in client_wrapper.read_text(encoding="utf-8")
+        wrapper_text = client_wrapper.read_text(encoding="utf-8")
+        assert " run --directory " in wrapper_text
+        assert "CYT_WORKSPACE" in wrapper_text
     else:
-        assert inline_client in session_commands
-        assert inline_daemon in session_commands
-        assert before_submit_command == inline_client
+        prefixed_client = prefix_agent_hook_command(inline_client)
+        prefixed_daemon = prefix_agent_hook_command(inline_daemon)
+        assert prefixed_client in session_commands
+        assert prefixed_daemon in session_commands
+        assert before_submit_command == prefixed_client
     _ = changed
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only env prefix syntax")
-def test_prefix_command_env_windows_uses_cmd_c() -> None:
+def test_prefix_command_env_windows_skips_wrapper_and_avoids_nested_quotes() -> None:
     from cyt.hook.cli_invocation import prefix_command_env
 
-    command = prefix_command_env({"CYT_LAUNCH_AGENT": "cursor"}, r"C:\hooks\cyt-client.cmd")
-    assert command.startswith('cmd /c "set "CYT_LAUNCH_AGENT=cursor"&& call "')
-    assert "cyt-client.cmd" in command
+    wrapper_command = prefix_command_env(
+        {"CYT_LAUNCH_AGENT": "cursor"},
+        r"C:\hooks\cyt-client-dev.cmd",
+    )
+    assert wrapper_command == r"C:\hooks\cyt-client-dev.cmd"
+
+    inline_command = prefix_command_env({"CYT_LAUNCH_AGENT": "cursor"}, "cyt-client")
+    assert inline_command == "cmd /c set CYT_LAUNCH_AGENT=cursor && cyt-client"
+    assert 'set "CYT_LAUNCH_AGENT' not in inline_command
 
 
 def test_is_cyt_hook_command_recognizes_windows_wrapper() -> None:

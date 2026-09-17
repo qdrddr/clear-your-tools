@@ -222,6 +222,14 @@ def build_status_overview(
     scoped = set_hook_workspace_in_config(config, workspace_root) if workspace_root else config
     catalog_tools = get_master_tool_catalog(scoped, blocking=True) or []
     catalog_health = master_catalog_health_snapshot(scoped)
+    mcp_config_files = _list_mcp_config_files(agent=agent, workspace_root=workspace_root)
+    workspace_mcp_defs = any(
+        row.get("scope") == "workspace"
+        and row.get("exists")
+        and row.get("kind") == "server_defs"
+        for row in mcp_config_files
+        if isinstance(row, dict)
+    )
 
     tools_raw = status.get("tools")
     skills_raw = status.get("skills")
@@ -263,13 +271,15 @@ def build_status_overview(
             agent=agent,
             workspace_root=workspace_root,
         ),
-        "mcp_config_files": _list_mcp_config_files(agent=agent, workspace_root=workspace_root),
+        "mcp_config_files": mcp_config_files,
         "skill_directories": _list_skill_directories(
             scoped,
             agent=agent,
             workspace_root=workspace_root,
         ),
         "troubleshooting": {
+            "scoped_project_id": status.get("project_id"),
+            "catalog_user_global_only": not workspace_mcp_defs,
             "configured_sources": catalog_health.get("configured_sources"),
             "catalog_tool_count": catalog_health.get("catalog_tool_count"),
             "tracked_catalog_tool_count": tools_block.get("tracked_catalog_tool_count"),
@@ -407,6 +417,14 @@ def _append_overview_troubleshooting(lines: list[str], overview: dict[str, Any])
     troubleshooting = overview.get("troubleshooting")
     if not isinstance(troubleshooting, dict):
         return
+    scoped_project_id = troubleshooting.get("scoped_project_id")
+    if scoped_project_id is not None:
+        lines.append(f"scoped_project_id: {scoped_project_id}")
+    if troubleshooting.get("catalog_user_global_only"):
+        lines.append(
+            "catalog_scope: user-global only (no workspace MCP server defs; "
+            "histograms may match across repos)",
+        )
     lines.append(
         "catalog: "
         f"count={troubleshooting.get('catalog_tool_count')}  "

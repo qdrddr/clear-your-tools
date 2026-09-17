@@ -267,29 +267,25 @@ def _resolve_git_repo_root(path: Path) -> Path | None:
     return None
 
 
+def cyt_package_git_root() -> Path | None:
+    """Git root of the installed ``cyt`` package, when available."""
+    from cyt.hook.workspace_resolution import cyt_package_git_root as _cyt_package_git_root
+
+    return _cyt_package_git_root()
+
+
 def resolve_project_root_path(*, workspace: Path | None = None) -> Path | None:
     """Resolve canonical project root from workspace path or cwd."""
-    if workspace is None:
-        workspace = CytInstallScope.from_cwd().workspace_root
-    if workspace is None:
-        return None
-    try:
-        ws = workspace.expanduser().resolve()
-    except OSError:
-        return None
-    if not ws.is_dir():
-        return None
-    return resolve_git_toplevel(ws)
+    from cyt.hook.workspace_resolution import resolve_consumer_project_root
+
+    return resolve_consumer_project_root(workspace=workspace)
 
 
 def resolve_tier_project(*, workspace: Path | None = None) -> Path | None:
     """Return git repository root for tier scoping, if any."""
     from cyt.common.paths import is_ephemeral_workspace_path
 
-    if workspace is None:
-        root = _resolve_git_repo_root(Path.cwd())
-    else:
-        root = resolve_project_root_path(workspace=workspace)
+    root = resolve_project_root_path(workspace=workspace)
     if root is None:
         return None
     if is_ephemeral_workspace_path(root):

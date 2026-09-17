@@ -9,6 +9,21 @@ from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.tier_feedback_push import _build_payload, schedule_tool_use_feedback
 
 
+def test_build_payload_skips_without_workspace_root() -> None:
+    config = sample_aggregator_config(catalog_scope="user", workspace_root=None)
+    payload = _build_payload(
+        config=config,
+        tool_name="codebase-memory_search_graph",
+        args={"query": "auth"},
+        success=True,
+        catalog_content_hash="abc",
+        mcp_server="codebase-memory",
+        bare_tool_name="search_graph",
+        input_schema={"type": "object"},
+    )
+    assert payload is None
+
+
 def test_build_payload_includes_success_and_schema(tmp_path: Path) -> None:
     config = sample_aggregator_config(
         catalog_scope="workspace",

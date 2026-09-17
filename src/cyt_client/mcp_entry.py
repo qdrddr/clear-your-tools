@@ -14,6 +14,7 @@ from cyt_client.hook_executable import (
 
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
 CYT_MCP_SERVER_KEY = "cyt-mcp"
+CYT_WORKSPACE_ENV = "CYT_WORKSPACE"
 LEGACY_CYT_MCP_USER_SERVER_KEY = "cyt-mcp-usr"
 LEGACY_CYT_MCP_SERVER_KEY = "cyt-mcp-usr"
 CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-ws"
@@ -154,6 +155,10 @@ def _append_config_arg(args: list[str], aggregator_config: Path | str | None) ->
     return [*args, "--config", config_text]
 
 
+def _agent_mcp_env() -> dict[str, str]:
+    return {CYT_WORKSPACE_ENV: CURSOR_WORKSPACE_FOLDER}
+
+
 def build_cyt_mcp_mcp_server_entry(
     agent: str,
     *,
@@ -183,16 +188,15 @@ def build_cyt_mcp_mcp_server_entry(
                 ],
                 aggregator_config,
             ),
+            "env": _agent_mcp_env(),
         }
-        if workspace_cwd:
-            entry["cwd"] = workspace_cwd
-        return entry
-    entry = {
-        "command": INSTALLED_CYT_MCP_COMMAND,
-        "args": _append_config_arg(["--agent", agent_name], aggregator_config),
-    }
-    if workspace_cwd:
-        entry["cwd"] = workspace_cwd
+    else:
+        entry = {
+            "command": INSTALLED_CYT_MCP_COMMAND,
+            "args": _append_config_arg(["--agent", agent_name], aggregator_config),
+            "env": _agent_mcp_env(),
+        }
+    _ = workspace_cwd
     return entry
 
 
@@ -294,11 +298,8 @@ def dev_invocation_from_hooks_file(hooks_path: Path) -> tuple[Path, str] | None:
 
 
 def workspace_aggregator_config_ref(agent: str, workspace_root: Path | None = None) -> str:
-    """Return --config path for user-level cyt-mcp bound to a workspace."""
-    if agent == "cursor":
-        return f"{CURSOR_WORKSPACE_FOLDER}/{WORKSPACE_CONFIG_REL}"
-    if workspace_root is not None:
-        return str(workspace_root / WORKSPACE_CONFIG_REL)
+    """Return a workspace-relative ``--config`` path (resolved via ``cwd`` or ``CYT_WORKSPACE``)."""
+    _ = agent, workspace_root
     return WORKSPACE_CONFIG_REL
 
 

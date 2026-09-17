@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -34,6 +35,7 @@ from cyt.hook.cli_invocation import (
     INSTALLED_CYT_DAEMON_START_COMMAND,
     INSTALLED_CYT_DAEMON_START_COMMAND_BASE,
     HookCliInvocation,
+    agent_hook_command_env,
     cursor_hook_client_command,
     cursor_hook_daemon_start_command,
     cyt_client_command,
@@ -41,6 +43,7 @@ from cyt.hook.cli_invocation import (
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
     is_windows_hook_wrapper_command,
+    prefix_agent_hook_command,
     prefix_command_env,
     remove_windows_hook_wrappers,
 )
@@ -759,6 +762,38 @@ def _ensure_workspace_skills_config_for_hook() -> None:
         print(f"Updated workspace skills config in {config_path} (.agents/skills)")
 
 
+def _finalize_hook_command(
+    *,
+    agent: AgentName | None,
+    set_launch_agent: bool,
+    invocation: HookCliInvocation | None,
+    use_cursor_wrappers: bool,
+    daemon: bool,
+) -> str:
+    hook_env = agent_hook_command_env(agent=agent if set_launch_agent else None)
+    if daemon:
+        if use_cursor_wrappers:
+            command = cursor_hook_daemon_start_command(
+                invocation=invocation,
+                hook_env=hook_env if is_windows() else None,
+            )
+        else:
+            command = cyt_daemon_start_command(invocation=invocation)
+    elif use_cursor_wrappers:
+        command = cursor_hook_client_command(
+            invocation=invocation,
+            hook_env=hook_env if is_windows() else None,
+        )
+    else:
+        command = cyt_client_command(invocation=invocation)
+    if use_cursor_wrappers and is_windows():
+        return command
+    return prefix_agent_hook_command(
+        command,
+        agent=agent if set_launch_agent else None,
+    )
+
+
 def cyt_client_entry(
     *,
     agent: AgentName | None = None,
@@ -766,12 +801,13 @@ def cyt_client_entry(
     invocation: HookCliInvocation | None = None,
     use_cursor_wrappers: bool = False,
 ) -> dict[str, Any]:
-    if use_cursor_wrappers:
-        command = cursor_hook_client_command(invocation=invocation)
-    else:
-        command = cyt_client_command(invocation=invocation)
-    if set_launch_agent and agent is not None:
-        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
+    command = _finalize_hook_command(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+        use_cursor_wrappers=use_cursor_wrappers,
+        daemon=False,
+    )
     return {"type": "command", "command": command, "timeout": USER_PROMPT_TIMEOUT_SECONDS}
 
 
@@ -782,12 +818,13 @@ def cyt_session_end_entry(
     invocation: HookCliInvocation | None = None,
     use_cursor_wrappers: bool = False,
 ) -> dict[str, Any]:
-    if use_cursor_wrappers:
-        command = cursor_hook_client_command(invocation=invocation)
-    else:
-        command = cyt_client_command(invocation=invocation)
-    if set_launch_agent and agent is not None:
-        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
+    command = _finalize_hook_command(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+        use_cursor_wrappers=use_cursor_wrappers,
+        daemon=False,
+    )
     return {"type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECONDS}
 
 
@@ -798,12 +835,13 @@ def cyt_daemon_start_entry(
     invocation: HookCliInvocation | None = None,
     use_cursor_wrappers: bool = False,
 ) -> dict[str, Any]:
-    if use_cursor_wrappers:
-        command = cursor_hook_daemon_start_command(invocation=invocation)
-    else:
-        command = cyt_daemon_start_command(invocation=invocation)
-    if set_launch_agent and agent is not None:
-        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
+    command = _finalize_hook_command(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+        use_cursor_wrappers=use_cursor_wrappers,
+        daemon=True,
+    )
     return {"type": "command", "command": command, "timeout": SESSION_START_TIMEOUT_SECONDS}
 
 
@@ -1663,6 +1701,7 @@ def _save_tools_hook_wizard_config(
     *,
     config_path: Path | None,
     hook_agent: HookAgentName | None = None,
+    install_scope: CytInstallScope | None = None,
 ) -> dict[str, Any]:
     if not sys.stdin.isatty():
         return config
@@ -1686,6 +1725,7 @@ def _save_tools_hook_wizard_config(
         config,
         context="hook",
         agent=hook_agent,
+        install_scope=install_scope,
     )
     if save_user_config(
         resolved_config_path,
@@ -2224,6 +2264,7 @@ def _apply_prevent_hallucinations_config(
     config: dict[str, Any],
     *,
     agents: list[HookAgentName],
+    install_scope: CytInstallScope | None = None,
 ) -> dict[str, Any]:
     from cyt.config import save_user_config, sync_config_in_place
     from cyt.hook.install_scope import CytInstallScope
@@ -2256,7 +2297,7 @@ def _apply_prevent_hallucinations_config(
     sync_config_in_place(config, config_path)
 
     invocation = detect_hook_cli_invocation()
-    scope = CytInstallScope.from_cwd()
+    scope = install_scope or CytInstallScope.from_cwd()
     if invocation.is_dev and invocation.repo_root is not None:
         print(
             f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
@@ -2281,6 +2322,7 @@ def _apply_prevent_hallucinations_config(
             migrate_backends=migrate_backends,
             verify_only=True,
             configure_workspace=True,
+            scope=scope,
         )
     return config
 
@@ -2353,6 +2395,7 @@ def _load_hook_setup_config(
     resolved_config_path: Path,
     selected_agents: list[HookAgentName],
     prevent_hallucinations: bool,
+    install_scope: CytInstallScope | None = None,
 ) -> dict[str, Any]:
     config = load_config(config_path)
     if prevent_hallucinations:
@@ -2360,6 +2403,7 @@ def _load_hook_setup_config(
             resolved_config_path,
             config,
             agents=selected_agents,
+            install_scope=install_scope,
         )
     config = _apply_injection_hook_config(
         resolved_config_path,
@@ -2380,6 +2424,7 @@ def _run_standard_hook_setup_steps(
     include_claude: bool,
     include_codex: bool,
     include_cursor: bool,
+    install_scope: CytInstallScope | None = None,
 ) -> dict[str, Any]:
     _configure_hook_skills(
         config_path=resolved_config_path,
@@ -2392,6 +2437,7 @@ def _run_standard_hook_setup_steps(
         config,
         config_path=config_path,
         hook_agent=_primary_hook_agent(selected_agents),
+        install_scope=install_scope,
     )
     config = load_config(config_path)
     _ensure_hook_credentials(config)
@@ -2459,6 +2505,7 @@ def run_hook_setup(
     config_path: Path | None = None,
     agents: list[HookAgentName] | None = None,
     prevent_hallucinations: bool = False,
+    workspace: Path | None = None,
 ) -> None:
     """Install CYT agent hooks and ensure runtime credentials."""
     selected_agents = _resolve_hook_setup_agents(agents)
@@ -2468,20 +2515,55 @@ def run_hook_setup(
         print("CYT hook setup\n")
 
     resolved_config_path = resolve_setup_config_path(config_path)
-    from cyt.hook.install_scope import CytInstallScope
     from cyt.migrations.migrate import (
         ensure_config_file_current,
         ensure_workspace_config_current,
     )
 
     ensure_config_file_current(resolved_config_path, scope="user")
-    if CytInstallScope.from_cwd().has_workspace:
-        ensure_workspace_config_current()
+    from cyt.hook.workspace_resolution import (
+        WorkspaceResolutionConflictError,
+        ensure_cyt_uv_wrapper_scripts,
+        ensure_vscode_terminal_workspace_env,
+        finalize_hook_setup_consumer_root,
+        print_hook_setup_workspace_report,
+        resolve_hook_setup_workspace,
+    )
+
+    hook_agent = selected_agents[0] if len(selected_agents) == 1 else "cursor"
+    for agent in selected_agents:
+        ensure_cyt_uv_wrapper_scripts(agent)
+    try:
+        hook_workspace_resolution = resolve_hook_setup_workspace(
+            workspace=workspace,
+            agent=hook_agent,
+        )
+    except WorkspaceResolutionConflictError as exc:
+        raise SystemExit(str(exc)) from exc
+    print_hook_setup_workspace_report(hook_workspace_resolution)
+    print()
+    consumer_root = finalize_hook_setup_consumer_root(
+        hook_workspace_resolution,
+        workspace=workspace,
+        agent=hook_agent,
+    )
+    if consumer_root is not None:
+        ensure_workspace_config_current(workspace_root=consumer_root)
+        settings_path = consumer_root / ".vscode" / "settings.json"
+        if ensure_vscode_terminal_workspace_env(consumer_root):
+            print(
+                f"Updated {settings_path} with terminal.integrated.env "
+                f"CYT_WORKSPACE (Windows/Linux/macOS)",
+            )
+    from cyt.hook.install_scope import CytInstallScope
+
+    install_scope = CytInstallScope.from_consumer_root(consumer_root)
     config = _load_hook_setup_config(
         config_path=config_path,
         resolved_config_path=resolved_config_path,
         selected_agents=selected_agents,
         prevent_hallucinations=prevent_hallucinations,
+        install_scope=install_scope,
     )
 
     nested_targets, cursor_targets, include_claude, include_codex, include_cursor = (
@@ -2502,6 +2584,7 @@ def run_hook_setup(
             include_claude=include_claude,
             include_codex=include_codex,
             include_cursor=include_cursor,
+            install_scope=install_scope,
         )
 
     if sys.stdin.isatty():

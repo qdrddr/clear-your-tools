@@ -117,6 +117,8 @@ exclude = [
 "src/cyt_mcp/py.typed" = "cyt_mcp/py.typed"
 "src/cyt/executor/py.typed" = "cyt/executor/py.typed"
 "src/cyt/mcpc/py.typed" = "cyt/mcpc/py.typed"
+"src/cyt/hook/uv.ps1" = "cyt/hook/uv.ps1"
+"src/cyt/hook/uv.sh" = "cyt/hook/uv.sh"
 
 [dependency-groups]
 # Development tools (linters, type-checkers) and utilities

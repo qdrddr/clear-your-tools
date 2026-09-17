@@ -36,11 +36,14 @@ def _add_preview_arguments(parser: argparse.ArgumentParser) -> None:
         "query",
         help="User prompt to rank/prune tools against (same as hook injection query)",
     )
+    from cyt.hook.workspace_resolution import absolute_workspace_arg
+
     parser.add_argument(
         "--workspace",
-        type=Path,
+        type=absolute_workspace_arg,
         default=None,
-        help="Workspace root (defaults to cwd)",
+        metavar="PATH",
+        help="Full absolute workspace root (defaults to cwd). Not ./, ../, or ~.",
     )
     parser.add_argument(
         "--json",

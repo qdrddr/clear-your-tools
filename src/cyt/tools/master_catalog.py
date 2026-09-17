@@ -33,6 +33,7 @@ class _MasterCacheKey:
     cyt_mcp_slug: str
     cloudflare_slug: str
     definitions_path: str
+    workspace: str
 
 
 @dataclass
@@ -144,6 +145,13 @@ def _cloudflare_slug(config: dict[str, Any]) -> str:
     return cloudflare_catalog_slug(config)
 
 
+def _workspace_cache_key(config: dict[str, Any]) -> str:
+    from cyt.hook.workspace_config import hook_workspace_from_config
+
+    workspace = hook_workspace_from_config(config)
+    return str(workspace) if workspace is not None else ""
+
+
 def _cache_key_for_config(config: dict[str, Any]) -> _MasterCacheKey:
     cfg = config or load_config()
     return _MasterCacheKey(
@@ -153,6 +161,7 @@ def _cache_key_for_config(config: dict[str, Any]) -> _MasterCacheKey:
         cyt_mcp_slug=_cyt_mcp_slug(cfg),
         cloudflare_slug=_cloudflare_slug(cfg),
         definitions_path=str(resolved_tools_hook_file(cfg).expanduser()),
+        workspace=_workspace_cache_key(cfg),
     )
 
 

@@ -28,7 +28,11 @@ from cyt_client.mcp_entry import (
 
 def test_build_installed_cyt_mcp_entry() -> None:
     entry = build_cyt_mcp_mcp_server_entry("cursor")
-    assert entry == {"command": "cyt-mcp", "args": ["--agent", "cursor"]}
+    assert entry == {
+        "command": "cyt-mcp",
+        "args": ["--agent", "cursor"],
+        "env": {"CYT_WORKSPACE": "${workspaceFolder}"},
+    }
 
 
 def test_build_dev_cyt_mcp_entry() -> None:
@@ -41,25 +45,34 @@ def test_build_dev_cyt_mcp_entry() -> None:
     )
     assert entry == {
         "command": "uv",
-        "args": ["run", "--directory", str(repo_root), script_rel, "--agent", "cursor"],
+        "args": [
+            "run",
+            "--directory",
+            str(repo_root),
+            script_rel,
+            "--agent",
+            "cursor",
+        ],
+        "env": {"CYT_WORKSPACE": "${workspaceFolder}"},
     }
 
 
-def test_build_dev_workspace_cyt_mcp_entry_uses_workspace_folder() -> None:
+def test_build_dev_workspace_cyt_mcp_entry_uses_env_and_relative_config() -> None:
     repo_root = Path("/tmp/clear-your-tools")
     script_rel = cyt_mcp_cli_script_relpath()
     entry = build_cyt_mcp_mcp_server_entry(
         "cursor",
         dev_repo_root=repo_root,
         dev_script_rel=script_rel,
-        workspace_cwd="${workspaceFolder}",
-        aggregator_config="${workspaceFolder}/.agents/cyt/config/mcp-config.yaml",
+        aggregator_config=".agents/cyt/config/mcp-config.yaml",
     )
-    assert entry["cwd"] == "${workspaceFolder}"
+    assert entry["env"] == {"CYT_WORKSPACE": "${workspaceFolder}"}
+    assert "cwd" not in entry
+    assert "--workspace" not in entry["args"]
     assert entry["args"][1:3] == ["--directory", str(repo_root)]
     assert entry["args"][-2:] == [
         "--config",
-        "${workspaceFolder}/.agents/cyt/config/mcp-config.yaml",
+        ".agents/cyt/config/mcp-config.yaml",
     ]
 
 

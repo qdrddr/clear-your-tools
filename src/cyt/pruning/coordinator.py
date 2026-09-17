@@ -467,9 +467,9 @@ def coordinate_skills_tools_prune(
     if not plan:
         return CoordinateResult()
 
-    from cyt.tiers.manager import get_tier_manager
+    from cyt.tiers.manager import get_tier_manager_for_config
 
-    tier_manager = get_tier_manager(config)
+    tier_manager = get_tier_manager_for_config(config)
     if not tier_manager.is_noop:
         tier_manager.begin_request_cycle(config)
     try:

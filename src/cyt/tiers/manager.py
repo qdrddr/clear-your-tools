@@ -219,6 +219,9 @@ class TierManager:
         self._store = TierStore.open(db_path)
         project_id = self._store.get_or_create_project(str(root_path))
         self.project = TierProject(project_id=project_id, root_path=root_path)
+        from cyt.hook.active_workspace import touch_active_workspace
+
+        touch_active_workspace("cursor", root_path)
         self._states = self._store.load_entity_states(self.project)
         removed_skill_ids, updated_skill_states = normalize_skill_entity_states(self._states)
         if removed_skill_ids or updated_skill_states:
@@ -990,6 +993,15 @@ def flush_all_tier_managers(*, force: bool = False) -> int:
         if manager.flush_pending(force=force):
             flushed += 1
     return flushed
+
+
+def get_tier_manager_for_config(
+    config: dict[str, Any],
+) -> TierManager | NoOpTierManager:
+    """Resolve tier manager from hook workspace embedded in *config*."""
+    from cyt.hook.workspace_config import hook_workspace_from_config
+
+    return get_tier_manager(config, workspace=hook_workspace_from_config(config))
 
 
 def get_tier_manager(
