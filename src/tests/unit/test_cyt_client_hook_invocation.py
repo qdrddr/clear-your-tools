@@ -283,3 +283,55 @@ def test_resolve_pairing_dev_context_from_hooks_wrapper_file(tmp_path: Path) -> 
     )
     assert use_dev is True
     assert resolved_repo == repo_root
+
+
+def test_repair_pairing_home_cwd_does_not_strip_user_cyt_mcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    cursor_dir = home / ".cursor"
+    cursor_dir.mkdir()
+    user_mcp = cursor_dir / "mcp.json"
+    user_mcp.write_text(
+        json.dumps({"mcpServers": {"cyt-mcp": {"command": "cyt-mcp", "args": ["--agent", "cursor"]}}}),
+        encoding="utf-8",
+    )
+
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "transport: stdio",
+                "http:",
+                "  host: 127.0.0.1",
+                "  port: 8765",
+                "  mcp_path: /mcp",
+                "  catalog_path: /catalog",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("cyt.hook.install_scope.Path.home", lambda: home)
+    monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": user_mcp})
+    monkeypatch.setattr("cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
+
+    from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
+
+    repair_pairing(
+        {
+            "hook_event_name": "sessionStart",
+            "session_id": "pair-home",
+            "cwd": str(home),
+        },
+        verbose=False,
+        session_start=False,
+    )
+
+    payload = json.loads(user_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_SERVER_KEY in payload["mcpServers"]

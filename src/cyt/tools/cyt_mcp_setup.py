@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import tomllib
 import uuid
@@ -36,6 +37,8 @@ from cyt_client.mcp_entry import (
     normalize_cyt_mcp_transport,
     workspace_aggregator_config_ref,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MCP_CONFIG_PATH = Path("~/.config/cyt/mcp-config.yaml")
 DEFAULT_AGGREGATOR_PATH = DEFAULT_MCP_CONFIG_PATH  # deprecated alias
@@ -766,6 +769,17 @@ def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool
     if not scope.has_workspace:
         return False
     mcp_path = scope.workspace_agent_mcp_path(agent)
+    user_mcp = scope.user_agent_mcp_path(agent)
+    if mcp_path is not None:
+        try:
+            if mcp_path.resolve() == user_mcp.resolve():
+                logger.debug(
+                    "Skipping cyt-mcp removal: workspace MCP path equals user global MCP (%s)",
+                    mcp_path,
+                )
+                return False
+        except OSError:
+            pass
     if mcp_path is None or not mcp_path.is_file():
         return False
     agent = agent.strip() or "cursor"

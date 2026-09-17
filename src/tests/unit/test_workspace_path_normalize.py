@@ -32,3 +32,15 @@ def test_workspace_root_from_payload_accepts_git_bash_roots() -> None:
     workspace = workspace_root_from_payload(payload)
     assert workspace is not None
     assert workspace.is_dir()
+
+
+def test_workspace_root_from_payload_rejects_user_home(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr("cyt.hook.install_scope.Path.home", lambda: home)
+    payload = {"cwd": str(home), "conversation_id": "test-session"}
+    assert workspace_root_from_payload(payload) is None
+    assert is_valid_workspace_root(home) is False

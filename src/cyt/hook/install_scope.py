@@ -49,9 +49,19 @@ def _expand(path: Path) -> Path:
     return path.expanduser()
 
 
+def is_user_profile_root(path: Path) -> bool:
+    """Return True when *path* is the user's home/profile directory."""
+    try:
+        return path.expanduser().resolve() == Path.home().resolve()
+    except OSError:
+        return False
+
+
 def detect_workspace_root(*, cwd: Path | None = None) -> Path | None:
     """Return workspace root when cwd looks like a project repo."""
     root = (cwd or Path.cwd()).resolve()
+    if is_user_profile_root(root):
+        return None
     markers = (
         root / ".git",
         root / ".cursor",

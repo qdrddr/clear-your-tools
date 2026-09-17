@@ -415,6 +415,17 @@ def _repair_user_mcp_pairing(
     )
 
 
+def _workspace_mcp_collides_with_user_global(agent: str, workspace_root: Path) -> bool:
+    user_mcp = _AGENT_MCP_PATHS.get(agent)
+    if user_mcp is None:
+        return False
+    ws_mcp = _workspace_agent_mcp_path(workspace_root, agent)
+    try:
+        return ws_mcp.resolve() == user_mcp.expanduser().resolve()
+    except OSError:
+        return False
+
+
 def _repair_workspace_mcp_pairing(
     agent: str,
     workspace_root: Path,
@@ -424,13 +435,22 @@ def _repair_workspace_mcp_pairing(
     from cyt.hook.install_scope import CytInstallScope
     from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_workspace_for_agent
 
+    ws_mcp = _workspace_agent_mcp_path(workspace_root, agent)
+    if _workspace_mcp_collides_with_user_global(agent, workspace_root):
+        if verbose:
+            print(
+                "cyt-client pairing: skipping workspace MCP repair "
+                f"(workspace path equals user global MCP: {ws_mcp})",
+                flush=True,
+            )
+        return
+
     scope = CytInstallScope(workspace_root=workspace_root)
     setup_cyt_mcp_workspace_for_agent(
         agent,
         scope=scope,
         migrate_backends=True,
     )
-    ws_mcp = _workspace_agent_mcp_path(workspace_root, agent)
     if agent == "codex":
         _strip_frontend_keys_from_codex_mcp(ws_mcp, verbose=verbose)
         return

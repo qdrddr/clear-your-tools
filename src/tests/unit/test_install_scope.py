@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cyt.hook.install_scope import CytInstallScope, detect_workspace_root
+from cyt.hook.install_scope import CytInstallScope, detect_workspace_root, is_user_profile_root
 from cyt.tools import cyt_mcp_setup
 from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY
 
@@ -15,6 +15,15 @@ from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KE
 def test_detect_workspace_root_from_git(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     assert detect_workspace_root(cwd=tmp_path) == tmp_path.resolve()
+
+
+def test_detect_workspace_root_excludes_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".cursor").mkdir()
+    monkeypatch.setattr("cyt.hook.install_scope.Path.home", lambda: home)
+    assert is_user_profile_root(home.resolve()) is True
+    assert detect_workspace_root(cwd=home) is None
 
 
 def test_resolve_workspace_cyt_config_prefers_shared_agents_path(tmp_path: Path) -> None:

@@ -96,11 +96,22 @@ def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
     path_string = workspace_path_string(payload)
     if path_string is None:
         return None
-    return Path(normalize_workspace_path_string(path_string))
+    workspace = Path(normalize_workspace_path_string(path_string))
+    if _is_user_profile_root(workspace):
+        return None
+    return workspace
+
+
+def _is_user_profile_root(path: Path) -> bool:
+    from cyt.hook.install_scope import is_user_profile_root
+
+    return is_user_profile_root(path)
 
 
 def is_valid_workspace_root(workspace: Path) -> bool:
     """Return True when ``workspace`` exists and is a directory."""
+    if _is_user_profile_root(workspace):
+        return False
     try:
         return workspace.is_dir()
     except OSError:
