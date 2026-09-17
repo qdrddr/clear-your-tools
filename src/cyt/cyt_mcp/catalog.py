@@ -411,9 +411,7 @@ def _load_catalog_from_disk(
     if not isinstance(tools, list):
         return False
     normalized = _normalize_tools_list(tools)
-    content_hash = str(
-        envelope.get("catalog_content_hash") or raw_catalog_content_hash(normalized)
-    )
+    content_hash = str(envelope.get("catalog_content_hash") or raw_catalog_content_hash(normalized))
     state = _get_state(cache_key)
     _apply_catalog_to_state(
         state,
