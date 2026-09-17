@@ -6,11 +6,19 @@ to the same bootstrap + router as :mod:`cyt.cli.app`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cyt.cli.bootstrap import bootstrap_script_path
-from cyt.cli.router import main
-
 if __name__ == "__main__":
-    bootstrap_script_path(Path(__file__))
-    main()
+    try:
+        from cyt.cli.exit import run_main
+
+        def _main() -> None:
+            from pathlib import Path
+
+            from cyt.cli.bootstrap import bootstrap_script_path
+            from cyt.cli.router import main
+
+            bootstrap_script_path(Path(__file__))
+            main()
+
+        run_main(_main)
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None

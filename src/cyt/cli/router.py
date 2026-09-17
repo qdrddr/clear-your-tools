@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 
+from cyt.cli.exit import run_main
+
 
 def _permissions_argv(argv: list[str]) -> list[str] | None:
     if not argv:
@@ -47,6 +49,10 @@ def _db_argv(argv: list[str]) -> list[str] | None:
 
 def main(argv: list[str] | None = None) -> None:
     """Route *argv* (default ``sys.argv[1:]``) to the appropriate CYT CLI handler."""
+    run_main(_route, argv)
+
+
+def _route(argv: list[str] | None = None) -> None:
     cli_argv = sys.argv[1:] if argv is None else argv
 
     perm_argv = _permissions_argv(cli_argv)

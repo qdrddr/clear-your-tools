@@ -2,6 +2,19 @@
 
 from __future__ import annotations
 
-from cyt.cli.router import main
+
+def main(argv: list[str] | None = None) -> None:
+    try:
+        from cyt.cli.exit import run_main
+
+        def _main() -> None:
+            from cyt.cli.router import main as router_main
+
+            router_main(argv)
+
+        run_main(_main)
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+
 
 __all__ = ["main"]

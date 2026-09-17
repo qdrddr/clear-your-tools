@@ -6,6 +6,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from cyt.cli.exit import INTERRUPTED_EXIT_CODE
+from cyt.cli.router import main as router_main
+from cyt.proxy.cli_router import main as installed_main
+
 REPO = Path(__file__).resolve().parents[3]
 APP = REPO / "src" / "cyt" / "cli" / "app.py"
 PROXY_SHIM = REPO / "src" / "cyt" / "proxy" / "cli.py"
@@ -63,3 +69,29 @@ def test_proxy_cli_shim_delegates_like_app() -> None:
     assert shim_result.returncode == 0, shim_result.stderr
     assert "head:" in app_result.stdout
     assert shim_result.stdout == app_result.stdout
+
+
+def test_router_keyboard_interrupt_exits_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_interrupt(_argv: list[str] | None = None) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("cyt.cli.router._route", _raise_interrupt)
+
+    with pytest.raises(SystemExit) as exc_info:
+        router_main([])
+
+    assert exc_info.value.code == INTERRUPTED_EXIT_CODE
+
+
+def test_installed_cli_keyboard_interrupt_exits_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_interrupt(_argv: list[str] | None = None) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("cyt.cli.router._route", _raise_interrupt)
+
+    with pytest.raises(SystemExit) as exc_info:
+        installed_main([])
+
+    assert exc_info.value.code == INTERRUPTED_EXIT_CODE
