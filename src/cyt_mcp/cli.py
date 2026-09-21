@@ -307,30 +307,7 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
             logger.warning("cyt-mcp background catalog refresh failed: %s", exc)
 
     refresh_task: asyncio.Task[None] | None = None
-    from cyt_mcp.debug_session_log import debug_session_log
-
-    if cache_warmed:
-        debug_session_log(
-            hypothesis_id="I",
-            location="cli.py:_run_server:skip_background_refresh",
-            message="skipping background refresh; hydrated cache is warm",
-            data={
-                "catalog_scope": config.catalog_scope,
-                "cache_count": len(cache.snapshot()),
-            },
-            run_id="post-fix",
-        )
-    else:
-        debug_session_log(
-            hypothesis_id="H",
-            location="cli.py:_run_server:background_refresh",
-            message="cold cache; starting stdio immediately with background catalog refresh",
-            data={
-                "catalog_scope": config.catalog_scope,
-                "backend_count": len(config.mcp_servers),
-            },
-            run_id="post-fix",
-        )
+    if not cache_warmed:
         refresh_task = asyncio.create_task(
             _background_catalog_refresh(),
             name="cyt-mcp-catalog-refresh",

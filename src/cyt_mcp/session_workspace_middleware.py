@@ -131,27 +131,14 @@ class SessionWorkspaceMiddleware(Middleware):
 
     async def _refresh_offerings_cache(self, runtime: Any, runtime_key: str) -> None:
         from cyt_mcp.catalog_build import disk_catalog_slug_for_config
-        from cyt_mcp.debug_session_log import debug_session_log
 
         try:
-            snapshot = await self._coordinator.offerings_cache.refresh_from_server(
+            await self._coordinator.offerings_cache.refresh_from_server(
                 self._coordinator.server,
                 runtime_key=runtime_key,
                 mcp_servers=runtime.config.mcp_servers,
                 ensure_mounted=self._coordinator.ensure_backends_mounted,
                 disk_slug=disk_catalog_slug_for_config(runtime.config),
-            )
-            debug_session_log(
-                hypothesis_id="L",
-                location="session_workspace_middleware.py:_refresh_offerings_cache",
-                message="offerings cache refreshed on main loop",
-                data={
-                    "runtime_key": runtime_key,
-                    "resource_count": len(snapshot.resources),
-                    "prompt_count": len(snapshot.prompts),
-                    "template_count": len(snapshot.resource_templates),
-                },
-                run_id="post-fix",
             )
         except Exception as exc:
             logger.warning("cyt-mcp offerings refresh failed: %s", exc)
@@ -162,24 +149,14 @@ class SessionWorkspaceMiddleware(Middleware):
         *,
         kind: str,
     ) -> Sequence[Any]:
-        from cyt_mcp.debug_session_log import debug_session_log
-
         runtime = await self._resolve_runtime(context)
         runtime_key = self._runtime_key(runtime)
         snapshot = self._coordinator.offerings_cache.snapshot_or_empty(runtime_key)
-        items = {
+        return {
             "resources": snapshot.resources,
             "prompts": snapshot.prompts,
             "resource_templates": snapshot.resource_templates,
         }[kind]
-        debug_session_log(
-            hypothesis_id="L",
-            location=f"session_workspace_middleware.py:on_list_{kind}:cache",
-            message=f"list_{kind} served from offerings cache (never call_next)",
-            data={"runtime_key": runtime_key, "count": len(items), "kind": kind},
-            run_id="post-fix",
-        )
-        return items
 
     async def on_list_prompts(
         self,
@@ -210,13 +187,9 @@ class SessionWorkspaceMiddleware(Middleware):
         context: MiddlewareContext[ListToolsRequest],
         call_next: CallNext[ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
-        import time as _time
-
         from cyt_mcp.catalog_build import hydrate_runtime_cache, wait_for_catalog_cache_ready
-        from cyt_mcp.debug_session_log import debug_session_log
 
         enter_tools_list()
-        _list_start = _time.monotonic()
         try:
             session_key = self._session_key(context)
             fastmcp_ctx = context.fastmcp_context
@@ -243,35 +216,11 @@ class SessionWorkspaceMiddleware(Middleware):
                         runtime = bootstrap
                         _cache_count = bootstrap_count
                 if _cache_count:
-                    stubs = await list_stubs_from_runtime_cache(
+                    return await list_stubs_from_runtime_cache(
                         runtime.cache,
                         runtime.config,
                         config_holder=runtime.config_holder,
                     )
-                    debug_session_log(
-                        hypothesis_id="C",
-                        location="session_workspace_middleware.py:on_list_tools:cache_hit",
-                        message="list_tools served from cache",
-                        data={
-                            "cache_count": _cache_count,
-                            "stub_count": len(stubs),
-                            "catalog_scope": runtime.config.catalog_scope,
-                            "duration_ms": int((_time.monotonic() - _list_start) * 1000),
-                        },
-                        run_id="post-fix",
-                    )
-                    return stubs
-                debug_session_log(
-                    hypothesis_id="E",
-                    location="session_workspace_middleware.py:on_list_tools:empty_fast",
-                    message="list_tools cache still empty; returning fast empty (background refresh + list_changed will follow)",
-                    data={
-                        "cache_count": _cache_count,
-                        "catalog_scope": runtime.config.catalog_scope,
-                        "duration_ms": int((_time.monotonic() - _list_start) * 1000),
-                    },
-                    run_id="post-fix",
-                )
                 return []
             finally:
                 reset_session_scoping_active(scoping_token)

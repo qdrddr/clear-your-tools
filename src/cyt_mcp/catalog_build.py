@@ -155,7 +155,6 @@ def hydrate_offerings_cache(
 def persist_runtime_cache_to_disk(cache: RuntimeToolCache, config: AggregatorConfig) -> bool:
     """Write the runtime catalog to disk so the next process can hydrate quickly."""
     from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash, write_disk_catalog
-    from cyt_mcp.debug_session_log import debug_session_log
 
     slug = disk_catalog_slug_for_config(config)
     if not slug:
@@ -165,18 +164,6 @@ def persist_runtime_cache_to_disk(cache: RuntimeToolCache, config: AggregatorCon
         return False
     existing_disk = _read_disk_catalog_tools(slug)
     if existing_disk and len(tools) < len(existing_disk):
-        debug_session_log(
-            hypothesis_id="G",
-            location="catalog_build.py:persist_runtime_cache_to_disk:skip_regression",
-            message="skipping disk persist; cache smaller than existing disk catalog",
-            data={
-                "slug_prefix": slug[:12],
-                "cache_count": len(tools),
-                "disk_count": len(existing_disk),
-                "catalog_scope": config.catalog_scope,
-            },
-            run_id="post-fix",
-        )
         return False
     content_hash = raw_catalog_content_hash(tools)
     action = write_disk_catalog(
@@ -184,18 +171,6 @@ def persist_runtime_cache_to_disk(cache: RuntimeToolCache, config: AggregatorCon
         agent=config.agent,
         tools=tools,
         content_hash=content_hash,
-    )
-    debug_session_log(
-        hypothesis_id="G",
-        location="catalog_build.py:persist_runtime_cache_to_disk",
-        message="runtime cache persisted to disk",
-        data={
-            "slug_prefix": slug[:12],
-            "tool_count": len(tools),
-            "action": action,
-            "catalog_scope": config.catalog_scope,
-        },
-        run_id="post-fix",
     )
     return action != "disk_write_skipped"
 
@@ -362,59 +337,27 @@ def _catalog_tools_from_disk(config: AggregatorConfig) -> list[dict[str, Any]]:
 
 def hydrate_runtime_cache(cache: RuntimeToolCache, config: AggregatorConfig) -> bool:
     """Warm runtime cache from registry/disk so list_tools works before live backend fetch."""
-    from cyt_mcp.debug_session_log import debug_session_log
-
-    source = "none"
     # Disk is written by this frontend instance; registry may hold stale/partial layers.
     disk_tools = _catalog_tools_from_disk(config)
     registry_tools = _catalog_tools_from_registry(config)
     if disk_tools and registry_tools:
         if len(disk_tools) >= len(registry_tools):
             tools = disk_tools
-            source = "disk"
         else:
             tools = registry_tools
-            source = "registry"
     elif disk_tools:
         tools = disk_tools
-        source = "disk"
     elif registry_tools:
         tools = registry_tools
-        source = "registry"
     else:
         tools = []
     if not tools:
-        debug_session_log(
-            hypothesis_id="G",
-            location="catalog_build.py:hydrate_runtime_cache:miss",
-            message="runtime cache hydrate missed",
-            data={"catalog_scope": config.catalog_scope},
-            run_id="post-fix",
-        )
         return False
     catalog_entries, search_index = _catalog_entries_from_dicts(tools, config)
     if not catalog_entries:
-        debug_session_log(
-            hypothesis_id="G",
-            location="catalog_build.py:hydrate_runtime_cache:filtered_empty",
-            message="runtime cache hydrate filtered to empty",
-            data={"source": source, "raw_count": len(tools)},
-            run_id="post-fix",
-        )
         return False
     cache.replace(catalog_entries, search_index=search_index)
     refresh_search_tool_schema(cache)
-    debug_session_log(
-        hypothesis_id="G",
-        location="catalog_build.py:hydrate_runtime_cache:hit",
-        message="runtime cache hydrated",
-        data={
-            "source": source,
-            "cache_after": len(catalog_entries),
-            "catalog_scope": config.catalog_scope,
-        },
-        run_id="post-fix",
-    )
     return True
 
 
@@ -439,15 +382,6 @@ def reapply_deny_overlays(cache: RuntimeToolCache, config: AggregatorConfig) -> 
     if len(filtered_entries) == len(entries):
         return False
     if not filtered_entries and entries:
-        from cyt_mcp.debug_session_log import debug_session_log
-
-        debug_session_log(
-            hypothesis_id="D",
-            location="catalog_build.py:reapply_deny_overlays:preserve",
-            message="deny overlay would empty cache; keeping existing entries",
-            data={"cache_before": len(entries), "deny_count": len(deny_entries)},
-            run_id="post-fix",
-        )
         return False
     cache.replace(filtered_entries, search_index=filtered_index)
     refresh_search_tool_schema(cache)
@@ -463,39 +397,10 @@ async def refresh_catalog_cache(
     force: bool = False,
 ) -> None:
     """Populate hook-daemon catalog + search index from raw backend tools."""
-    import time as _time
-
-    from cyt_mcp.debug_session_log import debug_session_log
-
     async with _refresh_lock_for(cache):
-        _start = _time.monotonic()
         _before = len(cache.snapshot())
         if _before > 0 and not force:
-            debug_session_log(
-                hypothesis_id="J",
-                location="catalog_build.py:refresh_catalog_cache:skip_warm",
-                message="skipping backend refresh; runtime cache already populated",
-                data={
-                    "cache_before": _before,
-                    "skip_push": skip_push,
-                    "catalog_scope": config.catalog_scope if config is not None else None,
-                },
-                run_id="post-fix",
-            )
             return
-        debug_session_log(
-            hypothesis_id="A",
-            location="catalog_build.py:refresh_catalog_cache:start",
-            message="refresh_catalog_cache starting",
-            data={
-                "skip_push": skip_push,
-                "force": force,
-                "cache_before": _before,
-                "agent": config.agent if config is not None else None,
-                "catalog_scope": config.catalog_scope if config is not None else None,
-                "backend_count": len(config.mcp_servers) if config is not None else 0,
-            },
-        )
         if config is not None and config.mcp_servers:
             from cyt_mcp.backends import ensure_backend_servers_mounted
 
@@ -523,30 +428,11 @@ async def refresh_catalog_cache(
             server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
             catalog_entries = [enrich_tool_identity(entry, server_keys) for entry in catalog_entries]
         if not catalog_entries and _before > 0:
-            debug_session_log(
-                hypothesis_id="A",
-                location="catalog_build.py:refresh_catalog_cache:preserve",
-                message="refresh skipped empty regression; keeping existing cache",
-                data={
-                    "duration_ms": int((_time.monotonic() - _start) * 1000),
-                    "cache_before": _before,
-                },
-            )
             return
         cache.replace(catalog_entries, search_index=search_index)
         refresh_search_tool_schema(cache)
         if config is not None:
             persist_runtime_cache_to_disk(cache, config)
-        debug_session_log(
-            hypothesis_id="A",
-            location="catalog_build.py:refresh_catalog_cache:done",
-            message="refresh_catalog_cache finished",
-            data={
-                "duration_ms": int((_time.monotonic() - _start) * 1000),
-                "cache_after": len(catalog_entries),
-                "skip_push": skip_push,
-            },
-        )
         if config is not None:
             from cyt_mcp.hook_daemon_push import schedule_catalog_push
 

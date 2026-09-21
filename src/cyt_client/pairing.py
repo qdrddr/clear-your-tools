@@ -524,14 +524,6 @@ def _repair_workspace_mcp_pairing(
             )
         return
 
-    from cyt_mcp.debug_session_log import debug_session_log
-
-    debug_session_log(
-        hypothesis_id="B",
-        location="pairing.py:_repair_workspace_mcp_pairing",
-        message="workspace MCP pairing repair with migrate_backends=False",
-        data={"agent": agent, "workspace_root": str(workspace_root)},
-    )
     scope = CytInstallScope(workspace_root=workspace_root)
     setup_cyt_mcp_workspace_for_agent(
         agent,
@@ -593,22 +585,9 @@ def repair_pairing_from_mcp_runtime(
     verbose: bool = False,
 ) -> None:
     """Repair MCP pairing when cyt-mcp starts (dev or prod runtime)."""
-    from cyt_mcp.debug_session_log import debug_session_log
-
     resolved_agent = (agent or "cursor").strip() or "cursor"
     resolved_scope = (catalog_scope or "user").strip() or "user"
     runtime_repo = runtime_dev_repo_from_mcp()
-    debug_session_log(
-        hypothesis_id="B",
-        location="pairing.py:repair_pairing_from_mcp_runtime",
-        message="MCP runtime pairing repair starting",
-        data={
-            "agent": resolved_agent,
-            "catalog_scope": resolved_scope,
-            "cwd": str(Path.cwd()),
-            "runtime_repo": str(runtime_repo) if runtime_repo is not None else None,
-        },
-    )
     repair_workspace = resolved_scope == "workspace"
     repair_user = resolved_scope == "user"
     workspace_root = Path.cwd()
@@ -632,24 +611,7 @@ def repair_pairing_from_mcp_runtime(
                 verbose=verbose,
             )
     if repair_workspace and _workspace_cyt_mcp_install_complete(resolved_agent, workspace_root):
-        debug_session_log(
-            hypothesis_id="B",
-            location="pairing.py:repair_pairing_from_mcp_runtime",
-            message="skipping workspace pairing repair; cyt-mcp-ws already installed",
-            data={
-                "agent": resolved_agent,
-                "catalog_scope": resolved_scope,
-                "workspace_root": str(workspace_root),
-            },
-        )
         return
-    if not repair_workspace:
-        debug_session_log(
-            hypothesis_id="B",
-            location="pairing.py:repair_pairing_from_mcp_runtime",
-            message="skipping workspace pairing repair for user-scoped cyt-mcp",
-            data={"agent": resolved_agent, "catalog_scope": resolved_scope},
-        )
     repair_pairing(
         {
             "hook_event_name": "sessionStart",

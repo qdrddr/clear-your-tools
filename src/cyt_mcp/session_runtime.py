@@ -180,21 +180,8 @@ class MultiWorkspaceCoordinator:
         fallback = self._bootstrap.config.workspace_root
         workspace_root = await resolve_session_workspace_root(session, fallback=fallback)
         if workspace_root is None or self._bootstrap_covers(workspace_root):
-            from cyt_mcp.debug_session_log import debug_session_log
-
             runtime = self._bootstrap
             binding_key = self._runtime_key(runtime.workspace_root) or "bootstrap"
-            debug_session_log(
-                hypothesis_id="F",
-                location="session_runtime.py:bind_session:bootstrap",
-                message="reusing bootstrap runtime for session",
-                data={
-                    "catalog_scope": runtime.config.catalog_scope,
-                    "cache_count": len(runtime.cache.snapshot()),
-                    "binding_key": binding_key,
-                },
-                run_id="post-fix",
-            )
             self._session_bindings[session_key] = binding_key
             return runtime
         runtime = await self.ensure_runtime(workspace_root)

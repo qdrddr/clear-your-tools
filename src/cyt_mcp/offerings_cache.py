@@ -110,18 +110,6 @@ class OfferingsCache:
             and existing.total_count > 0
             and snapshot.total_count == 0
         ):
-            from cyt_mcp.debug_session_log import debug_session_log
-
-            debug_session_log(
-                hypothesis_id="M",
-                location="offerings_cache.py:replace:preserve",
-                message="skipping empty offerings regression; keeping prior snapshot",
-                data={
-                    "runtime_key": runtime_key,
-                    "existing_total": existing.total_count,
-                },
-                run_id="post-fix",
-            )
             return existing
         self._snapshots[runtime_key] = snapshot
         return snapshot
@@ -171,15 +159,6 @@ class OfferingsCache:
         """Fetch offerings on the main event loop (never a secondary event loop)."""
         async with self._lock_for(runtime_key):
             if not await _wait_for_tools_list_idle():
-                from cyt_mcp.debug_session_log import debug_session_log
-
-                debug_session_log(
-                    hypothesis_id="M",
-                    location="offerings_cache.py:refresh_from_server:defer",
-                    message="skipped offerings refresh; tools/list still active",
-                    data={"runtime_key": runtime_key},
-                    run_id="post-fix",
-                )
                 return self.snapshot_or_empty(runtime_key)
 
             await asyncio.to_thread(ensure_mounted, mcp_servers)
