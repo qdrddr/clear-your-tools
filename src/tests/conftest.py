@@ -185,6 +185,7 @@ def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     isolated_cursor_hooks = root / "cursor" / "hooks.json"
     isolated_claude_settings = root / "claude" / "settings.json"
     isolated_codex_hooks = root / "codex" / "hooks.json"
+    isolated_cursor_hooks_dir = root / "cursor" / "hooks"
     isolated_cursor_mcp = root / "cursor" / "mcp.json"
     isolated_claude_mcp = root / "claude" / "claude.json"
     isolated_codex_mcp = root / "codex" / "config.toml"
@@ -192,11 +193,13 @@ def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         isolated_cursor_hooks,
         isolated_claude_settings,
         isolated_codex_hooks,
+        isolated_cursor_hooks_dir,
         isolated_cursor_mcp,
         isolated_claude_mcp,
         isolated_codex_mcp,
     ):
         parent.parent.mkdir(parents=True, exist_ok=True)
+    isolated_cursor_hooks_dir.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", isolated_cursor_hooks)
     monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", isolated_claude_settings)
@@ -221,6 +224,13 @@ def _isolate_agent_hook_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
             "claude": isolated_claude_mcp,
             "codex": isolated_codex_mcp,
         },
+    )
+    import cyt_client.hook_invocation as hook_invocation
+
+    monkeypatch.setattr(
+        hook_invocation,
+        "cursor_hooks_dir",
+        lambda: isolated_cursor_hooks_dir,
     )
 
 
@@ -299,7 +309,10 @@ def _isolate_tier_maintenance_marker(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 @pytest.fixture(autouse=True)
-def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def _isolate_hook_catalog_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
     from cyt.cloudflare.catalog import clear_cloudflare_catalog_cache
     from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
@@ -308,6 +321,21 @@ def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
     from cyt.tools.catalog_cache import clear_decomposed_catalog_cache
     from cyt.tools.definitions_catalog import clear_definitions_catalog_cache
     from cyt.tools.master_catalog import clear_master_catalog_cache
+
+    isolated_cyt_mcp_catalog_cache = tmp_path / "cyt-mcp-catalog"
+    isolated_registry_dir = tmp_path / "catalog-registry"
+    monkeypatch.setattr(
+        "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",
+        lambda: isolated_cyt_mcp_catalog_cache,
+    )
+    monkeypatch.setattr(
+        "cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_DIR",
+        isolated_registry_dir,
+    )
+    monkeypatch.setattr(
+        "cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE",
+        isolated_registry_dir / "registrations.json",
+    )
 
     # Unit tests must not start live executor/MCPC/definitions refresh loops. A local
     # .env with EXECUTOR_TOKEN otherwise triggers real HTTP to localhost on every hook

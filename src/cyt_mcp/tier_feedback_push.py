@@ -72,11 +72,14 @@ def _build_payload(
         workspace = str(config.workspace_root.expanduser().resolve())
     except OSError:
         return None
+    from cyt_mcp.config import catalog_layer_for_scope
+
     body: dict[str, Any] = {
         "event": "tool_used",
         "source": "cyt_mcp",
         "success": success,
         "workspace_root": workspace,
+        "catalog_layer": catalog_layer_for_scope(config.catalog_scope),
         "tool_name": tool_name,
         "catalog": "cyt_mcp",
         "args": args if isinstance(args, dict) else {},
@@ -113,7 +116,7 @@ async def _maybe_sync_catalog(
     if catalog_content_hash and catalog_content_hash == current_hash:
         return
     try:
-        await refresh_catalog_cache(server, cache, config, skip_push=True)
+        await refresh_catalog_cache(server, cache, config, skip_push=True, force=True)
     except Exception as exc:
         logger.debug("cyt-mcp catalog refresh before tier feedback failed: %s", exc)
         return

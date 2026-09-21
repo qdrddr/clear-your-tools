@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
+
 
 @dataclass(frozen=True)
 class CytMcpToolIdentity:
@@ -179,3 +181,14 @@ def canonical_backend_identity(
         return explicit_server, explicit_bare
 
     return "unknown", wire or "unknown"
+
+
+def tool_name_allowed_for_servers(tool_name: str, server_keys: Sequence[str]) -> bool:
+    name = str(tool_name or "").strip()
+    if not name or name == MCP_WIRE_SEARCH_TOOL_NAME:
+        return True
+    for key in sorted(server_keys, key=len, reverse=True):
+        prefix = f"{key}_"
+        if name.startswith(prefix):
+            return True
+    return False

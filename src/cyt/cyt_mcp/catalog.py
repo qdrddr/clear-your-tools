@@ -53,10 +53,12 @@ def clear_cyt_mcp_catalog_cache() -> None:
     with _catalog_lock:
         _catalog_states.clear()
     from cyt.cyt_mcp.cache_scheduler import clear_cyt_mcp_cache_schedulers
+    from cyt.cyt_mcp.catalog_disk import clear_cyt_mcp_disk_catalog_cache
     from cyt.hook.catalog_registry import clear_catalog_registry
 
     clear_cyt_mcp_cache_schedulers()
     clear_catalog_registry()
+    clear_cyt_mcp_disk_catalog_cache()
 
 
 def invalidate_cyt_mcp_catalog_for_workspace(

@@ -8,6 +8,7 @@ from fastmcp import FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from cyt_mcp.session_context import get_current_session_runtime
 from cyt_mcp.tool_name_fuzzy import fuzzy_resolve_tool_name
 
 # Canonical name used by hooks, session logs, and tool-gate normalization.
@@ -150,12 +151,16 @@ class GetToolDefinitionsTool(Tool):
         self._cache = cache
         self._agent = agent
 
+    def _active_cache(self) -> RuntimeToolCache:
+        runtime = get_current_session_runtime()
+        return runtime.cache if runtime is not None else self._cache
+
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         tool_name, error = parse_get_tool_definitions_arguments(arguments, agent=self._agent)
         if error is not None:
             return ToolResult(content=error, is_error=True)
         try:
-            result = lookup_tool_definition(self._cache, tool_name or "")
+            result = lookup_tool_definition(self._active_cache(), tool_name or "")
         except ValueError as exc:
             return ToolResult(content=str(exc), is_error=True)
         return self.convert_result(result)

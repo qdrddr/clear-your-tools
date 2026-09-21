@@ -22,15 +22,15 @@ from cyt_client.hook_invocation import (
 )
 from cyt_client.mcp_entry import (
     CYT_MCP_FRONTEND_SERVER_KEYS,
-    CYT_MCP_SERVER_KEY,
+    CYT_MCP_USER_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
     LEGACY_CYT_MCP_SERVER_KEY,
-    LEGACY_CYT_MCP_USER_SERVER_KEY,
     LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     build_cyt_mcp_mcp_server_entry,
     codex_cyt_mcp_toml_block,
     load_aggregator_transport_settings,
     mcp_entries_equivalent,
+    user_aggregator_config_ref,
     workspace_aggregator_config_ref,
 )
 from cyt_client.rules_file import workspace_root_from_payload
@@ -177,7 +177,7 @@ def _ensure_json_mcp_server(
     *,
     verbose: bool,
     runtime_repo: Path | None = None,
-    server_key: str = CYT_MCP_SERVER_KEY,
+    server_key: str = CYT_MCP_USER_SERVER_KEY,
     aggregator_config: Path | str | None = None,
 ) -> bool:
     if not path.parent.exists():
@@ -205,8 +205,13 @@ def _ensure_json_mcp_server(
     merged = dict(existing) if isinstance(existing, dict) else {}
     merged.update(desired)
     servers = {
-        key: spec for key, spec in servers.items() if key not in CYT_MCP_FRONTEND_SERVER_KEYS
+        key: spec
+        for key, spec in servers.items()
+        if key not in CYT_MCP_FRONTEND_SERVER_KEYS or key == server_key
     }
+    for legacy_key in CYT_MCP_FRONTEND_SERVER_KEYS:
+        if legacy_key != server_key:
+            servers.pop(legacy_key, None)
     servers[server_key] = merged
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
@@ -221,7 +226,7 @@ def _ensure_codex_mcp_server(
     *,
     verbose: bool,
     runtime_repo: Path | None = None,
-    server_key: str = CYT_MCP_SERVER_KEY,
+    server_key: str = CYT_MCP_USER_SERVER_KEY,
     aggregator_config: Path | str | None = None,
 ) -> bool:
     if not path.parent.exists():
@@ -234,12 +239,7 @@ def _ensure_codex_mcp_server(
         aggregator_config=aggregator_config,
     )
     block = codex_cyt_mcp_toml_block(agent, desired, server_key=server_key)
-    for legacy_key in (
-        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
-        LEGACY_CYT_MCP_USER_SERVER_KEY,
-        LEGACY_CYT_MCP_SERVER_KEY,
-        CYT_MCP_WORKSPACE_SERVER_KEY,
-    ):
+    for legacy_key in CYT_MCP_FRONTEND_SERVER_KEYS:
         legacy_marker = f"[mcp_servers.{legacy_key}]"
         if legacy_marker in text and legacy_key != server_key:
             before, _, after = text.partition(legacy_marker)
@@ -380,13 +380,14 @@ def _repair_user_mcp_pairing(
     if mcp_path is None:
         return
     expanded = mcp_path.expanduser()
-    agg_ref = workspace_aggregator_config_ref(agent, workspace_root)
+    agg_ref = user_aggregator_config_ref()
     if agent == "codex":
         _ensure_codex_mcp_server(
             expanded,
             agent,
             verbose=verbose,
             runtime_repo=runtime_repo,
+            server_key=CYT_MCP_USER_SERVER_KEY,
             aggregator_config=agg_ref,
         )
         return
@@ -395,8 +396,102 @@ def _repair_user_mcp_pairing(
         agent,
         verbose=verbose,
         runtime_repo=runtime_repo,
+        server_key=CYT_MCP_USER_SERVER_KEY,
         aggregator_config=agg_ref,
     )
+
+
+def _repair_cyt_mcp_dev_wrapper_command(
+    mcp_path: Path,
+    server_key: str,
+    agent: str,
+    *,
+    runtime_repo: Path | None = None,
+    verbose: bool = False,
+) -> bool:
+    """Upgrade legacy ``cyt-mcp-dev.cmd`` to ``hooks/cyt/mcp-dev.cmd`` without full reinstall."""
+    if not mcp_path.is_file():
+        return False
+    try:
+        raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(raw, dict):
+        return False
+    servers = raw.get("mcpServers")
+    if not isinstance(servers, dict):
+        return False
+    existing = servers.get(server_key)
+    if not isinstance(existing, dict):
+        return False
+    command = existing.get("command")
+    if not isinstance(command, str) or not command.strip():
+        return False
+    from cyt_client.hook_invocation import (
+        LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER,
+        cyt_mcp_dev_wrapper_path,
+        install_windows_cyt_mcp_dev_wrapper,
+        is_cyt_mcp_dev_wrapper_command,
+    )
+
+    normalized = command.strip().casefold().replace("\\", "/")
+    wrapper_path = cyt_mcp_dev_wrapper_path(agent)
+    if normalized.endswith(LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER.casefold()):
+        needs_repair = True
+    elif is_cyt_mcp_dev_wrapper_command(command):
+        expanded = Path(command).expanduser()
+        needs_repair = not expanded.is_file()
+    else:
+        return False
+    if not needs_repair:
+        return False
+    use_dev, dev_repo_root = _resolve_dev_context(agent, runtime_repo=runtime_repo)
+    if not use_dev or dev_repo_root is None:
+        return False
+    wrapper_path = install_windows_cyt_mcp_dev_wrapper(
+        dev_repo_root=dev_repo_root,
+        agent=agent,
+    )
+    if command == str(wrapper_path):
+        return False
+    merged = dict(existing)
+    merged["command"] = str(wrapper_path)
+    servers = dict(servers)
+    servers[server_key] = merged
+    raw["mcpServers"] = servers
+    _atomic_write_text(mcp_path, json.dumps(raw, indent=2) + "\n")
+    if verbose:
+        print(
+            f"cyt-client pairing: upgraded {server_key} dev wrapper command in {mcp_path}",
+            flush=True,
+        )
+    return True
+
+
+def _workspace_cyt_mcp_install_complete(agent: str, workspace_root: Path) -> bool:
+    """Return True when project cyt-mcp-ws install artifacts are already present."""
+    from cyt.hook.install_scope import CytInstallScope
+
+    scope = CytInstallScope(workspace_root=workspace_root)
+    if not scope.has_workspace:
+        return False
+    agg_path = scope.workspace_aggregator_path(agent)
+    defs_path = scope.workspace_server_defs_path(agent)
+    mcp_path = scope.workspace_agent_mcp_path(agent)
+    if agg_path is None or defs_path is None or mcp_path is None:
+        return False
+    if not (agg_path.is_file() and defs_path.is_file() and mcp_path.is_file()):
+        return False
+    try:
+        raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(raw, dict):
+        return False
+    servers = raw.get("mcpServers")
+    if not isinstance(servers, dict):
+        return False
+    return CYT_MCP_WORKSPACE_SERVER_KEY in servers
 
 
 def _workspace_mcp_collides_with_user_global(agent: str, workspace_root: Path) -> bool:
@@ -429,16 +524,20 @@ def _repair_workspace_mcp_pairing(
             )
         return
 
+    from cyt_mcp.debug_session_log import debug_session_log
+
+    debug_session_log(
+        hypothesis_id="B",
+        location="pairing.py:_repair_workspace_mcp_pairing",
+        message="workspace MCP pairing repair with migrate_backends=False",
+        data={"agent": agent, "workspace_root": str(workspace_root)},
+    )
     scope = CytInstallScope(workspace_root=workspace_root)
     setup_cyt_mcp_workspace_for_agent(
         agent,
         scope=scope,
-        migrate_backends=True,
+        migrate_backends=False,
     )
-    if agent == "codex":
-        _strip_frontend_keys_from_codex_mcp(ws_mcp, verbose=verbose)
-        return
-    _strip_frontend_keys_from_json_mcp(ws_mcp, verbose=verbose)
 
 
 def repair_pairing(
@@ -447,6 +546,8 @@ def repair_pairing(
     verbose: bool = False,
     session_start: bool = True,
     runtime_repo: Path | None = None,
+    repair_user: bool = True,
+    repair_workspace: bool = True,
 ) -> None:
     if hook_skip_enabled(payload):
         if verbose:
@@ -467,14 +568,15 @@ def repair_pairing(
     resolved_runtime = runtime_repo or runtime_dev_repo_from_client()
     workspace_root = workspace_root_from_payload(payload)
 
-    _repair_user_mcp_pairing(
-        agent,
-        workspace_root,
-        verbose=verbose,
-        runtime_repo=resolved_runtime,
-    )
+    if repair_user:
+        _repair_user_mcp_pairing(
+            agent,
+            workspace_root,
+            verbose=verbose,
+            runtime_repo=resolved_runtime,
+        )
 
-    if workspace_root is not None:
+    if repair_workspace and workspace_root is not None:
         _repair_workspace_mcp_pairing(
             agent,
             workspace_root,
@@ -484,18 +586,80 @@ def repair_pairing(
     _ = resolve_config_path()
 
 
-def repair_pairing_from_mcp_runtime(*, agent: str | None = None, verbose: bool = False) -> None:
+def repair_pairing_from_mcp_runtime(
+    *,
+    agent: str | None = None,
+    catalog_scope: str = "user",
+    verbose: bool = False,
+) -> None:
     """Repair MCP pairing when cyt-mcp starts (dev or prod runtime)."""
+    from cyt_mcp.debug_session_log import debug_session_log
+
     resolved_agent = (agent or "cursor").strip() or "cursor"
+    resolved_scope = (catalog_scope or "user").strip() or "user"
     runtime_repo = runtime_dev_repo_from_mcp()
+    debug_session_log(
+        hypothesis_id="B",
+        location="pairing.py:repair_pairing_from_mcp_runtime",
+        message="MCP runtime pairing repair starting",
+        data={
+            "agent": resolved_agent,
+            "catalog_scope": resolved_scope,
+            "cwd": str(Path.cwd()),
+            "runtime_repo": str(runtime_repo) if runtime_repo is not None else None,
+        },
+    )
+    repair_workspace = resolved_scope == "workspace"
+    repair_user = resolved_scope == "user"
+    workspace_root = Path.cwd()
+    if repair_workspace:
+        ws_mcp = _workspace_agent_mcp_path(workspace_root, resolved_agent)
+        _repair_cyt_mcp_dev_wrapper_command(
+            ws_mcp,
+            CYT_MCP_WORKSPACE_SERVER_KEY,
+            resolved_agent,
+            runtime_repo=runtime_repo,
+            verbose=verbose,
+        )
+    if repair_user:
+        user_mcp = _AGENT_MCP_PATHS.get(resolved_agent)
+        if user_mcp is not None:
+            _repair_cyt_mcp_dev_wrapper_command(
+                user_mcp.expanduser(),
+                CYT_MCP_USER_SERVER_KEY,
+                resolved_agent,
+                runtime_repo=runtime_repo,
+                verbose=verbose,
+            )
+    if repair_workspace and _workspace_cyt_mcp_install_complete(resolved_agent, workspace_root):
+        debug_session_log(
+            hypothesis_id="B",
+            location="pairing.py:repair_pairing_from_mcp_runtime",
+            message="skipping workspace pairing repair; cyt-mcp-ws already installed",
+            data={
+                "agent": resolved_agent,
+                "catalog_scope": resolved_scope,
+                "workspace_root": str(workspace_root),
+            },
+        )
+        return
+    if not repair_workspace:
+        debug_session_log(
+            hypothesis_id="B",
+            location="pairing.py:repair_pairing_from_mcp_runtime",
+            message="skipping workspace pairing repair for user-scoped cyt-mcp",
+            data={"agent": resolved_agent, "catalog_scope": resolved_scope},
+        )
     repair_pairing(
         {
             "hook_event_name": "sessionStart",
             "session_id": "cyt-mcp-startup",
             "cyt_agent": resolved_agent,
-            "cwd": str(Path.cwd()),
+            "cwd": str(workspace_root),
         },
         verbose=verbose,
         session_start=False,
         runtime_repo=runtime_repo,
+        repair_user=repair_user,
+        repair_workspace=repair_workspace,
     )

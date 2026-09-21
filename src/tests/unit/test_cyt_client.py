@@ -1351,6 +1351,61 @@ def test_repair_pairing_skips_when_skip_txt_present(
     assert json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"] == {}
 
 
+def test_repair_cyt_mcp_dev_wrapper_command_upgrades_legacy_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.mcp_entry import CYT_MCP_WORKSPACE_SERVER_KEY
+    from cyt_client.pairing import _repair_cyt_mcp_dev_wrapper_command
+
+    dev_repo = tmp_path / "repo"
+    dev_repo.mkdir()
+    (dev_repo / "src" / "cyt_mcp").mkdir(parents=True)
+    (dev_repo / "src" / "cyt_mcp" / "cli.py").write_text("# stub\n", encoding="utf-8")
+    cyt_dir = tmp_path / "cursor" / "hooks" / "cyt"
+    cyt_dir.mkdir(parents=True)
+    legacy = tmp_path / "cursor" / "hooks" / "cyt-mcp-dev.cmd"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path = tmp_path / "mcp.json"
+    mcp_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    CYT_MCP_WORKSPACE_SERVER_KEY: {
+                        "command": str(legacy),
+                        "args": ["--agent", "cursor"],
+                    },
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cyt_client.pairing._resolve_dev_context",
+        lambda _agent, runtime_repo=None: (True, dev_repo),
+    )
+    monkeypatch.setattr(
+        "cyt_client.hook_invocation.agent_hooks_cyt_dir",
+        lambda _agent: cyt_dir,
+    )
+    monkeypatch.setattr("cyt.platform.compat.is_windows", lambda: True)
+
+    changed = _repair_cyt_mcp_dev_wrapper_command(
+        mcp_path,
+        CYT_MCP_WORKSPACE_SERVER_KEY,
+        "cursor",
+        runtime_repo=dev_repo,
+    )
+
+    assert changed is True
+    payload = json.loads(mcp_path.read_text(encoding="utf-8"))
+    command = payload["mcpServers"][CYT_MCP_WORKSPACE_SERVER_KEY]["command"]
+    assert command.replace("\\", "/").endswith("cyt/mcp-dev.cmd")
+    assert not legacy.is_file()
+    assert (cyt_dir / "mcp-dev.cmd").is_file()
+
+
 def test_repair_pairing_from_mcp_runtime_skips_when_skip_txt_present(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

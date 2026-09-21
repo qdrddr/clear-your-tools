@@ -62,13 +62,23 @@ uv tool install 'clear-your-tools[cyt-mcp]'
 cyt hook cursor
 ```
 
-The wizard migrates backend MCP servers to `~/.config/cyt/mcp/<agent>.json`, writes
-`~/.config/cyt/mcp-aggregator.yaml`, and registers a single **cyt-mcp** entry in `~/.cursor/mcp.json`.
+The wizard migrates backend MCP servers into two layers:
+
+| Layer | Backend defs | MCP frontend key | Agent MCP file |
+|-------|----------------|------------------|----------------|
+| User-global | `~/.config/cyt/mcp/<agent>.json` | `cyt-mcp-usr` | `~/.cursor/mcp.json` |
+| Project | `.agents/cyt/config/mcp/<agent>.json` | `cyt-mcp-ws` | `.cursor/mcp.json` |
+
+User-global backends live in `~/.config/cyt/mcp-config.yaml`; project backends in
+`.agents/cyt/config/mcp-config.yaml`. Both frontends use stdio by default (`command: cyt-mcp` with
+`CYT_WORKSPACE=${workspaceFolder}`). If the same backend name exists in both layers, the user-global
+copy wins and the workspace frontend omits it.
+
 CYT injects full tool schemas via hooks while the agent sees minimal MCP stubs from cyt-mcp.
 
 **Cursor MCP allowlist:** hooks can **deny** bad tool calls but returning `allow` does not bypass
-Cursor's separate MCP approval UI. Add the `cyt-mcp` server (or individual stub tool names) under
-**Settings → Tools & MCP → allowlist** to avoid per-call approval prompts.
+Cursor's separate MCP approval UI. Add **`cyt-mcp-usr`** and **`cyt-mcp-ws`** (or individual stub
+tool names) under **Settings → Tools & MCP → allowlist** to avoid per-call approval prompts.
 
 **Legacy MCPC path** (optional): install `@apify/mcpc` and set `pruning.tools.hook.tools_from: [mcpc]`.
 

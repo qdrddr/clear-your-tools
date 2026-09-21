@@ -67,6 +67,7 @@ __all__ = [
     "cyt_daemon_start_command",
     "cyt_mcp_cli_script_relpath",
     "cyt_mcp_mcp_server_entry",
+    "detect_cyt_mcp_cli_invocation",
     "detect_hook_cli_invocation",
     "prefix_agent_hook_command",
     "invoked_via_cyt_cli_script",
@@ -197,6 +198,16 @@ def detect_hook_cli_invocation() -> HookCliInvocation:
     return HookCliInvocation(mode="installed", repo_root=None)
 
 
+def detect_cyt_mcp_cli_invocation() -> HookCliInvocation:
+    """Detect dev vs installed when building or repairing cyt-mcp MCP entries."""
+    from cyt_client.hook_invocation import runtime_dev_repo_from_mcp
+
+    repo_root = runtime_dev_repo_from_mcp()
+    if repo_root is not None:
+        return HookCliInvocation(mode="dev", repo_root=repo_root)
+    return detect_hook_cli_invocation()
+
+
 def _inline_cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
     invocation = invocation or detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
@@ -274,13 +285,11 @@ def _windows_wrapper_env_lines(env: dict[str, str]) -> list[str]:
     lines: list[str] = []
     for key, value in env.items():
         if value == _WORKSPACE_FOLDER_TEMPLATE and key == CYT_WORKSPACE_ENV:
-            lines.append(f"if not defined {key} (")
-            for index, agent_var in enumerate(_AGENT_WORKSPACE_ENV_VARS):
-                prefix = "  " if index == 0 else "  else "
+            for agent_var in _AGENT_WORKSPACE_ENV_VARS:
                 lines.append(
-                    f'{prefix}if defined {agent_var} set "{key}=!{agent_var}!"',
+                    f'if not defined {key} if defined {agent_var} '
+                    f'set "{key}=!{agent_var}!"',
                 )
-            lines.append(")")
             continue
         escaped = value.replace("%", "%%")
         lines.append(f'set "{key}={escaped}"')

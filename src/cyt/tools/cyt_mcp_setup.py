@@ -24,9 +24,9 @@ from cyt.proxy.setup_wizard import _prompt
 from cyt_client.mcp_entry import (
     CYT_MCP_FRONTEND_SERVER_KEYS,
     CYT_MCP_SERVER_KEY,
+    CYT_MCP_USER_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
     LEGACY_CYT_MCP_SERVER_KEY,
-    LEGACY_CYT_MCP_USER_SERVER_KEY,
     LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     CytMcpTransport,
     backend_mcp_servers,
@@ -34,6 +34,7 @@ from cyt_client.mcp_entry import (
     codex_cyt_mcp_toml_block,
     load_aggregator_transport_settings,
     normalize_cyt_mcp_transport,
+    user_aggregator_config_ref,
     workspace_aggregator_config_ref,
 )
 
@@ -131,24 +132,37 @@ def _backend_servers_from_agent_path(path: Path, agent: str) -> dict[str, Any]:
     return backend_mcp_servers(_extract_mcp_servers_from_agent_path(path, agent))
 
 
-def has_migratable_mcp_backends(agent: str, scope: CytInstallScope) -> bool:
-    """Return True when at least one non-cyt-mcp backend exists in cyt storage or agent MCP."""
+def has_migratable_user_mcp_backends(agent: str, scope: CytInstallScope) -> bool:
+    """Return True when user-global cyt storage or agent MCP has non-frontend backends."""
     agent = agent.strip() or "cursor"
-    defs_locations: list[Path] = [scope.user_server_defs_path(agent)]
+    user_defs = scope.user_server_defs_path(agent)
+    if backend_mcp_servers(_extract_mcp_servers_from_json(user_defs)):
+        return True
+    return bool(_backend_servers_from_agent_path(scope.global_agent_mcp_path(agent), agent))
+
+
+def has_migratable_workspace_mcp_backends(agent: str, scope: CytInstallScope) -> bool:
+    """Return True when project cyt storage or agent MCP has non-frontend backends."""
+    if not scope.has_workspace:
+        return False
+    agent = agent.strip() or "cursor"
     workspace_defs = scope.resolve_workspace_server_defs_path(agent)
-    if workspace_defs is not None:
-        defs_locations.append(workspace_defs)
-    for path in defs_locations:
-        if backend_mcp_servers(_extract_mcp_servers_from_json(path)):
-            return True
-    agent_locations: list[Path] = [scope.global_agent_mcp_path(agent)]
+    if workspace_defs is not None and backend_mcp_servers(
+        _extract_mcp_servers_from_json(workspace_defs),
+    ):
+        return True
     workspace_mcp = scope.workspace_agent_mcp_path(agent)
     if workspace_mcp is not None:
-        agent_locations.append(workspace_mcp)
-    for path in agent_locations:
-        if _backend_servers_from_agent_path(path, agent):
-            return True
+        return bool(_backend_servers_from_agent_path(workspace_mcp, agent))
     return False
+
+
+def has_migratable_mcp_backends(agent: str, scope: CytInstallScope) -> bool:
+    """Return True when at least one non-cyt-mcp backend exists in cyt storage or agent MCP."""
+    return has_migratable_user_mcp_backends(agent, scope) or has_migratable_workspace_mcp_backends(
+        agent,
+        scope,
+    )
 
 
 def _strip_codex_mcp_server_sections(text: str, server_keys: frozenset[str]) -> tuple[str, bool]:
@@ -303,7 +317,7 @@ def migrate_agent_backends_from(
     permission_scope: PermissionScope = "user",
     workspace_root: Path | None = None,
 ) -> Path:
-    """Copy backend MCP servers from *source_path* into *target_path*."""
+    """Merge backend MCP servers from *source_path* into *target_path*."""
     from cyt.permissions.mcp_defs import disabled_server_names, import_disabled_servers_to_deny
 
     servers = _backend_servers_from_agent_path(source_path, agent)
@@ -312,8 +326,10 @@ def migrate_agent_backends_from(
         if not target_path.is_file():
             _atomic_write_text(target_path, json.dumps({"mcpServers": {}}, indent=2) + "\n")
         return target_path
-    payload = {"mcpServers": servers}
-    _atomic_write_text(target_path, json.dumps(payload, indent=2) + "\n")
+    if (agent or "cursor").strip() == "codex" and target_path.suffix == ".toml":
+        _restore_codex_mcp_backends(servers, target_path)
+    else:
+        _restore_json_mcp_backends(servers, target_path)
     print(f"Migrated backend MCP servers to {target_path}", file=sys.stderr)
 
     disabled = disabled_server_names(servers)
@@ -497,7 +513,9 @@ def _build_cyt_mcp_entry(
     aggregator_config: Path | str | None,
     workspace_cwd: str | None = None,
 ) -> dict[str, Any]:
-    invocation = invocation or detect_hook_cli_invocation()
+    from cyt.hook.cli_invocation import detect_cyt_mcp_cli_invocation
+
+    invocation = invocation or detect_cyt_mcp_cli_invocation()
     agg_path = aggregator_config if isinstance(aggregator_config, Path) else None
     _, host, port, mcp_path, _catalog_path = load_aggregator_transport_settings(agg_path)
     if invocation.is_dev and invocation.repo_root is not None:
@@ -537,7 +555,10 @@ def _write_codex_cyt_mcp_entry(
     marker = f"[mcp_servers.{server_key}]"
     block = codex_cyt_mcp_toml_block(agent, entry, server_key=server_key)
     legacy_marker = f"[mcp_servers.{LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY}]"
-    if legacy_marker in text and server_key == CYT_MCP_WORKSPACE_SERVER_KEY:
+    if legacy_marker in text and server_key in {
+        CYT_MCP_WORKSPACE_SERVER_KEY,
+        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
+    }:
         before, _, after = text.partition(legacy_marker)
         next_section = after.find("\n[mcp_servers.")
         if next_section >= 0:
@@ -545,7 +566,7 @@ def _write_codex_cyt_mcp_entry(
         else:
             text = before.rstrip() + "\n"
     legacy_user_marker = f"[mcp_servers.{LEGACY_CYT_MCP_SERVER_KEY}]"
-    if legacy_user_marker in text and server_key == CYT_MCP_SERVER_KEY:
+    if legacy_user_marker in text and server_key in {CYT_MCP_SERVER_KEY, CYT_MCP_USER_SERVER_KEY}:
         before, _, after = text.partition(legacy_user_marker)
         next_section = after.find("\n[mcp_servers.")
         if next_section >= 0:
@@ -583,20 +604,23 @@ def _write_json_cyt_mcp_entry(
         raw = {}
     if not isinstance(raw, dict):
         raw = {}
+    from cyt_client.mcp_entry import mcp_entries_equivalent
+
     if frontend_only:
+        existing = raw.get("mcpServers")
+        if isinstance(existing, dict) and mcp_entries_equivalent(existing.get(server_key), entry):
+            return
         servers: dict[str, Any] = {server_key: entry}
     else:
         existing = raw.get("mcpServers")
         if not isinstance(existing, dict):
             existing = {}
+        current = existing.get(server_key)
+        if mcp_entries_equivalent(current, entry):
+            return
         servers = dict(existing)
-        if server_key == CYT_MCP_SERVER_KEY:
-            for legacy_key in (
-                LEGACY_CYT_MCP_USER_SERVER_KEY,
-                LEGACY_CYT_MCP_SERVER_KEY,
-                CYT_MCP_WORKSPACE_SERVER_KEY,
-                LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
-            ):
+        for legacy_key in CYT_MCP_FRONTEND_SERVER_KEYS:
+            if legacy_key != server_key:
                 servers.pop(legacy_key, None)
         servers[server_key] = entry
     raw["mcpServers"] = servers
@@ -651,14 +675,50 @@ def write_agent_cyt_mcp_entry(
     frontend_only: bool = False,
     workspace_root: Path | None = None,
 ) -> None:
+    _ = workspace_root
     scope = CytInstallScope.from_cwd()
     write_agent_cyt_mcp_entry_at(
         scope.global_agent_mcp_path(agent),
         agent,
         invocation=invocation,
         transport=transport,
-        server_key=CYT_MCP_SERVER_KEY,
-        aggregator_config=workspace_aggregator_config_ref(agent, workspace_root),
+        server_key=CYT_MCP_USER_SERVER_KEY,
+        aggregator_config=user_aggregator_config_ref(),
+        frontend_only=frontend_only,
+    )
+
+
+def write_workspace_cyt_mcp_entry(
+    agent: str,
+    scope: CytInstallScope,
+    *,
+    invocation: HookCliInvocation | None = None,
+    transport: CytMcpTransport = "stdio",
+    frontend_only: bool = False,
+) -> None:
+    """Write ``cyt-mcp-ws`` to project agent MCP config."""
+    if not scope.has_workspace:
+        return
+    mcp_path = scope.workspace_agent_mcp_path(agent)
+    if mcp_path is None:
+        return
+    user_mcp = scope.user_agent_mcp_path(agent)
+    try:
+        if mcp_path.resolve() == user_mcp.resolve():
+            logger.debug(
+                "Skipping cyt-mcp-ws write: workspace MCP path equals user global MCP (%s)",
+                mcp_path,
+            )
+            return
+    except OSError:
+        pass
+    write_agent_cyt_mcp_entry_at(
+        mcp_path,
+        agent,
+        invocation=invocation,
+        transport=transport,
+        server_key=CYT_MCP_WORKSPACE_SERVER_KEY,
+        aggregator_config=workspace_aggregator_config_ref(agent, scope.workspace_root),
         frontend_only=frontend_only,
     )
 
@@ -706,12 +766,17 @@ def setup_cyt_mcp_workspace_for_agent(
     transport: CytMcpTransport = "stdio",
     migrate_backends: bool = True,
     verify_only: bool = False,
+    require_backends: bool = True,
 ) -> None:
     if not scope.has_workspace:
         return
     agent = agent.strip() or "cursor"
     resolved = invocation or detect_hook_cli_invocation()
-    if not resolved.is_dev and not has_migratable_mcp_backends(agent, scope):
+    if (
+        require_backends
+        and not resolved.is_dev
+        and not has_migratable_workspace_mcp_backends(agent, scope)
+    ):
         return
 
     cyt_dir = scope.workspace_cyt_dir(agent)
@@ -766,7 +831,13 @@ def setup_cyt_mcp_workspace_for_agent(
             workspace_scoped=True,
         )
 
-    remove_project_cyt_mcp_for_agent(agent, scope)
+    write_workspace_cyt_mcp_entry(
+        agent,
+        scope,
+        invocation=invocation,
+        transport=transport,
+        frontend_only=migrate_backends,
+    )
 
 
 def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
@@ -814,7 +885,7 @@ def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool
     return True
 
 
-def setup_cyt_mcp_for_agent(
+def setup_cyt_mcp_user_for_agent(
     agent: str,
     *,
     invocation: HookCliInvocation | None = None,
@@ -822,11 +893,16 @@ def setup_cyt_mcp_for_agent(
     migrate_backends: bool = True,
     verify_only: bool = False,
     scope: CytInstallScope | None = None,
-    configure_workspace: bool | None = None,
+    require_backends: bool = True,
 ) -> None:
+    """Install cyt-mcp-usr (user-global frontend + user backend defs)."""
     resolved = invocation or detect_hook_cli_invocation()
     install_scope = scope or CytInstallScope.from_cwd()
-    if not resolved.is_dev and not has_migratable_mcp_backends(agent, install_scope):
+    if (
+        require_backends
+        and not resolved.is_dev
+        and not has_migratable_user_mcp_backends(agent, install_scope)
+    ):
         return
 
     if migrate_backends:
@@ -847,19 +923,50 @@ def setup_cyt_mcp_for_agent(
         workspace_root=install_scope.workspace_root,
     )
 
-    if not install_scope.has_workspace:
-        return
 
+def setup_cyt_mcp_for_agent(
+    agent: str,
+    *,
+    invocation: HookCliInvocation | None = None,
+    transport: CytMcpTransport = "stdio",
+    migrate_backends: bool = True,
+    verify_only: bool = False,
+    scope: CytInstallScope | None = None,
+    configure_user: bool = True,
+    configure_workspace: bool | None = None,
+    migrate_user_backends: bool | None = None,
+    migrate_workspace_backends: bool | None = None,
+    require_user_backends: bool = True,
+    require_workspace_backends: bool = True,
+) -> None:
+    resolved = invocation or detect_hook_cli_invocation()
+    install_scope = scope or CytInstallScope.from_cwd()
+    migrate_user = migrate_backends if migrate_user_backends is None else migrate_user_backends
+    migrate_workspace = (
+        migrate_backends if migrate_workspace_backends is None else migrate_workspace_backends
+    )
     configure_workspace = configure_workspace if configure_workspace is not None else True
 
-    if configure_workspace:
+    if configure_user:
+        setup_cyt_mcp_user_for_agent(
+            agent,
+            invocation=resolved,
+            transport=transport,
+            migrate_backends=migrate_user,
+            verify_only=verify_only,
+            scope=install_scope,
+            require_backends=require_user_backends,
+        )
+
+    if configure_workspace and install_scope.has_workspace:
         setup_cyt_mcp_workspace_for_agent(
             agent,
             install_scope,
             invocation=resolved,
             transport=transport,
-            migrate_backends=migrate_backends,
+            migrate_backends=migrate_workspace,
             verify_only=verify_only,
+            require_backends=require_workspace_backends,
         )
 
 

@@ -22,6 +22,7 @@ from cyt.hook.workspace_resolution import (
     build_cyt_uv_wrapper_invocation_payload,
     ensure_vscode_terminal_workspace_env,
     cyt_uv_wrapper_script_paths,
+    ensure_cyt_mcp_dev_wrapper,
     ensure_cyt_uv_wrapper_scripts,
     format_hook_setup_workspace_report,
     hook_setup_workspace_required_message,
@@ -30,6 +31,7 @@ from cyt.hook.workspace_resolution import (
     write_cyt_uv_wrapper_invocation,
     resolve_consumer_project_root,
     resolve_consumer_workspace,
+    hook_setup_mcp_workspace_root,
     resolve_hook_setup_consumer_root,
     resolve_hook_setup_workspace,
 )
@@ -283,8 +285,8 @@ def test_ensure_cyt_uv_wrapper_scripts_copies_to_agent_hooks_dir(
     assert sh.is_file()
     ps1_text = ps1.read_text(encoding="utf-8")
     assert "CYT_SHELL_WORKSPACE" in ps1_text
-    assert "Add-HookWorkspaceArg" in ps1_text
-    assert "Invoke-CytViaUv" in ps1_text
+    assert "Add-HookWorkspaceArg" not in ps1_text
+    assert "Invoke-CytViaUv -CytArgs $Args" in ps1_text
     assert "while ($dir)" in ps1_text
     sidecar = cyt_dir / CYT_UV_INVOCATION_FILENAME
     assert sidecar.is_file()
@@ -349,6 +351,37 @@ def test_build_cyt_uv_wrapper_invocation_payload_falls_back_to_tool(
         "package": "clear-your-tools",
         "executable": "cyt",
     }
+
+
+def test_ensure_cyt_mcp_dev_wrapper_writes_hooks_cyt_mcp_dev_cmd(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    cyt_dir = tmp_path / "cursor" / "hooks" / "cyt"
+    dev_repo = tmp_path / "clear-your-tools"
+    dev_repo.mkdir()
+    (dev_repo / "src" / "cyt_mcp").mkdir(parents=True)
+    (dev_repo / "src" / "cyt_mcp" / "cli.py").write_text("# stub\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.agent_cyt_uv_dir",
+        lambda _agent: cyt_dir,
+    )
+    from cyt.hook import cli_invocation as cli_invocation_mod
+
+    monkeypatch.setattr(
+        cli_invocation_mod,
+        "detect_hook_cli_invocation",
+        lambda: cli_invocation_mod.HookCliInvocation(mode="dev", repo_root=dev_repo),
+    )
+    monkeypatch.setattr("cyt.platform.compat.is_windows", lambda: True)
+
+    wrapper = ensure_cyt_mcp_dev_wrapper("cursor")
+
+    assert wrapper == cyt_dir / "mcp-dev.cmd"
+    assert wrapper.is_file()
+    text = wrapper.read_text(encoding="utf-8")
+    assert str(dev_repo.resolve()) in text
+    assert "src/cyt_mcp/cli.py" in text
 
 
 def test_ensure_cyt_uv_wrapper_scripts_removes_legacy_flat_wrappers(
@@ -522,6 +555,50 @@ def test_resolve_hook_setup_consumer_root_continues_when_cyt_workspace_env_set(
     )
 
     assert resolve_hook_setup_consumer_root() is None
+
+
+def test_hook_setup_mcp_workspace_root_uses_cyt_checkout_when_consumer_skipped(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    cyt_repo = tmp_path / "clear-your-tools"
+    consumer = tmp_path / "consumer"
+    for repo in (cyt_repo, consumer):
+        repo.mkdir()
+        (repo / ".git").mkdir()
+    monkeypatch.chdir(cyt_repo)
+    monkeypatch.setenv(CYT_WORKSPACE_ENV, str(cyt_repo))
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
+
+    resolution = resolve_hook_setup_workspace()
+    consumer_root = resolve_hook_setup_consumer_root()
+    assert consumer_root is None
+    assert hook_setup_mcp_workspace_root(resolution, consumer_root) == cyt_repo.resolve()
+
+
+def test_hook_setup_mcp_workspace_root_prefers_consumer_root(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    cyt_repo = tmp_path / "clear-your-tools"
+    consumer = tmp_path / "consumer"
+    for repo in (cyt_repo, consumer):
+        repo.mkdir()
+        (repo / ".git").mkdir()
+    monkeypatch.chdir(cyt_repo)
+    monkeypatch.setenv(CYT_WORKSPACE_ENV, str(consumer))
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
+
+    resolution = resolve_hook_setup_workspace()
+    consumer_root = resolve_hook_setup_consumer_root()
+    assert consumer_root == consumer.resolve()
+    assert hook_setup_mcp_workspace_root(resolution, consumer_root) == consumer.resolve()
 
 
 def test_resolve_hook_setup_consumer_root_continues_when_explicit_cyt_workspace(

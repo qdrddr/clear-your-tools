@@ -9,7 +9,11 @@ import pytest
 
 from cyt.hook.install_scope import CytInstallScope, detect_workspace_root, is_user_profile_root
 from cyt.tools import cyt_mcp_setup
-from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY
+from cyt_client.mcp_entry import (
+    CYT_MCP_SERVER_KEY,
+    CYT_MCP_USER_SERVER_KEY,
+    CYT_MCP_WORKSPACE_SERVER_KEY,
+)
 
 
 def test_detect_workspace_root_from_git(tmp_path: Path) -> None:
@@ -105,8 +109,9 @@ def test_setup_cyt_mcp_global_only_outside_repo(
 
     assert not (tmp_path / ".cursor" / "cyt").exists()
     user_mcp = json.loads(global_mcp.read_text(encoding="utf-8"))
-    assert CYT_MCP_SERVER_KEY in user_mcp["mcpServers"]
-    assert "--config" in user_mcp["mcpServers"][CYT_MCP_SERVER_KEY]["args"]
+    assert CYT_MCP_USER_SERVER_KEY in user_mcp["mcpServers"]
+    assert "--config" in user_mcp["mcpServers"][CYT_MCP_USER_SERVER_KEY]["args"]
+    assert CYT_MCP_SERVER_KEY not in user_mcp["mcpServers"]
 
 
 def test_setup_cyt_mcp_writes_global_and_workspace_layers(
@@ -181,9 +186,48 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
 
     user_mcp = json.loads(global_mcp.read_text(encoding="utf-8"))
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
-    assert CYT_MCP_SERVER_KEY in user_mcp["mcpServers"]
-    assert "url" in user_mcp["mcpServers"][CYT_MCP_SERVER_KEY]
+    assert CYT_MCP_USER_SERVER_KEY in user_mcp["mcpServers"]
+    assert "url" in user_mcp["mcpServers"][CYT_MCP_USER_SERVER_KEY]
+    assert "backend-a" not in user_mcp["mcpServers"]
+    assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})
+    assert "backend-b" not in project_mcp_data.get("mcpServers", {})
+    assert set(project_mcp_data["mcpServers"]) == {CYT_MCP_WORKSPACE_SERVER_KEY}
     assert CYT_MCP_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
+
+
+def test_migrate_agent_backends_from_merges_into_existing_workspace_defs(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / ".cursor" / "mcp.json"
+    target = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    source.parent.mkdir(parents=True)
+    target.parent.mkdir(parents=True)
+    source.write_text(
+        json.dumps({"mcpServers": {"backend-b": {"command": "echo", "args": ["b"]}}}),
+        encoding="utf-8",
+    )
+    target.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "backend-a": {"command": "echo", "args": ["a"]},
+                    "gitnexus": {"command": "gitnexus.cmd", "args": ["mcp"]},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    cyt_mcp_setup.migrate_agent_backends_from(
+        source,
+        target,
+        agent="cursor",
+        permission_scope="workspace",
+        workspace_root=tmp_path,
+    )
+
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert set(payload["mcpServers"]) == {"backend-a", "backend-b", "gitnexus"}
 
 
 def test_setup_cyt_mcp_configures_workspace_with_stdio(
@@ -237,6 +281,7 @@ def test_setup_cyt_mcp_configures_workspace_with_stdio(
 
     assert (tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json").is_file()
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})
     assert CYT_MCP_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
 
 
@@ -300,6 +345,7 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
     global_agg = home / "cyt" / "mcp-config.yaml"
     assert "verify_only: true" in global_agg.read_text(encoding="utf-8")
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})
     assert CYT_MCP_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
 
 

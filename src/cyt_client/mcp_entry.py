@@ -7,28 +7,31 @@ import re
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from cyt_client.compat import is_windows
 from cyt_client.hook_executable import (
     is_uv_run_dev_hook_command,
     repo_root_from_uv_run_hook_command,
+    resolve_hook_executable,
 )
 
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
-CYT_MCP_SERVER_KEY = "cyt-mcp"
-CYT_WORKSPACE_ENV = "CYT_WORKSPACE"
-LEGACY_CYT_MCP_USER_SERVER_KEY = "cyt-mcp-usr"
-LEGACY_CYT_MCP_SERVER_KEY = "cyt-mcp-usr"
+CYT_MCP_USER_SERVER_KEY = "cyt-mcp-usr"
 CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-ws"
+CYT_MCP_SERVER_KEY = "cyt-mcp"  # legacy single-frontend key
+CYT_WORKSPACE_ENV = "CYT_WORKSPACE"
+LEGACY_CYT_MCP_USER_SERVER_KEY = CYT_MCP_USER_SERVER_KEY
+LEGACY_CYT_MCP_SERVER_KEY = CYT_MCP_SERVER_KEY
 LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-workspace"
 CYT_MCP_FRONTEND_SERVER_KEYS = frozenset(
     {
-        CYT_MCP_SERVER_KEY,
-        LEGACY_CYT_MCP_USER_SERVER_KEY,
-        LEGACY_CYT_MCP_SERVER_KEY,
+        CYT_MCP_USER_SERVER_KEY,
         CYT_MCP_WORKSPACE_SERVER_KEY,
+        CYT_MCP_SERVER_KEY,
         LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
         "cyt_mcp",
     },
 )
+USER_CONFIG_REL = "~/.config/cyt/mcp-config.yaml"
 WORKSPACE_CONFIG_REL = ".agents/cyt/config/mcp-config.yaml"
 CURSOR_WORKSPACE_FOLDER = "${workspaceFolder}"
 CYT_MCP_SCRIPT_REL = "src/cyt_mcp/cli.py"
@@ -63,8 +66,16 @@ def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
         return False
     spec_dict: dict[str, Any] = cast(dict[str, Any], spec)
     command = spec_dict.get("command")
-    if command == INSTALLED_CYT_MCP_COMMAND:
-        return True
+    if isinstance(command, str):
+        normalized_command = command.strip().casefold()
+        if normalized_command == INSTALLED_CYT_MCP_COMMAND or normalized_command.endswith(
+            "cyt-mcp.exe",
+        ):
+            return True
+        if normalized_command.replace("\\", "/").endswith("cyt/mcp-dev.cmd"):
+            return True
+        if normalized_command.endswith("cyt-mcp-dev.cmd"):
+            return True
     args = spec_dict.get("args")
     if command == "uv" and isinstance(args, list):
         joined = " ".join(str(arg) for arg in args)
@@ -155,6 +166,10 @@ def _append_config_arg(args: list[str], aggregator_config: Path | str | None) ->
     return [*args, "--config", config_text]
 
 
+def _append_workspace_arg(args: list[str]) -> list[str]:
+    return [*args, "--workspace", CURSOR_WORKSPACE_FOLDER]
+
+
 def _agent_mcp_env() -> dict[str, str]:
     return {CYT_WORKSPACE_ENV: CURSOR_WORKSPACE_FOLDER}
 
@@ -174,29 +189,43 @@ def build_cyt_mcp_mcp_server_entry(
     agent_name = agent.strip() or "cursor"
     if transport == "http":
         return {"url": cyt_mcp_http_mcp_url(host=http_host, port=http_port, mcp_path=http_mcp_path)}
+    mcp_args = _append_workspace_arg(
+        _append_config_arg(["--agent", agent_name], aggregator_config),
+    )
     if dev_repo_root is not None and dev_script_rel:
-        entry: dict[str, Any] = {
-            "command": "uv",
-            "args": _append_config_arg(
-                [
+        if is_windows():
+            from cyt_client.hook_invocation import install_windows_cyt_mcp_dev_wrapper
+
+            wrapper_path = install_windows_cyt_mcp_dev_wrapper(
+                dev_repo_root=Path(dev_repo_root),
+            )
+            entry: dict[str, Any] = {
+                "command": str(wrapper_path),
+                "args": mcp_args,
+                "env": _agent_mcp_env(),
+                "cwd": workspace_cwd or CURSOR_WORKSPACE_FOLDER,
+            }
+        else:
+            uv = resolve_hook_executable("uv")
+            entry = {
+                "command": uv,
+                "args": [
                     "run",
                     "--directory",
                     str(dev_repo_root),
                     dev_script_rel,
-                    "--agent",
-                    agent_name,
+                    *mcp_args,
                 ],
-                aggregator_config,
-            ),
-            "env": _agent_mcp_env(),
-        }
+                "env": _agent_mcp_env(),
+                "cwd": workspace_cwd or CURSOR_WORKSPACE_FOLDER,
+            }
     else:
         entry = {
-            "command": INSTALLED_CYT_MCP_COMMAND,
-            "args": _append_config_arg(["--agent", agent_name], aggregator_config),
+            "command": resolve_hook_executable(INSTALLED_CYT_MCP_COMMAND),
+            "args": mcp_args,
             "env": _agent_mcp_env(),
+            "cwd": workspace_cwd or CURSOR_WORKSPACE_FOLDER,
         }
-    _ = workspace_cwd
     return entry
 
 
@@ -240,12 +269,17 @@ def _inner_command_from_windows_wrapper(command: str) -> str | None:
     path = Path(normalized)
     if not path.is_file():
         return None
+    fallback: str | None = None
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.casefold() == "@echo off":
             continue
-        return stripped
-    return None
+        if " run --directory " in stripped:
+            return stripped
+        if stripped.casefold().startswith(("set ", "setlocal", "if ", "else ", "call ")):
+            continue
+        fallback = stripped
+    return fallback
 
 
 def is_cyt_dev_hook_command(command: str) -> bool:
@@ -297,6 +331,11 @@ def dev_invocation_from_hooks_file(hooks_path: Path) -> tuple[Path, str] | None:
     return None
 
 
+def user_aggregator_config_ref() -> str:
+    """Return user-global aggregator ``--config`` path."""
+    return USER_CONFIG_REL
+
+
 def workspace_aggregator_config_ref(agent: str, workspace_root: Path | None = None) -> str:
     """Return a workspace-relative ``--config`` path (resolved via ``cwd`` or ``CYT_WORKSPACE``)."""
     _ = agent, workspace_root
@@ -305,10 +344,9 @@ def workspace_aggregator_config_ref(agent: str, workspace_root: Path | None = No
 
 def _cyt_mcp_spec_from_servers(servers: dict[str, Any]) -> dict[str, Any] | None:
     for key in (
-        CYT_MCP_SERVER_KEY,
-        LEGACY_CYT_MCP_USER_SERVER_KEY,
-        LEGACY_CYT_MCP_SERVER_KEY,
+        CYT_MCP_USER_SERVER_KEY,
         CYT_MCP_WORKSPACE_SERVER_KEY,
+        CYT_MCP_SERVER_KEY,
         LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     ):
         candidate = servers.get(key)
@@ -342,6 +380,14 @@ def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
         return None
     command = spec.get("command")
     args = spec.get("args")
+    from cyt_client.hook_invocation import is_cyt_mcp_dev_wrapper_command
+
+    if isinstance(command, str) and is_cyt_mcp_dev_wrapper_command(command):
+        inner = _inner_command_from_windows_wrapper(command)
+        if inner is not None:
+            repo = repo_root_from_uv_run_hook_command(_strip_env_prefix(inner))
+            if repo is not None and (repo / CYT_MCP_SCRIPT_REL).is_file():
+                return repo, CYT_MCP_SCRIPT_REL
     if command != "uv" or not isinstance(args, list):
         return None
     joined = " ".join(str(arg) for arg in args)
@@ -377,4 +423,7 @@ def codex_cyt_mcp_toml_block(
     cwd = entry.get("cwd")
     if isinstance(cwd, str) and cwd.strip():
         lines.append(f'cwd = "{cwd.strip()}"')
+    env = entry.get("env")
+    if isinstance(env, dict) and env:
+        lines.append(f"env = {json.dumps(env)}")
     return "\n".join(lines) + "\n"

@@ -144,9 +144,9 @@ def test_pairing_does_not_modify_hooks_file(
 
     assert json.loads(hooks_path.read_text(encoding="utf-8")) == hooks_before
     mcp_payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-    from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
+    from cyt_client.mcp_entry import CYT_MCP_USER_SERVER_KEY
 
-    assert CYT_MCP_SERVER_KEY in mcp_payload["mcpServers"]
+    assert CYT_MCP_USER_SERVER_KEY in mcp_payload["mcpServers"]
 
 
 def test_pairing_repairs_workspace_mcp_entry(
@@ -194,7 +194,7 @@ def test_pairing_repairs_workspace_mcp_entry(
     monkeypatch.setattr("cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
 
-    from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY
+    from cyt_client.mcp_entry import CYT_MCP_USER_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY
 
     repair_pairing(
         {
@@ -207,12 +207,33 @@ def test_pairing_repairs_workspace_mcp_entry(
 
     global_payload = json.loads(global_mcp.read_text(encoding="utf-8"))
     workspace_payload = json.loads(workspace_mcp.read_text(encoding="utf-8"))
-    assert CYT_MCP_SERVER_KEY in global_payload["mcpServers"]
-    user_entry = global_payload["mcpServers"][CYT_MCP_SERVER_KEY]
+    assert CYT_MCP_USER_SERVER_KEY in global_payload["mcpServers"]
+    user_entry = global_payload["mcpServers"][CYT_MCP_USER_SERVER_KEY]
     assert "--config" in user_entry.get("args", [])
-    assert CYT_MCP_WORKSPACE_SERVER_KEY not in workspace_payload.get("mcpServers", {})
+    assert CYT_MCP_WORKSPACE_SERVER_KEY in workspace_payload.get("mcpServers", {})
     shared_agg = repo_root / ".agents" / "cyt" / "config" / "mcp-config.yaml"
     assert shared_agg.is_file()
+
+
+def test_windows_cyt_mcp_dev_wrapper_uses_valid_batch_workspace_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.hook_invocation import install_windows_cyt_mcp_dev_wrapper
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "src" / "cyt_mcp").mkdir(parents=True)
+    (repo_root / "src" / "cyt_mcp" / "cli.py").write_text("# stub\n", encoding="utf-8")
+    cyt_dir = tmp_path / "hooks" / "cyt"
+    monkeypatch.setattr(
+        "cyt_client.hook_invocation.agent_hooks_cyt_dir",
+        lambda _agent: cyt_dir,
+    )
+    wrapper = install_windows_cyt_mcp_dev_wrapper(dev_repo_root=repo_root)
+    text = wrapper.read_text(encoding="utf-8")
+    assert "else if" not in text.casefold()
+    assert "if not defined CYT_WORKSPACE if defined CURSOR_PROJECT_DIR" in text
 
 
 def test_resolve_pairing_dev_context_from_mcp_file(tmp_path: Path) -> None:
@@ -321,7 +342,7 @@ def test_repair_pairing_home_cwd_does_not_strip_user_cyt_mcp(
     monkeypatch.setattr("cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
 
-    from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
+    from cyt_client.mcp_entry import CYT_MCP_USER_SERVER_KEY
 
     repair_pairing(
         {
@@ -334,4 +355,83 @@ def test_repair_pairing_home_cwd_does_not_strip_user_cyt_mcp(
     )
 
     payload = json.loads(user_mcp.read_text(encoding="utf-8"))
-    assert CYT_MCP_SERVER_KEY in payload["mcpServers"]
+    assert CYT_MCP_USER_SERVER_KEY in payload["mcpServers"]
+
+
+def test_pairing_repairs_stale_user_mcp_entry_adds_workspace_scoping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sessionStart pairing should upgrade legacy cyt-mcp entries missing per-window workspace."""
+    repo_root = tmp_path / "clear-your-tools"
+    repo_root.mkdir()
+    (repo_root / "src" / "cyt_mcp").mkdir(parents=True)
+    (repo_root / "src" / "cyt_mcp" / "cli.py").write_text("# stub\n", encoding="utf-8")
+
+    home = tmp_path / "home"
+    cursor_dir = home / ".cursor"
+    cursor_dir.mkdir(parents=True)
+    user_mcp = cursor_dir / "mcp.json"
+    user_mcp.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "cyt-mcp": {
+                        "command": "uv",
+                        "args": [
+                            "run",
+                            "--directory",
+                            str(repo_root),
+                            "src/cyt_mcp/cli.py",
+                            "--agent",
+                            "cursor",
+                            "--config",
+                            ".agents/cyt/config/mcp-config.yaml",
+                        ],
+                        "env": {"CYT_WORKSPACE": "${workspaceFolder}"},
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "transport: stdio",
+                "http:",
+                "  host: 127.0.0.1",
+                "  port: 8765",
+                "  mcp_path: /mcp",
+                "  catalog_path: /catalog",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": user_mcp})
+    monkeypatch.setattr("cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
+
+    from cyt_client.mcp_entry import CYT_MCP_USER_SERVER_KEY, user_aggregator_config_ref
+
+    repair_pairing(
+        {
+            "hook_event_name": "sessionStart",
+            "session_id": "pair-workspace-scope",
+            "workspace_roots": [str(repo_root.resolve())],
+        },
+        verbose=False,
+        runtime_repo=repo_root,
+    )
+
+    payload = json.loads(user_mcp.read_text(encoding="utf-8"))["mcpServers"]
+    entry = payload[CYT_MCP_USER_SERVER_KEY]
+    assert user_aggregator_config_ref() in entry["args"]
+    assert entry["cwd"] == "${workspaceFolder}"
+    assert "--workspace" in entry["args"]
+    assert entry["args"][-2:] == ["--workspace", "${workspaceFolder}"]

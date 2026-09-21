@@ -16,7 +16,7 @@ from fastmcp import FastMCP
 
 from cyt.hook.daemon_client import resolve_hook_path
 from cyt_mcp.catalog import catalog_payload
-from cyt_mcp.config import AggregatorConfig
+from cyt_mcp.config import AggregatorConfig, catalog_layer_for_scope
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.tool_list_notify import ToolListChangedMiddleware, notify_all_sessions_list_changed
@@ -62,7 +62,8 @@ def unregister_push_context(config: AggregatorConfig) -> None:
 
 def _instance_key(config: AggregatorConfig) -> str:
     ws = str(config.workspace_root or "")
-    return f"{config.agent}:workspace:{ws}"
+    layer = catalog_layer_for_scope(config.catalog_scope)
+    return f"{config.agent}:workspace:{ws}:{layer}"
 
 
 def _can_push_to_registry(config: AggregatorConfig) -> bool:
@@ -101,6 +102,7 @@ def _build_register_payload(
         "agent": config.agent,
         "scope": "workspace",
         "workspace_root": str(config.workspace_root) if config.workspace_root is not None else None,
+        "catalog_layer": catalog_layer_for_scope(config.catalog_scope),
         "instance_id": _instance_id,
         "content_hash": content_hash,
     }
@@ -164,21 +166,48 @@ def _permissions_revision_from_response(response: dict[str, Any] | None) -> int:
 
 async def _refresh_permissions_catalog(context: PushContext, *, key: str) -> bool:
     """Reload deny overlays and rebuild runtime cache. Returns True when clients should refresh."""
+    from cyt_mcp.debug_session_log import debug_session_log
+
+    debug_session_log(
+        hypothesis_id="D",
+        location="hook_daemon_push.py:_refresh_permissions_catalog:start",
+        message="permissions catalog refresh starting",
+        data={"key": key, "cache_before": len(context.cache.snapshot())},
+    )
     old_hash = _catalog_hash(context.cache)
     deny_before = tuple(context.config_holder.mcp_deny)
     context.config_holder.reload_mcp_deny()
     deny_after = tuple(context.config_holder.mcp_deny)
-    from cyt_mcp.catalog_build import refresh_catalog_cache
+    from cyt_mcp.catalog_build import reapply_deny_overlays, refresh_catalog_cache
 
-    await refresh_catalog_cache(
-        context.server,
-        context.cache,
-        context.config_holder.config,
-        skip_push=True,
-    )
+    if len(context.cache.snapshot()) == 0:
+        from cyt_mcp.catalog_build import hydrate_runtime_cache
+
+        hydrate_runtime_cache(context.cache, context.config_holder.config)
+    if len(context.cache.snapshot()) == 0:
+        await refresh_catalog_cache(
+            context.server,
+            context.cache,
+            context.config_holder.config,
+            skip_push=True,
+        )
+    elif deny_before != deny_after:
+        reapply_deny_overlays(context.cache, context.config_holder.config)
     new_hash = _catalog_hash(context.cache)
     _last_success_hash.pop(key, None)
-    return new_hash != old_hash or deny_before != deny_after
+    should_notify = new_hash != old_hash or deny_before != deny_after
+    debug_session_log(
+        hypothesis_id="D",
+        location="hook_daemon_push.py:_refresh_permissions_catalog:done",
+        message="permissions catalog refresh finished",
+        data={
+            "key": key,
+            "should_notify": should_notify,
+            "cache_after": len(context.cache.snapshot()),
+            "deny_changed": deny_before != deny_after,
+        },
+    )
+    return should_notify
 
 
 def _refresh_permissions_catalog_sync(context: PushContext, *, key: str) -> bool:
@@ -289,6 +318,14 @@ async def _retry_push_loop(context: PushContext) -> None:
         try:
             success, revision = await asyncio.to_thread(_push_once, config, cache)
             if success and revision:
+                from cyt_mcp.debug_session_log import debug_session_log
+
+                debug_session_log(
+                    hypothesis_id="D",
+                    location="hook_daemon_push.py:_retry_push_loop:revision",
+                    message="catalog push returned permissions revision",
+                    data={"key": key, "revision": revision, "success": success},
+                )
                 await _maybe_reload_permissions(key=key, revision=revision, context=context)
         except Exception as exc:
             logger.debug("cyt-mcp catalog push loop error: %s", exc)
@@ -433,6 +470,7 @@ def deregister_catalog_push(config: AggregatorConfig) -> None:
         "agent": config.agent,
         "scope": "workspace",
         "workspace_root": str(config.workspace_root) if config.workspace_root is not None else None,
+        "catalog_layer": catalog_layer_for_scope(config.catalog_scope),
         "instance_id": _instance_id,
     }
     try:

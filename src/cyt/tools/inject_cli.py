@@ -157,7 +157,7 @@ def _full_definitions_for_tools(
     config = load_aggregator_config(agent=agent)
     cache = RuntimeToolCache()
     config_holder = ConfigHolder(config)
-    server, _middleware = build_aggregator(config_holder, cache)
+    server, _middleware, _coordinator = build_aggregator(config_holder, cache)
 
     async def _refresh() -> None:
         await refresh_runtime_cache(server, cache, config)

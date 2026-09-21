@@ -14,7 +14,7 @@ from cyt.hook.workspace_config import (
 from cyt_mcp.catalog import merge_catalog_payloads
 
 
-def test_merge_catalog_payloads_workspace_overrides_global() -> None:
+def test_merge_catalog_payloads_user_base_wins_on_conflict() -> None:
     base = {
         "agent": "cursor",
         "tools": [{"name": "a_tool", "input_schema": {}}],
@@ -27,7 +27,7 @@ def test_merge_catalog_payloads_workspace_overrides_global() -> None:
     }
     merged = merge_catalog_payloads(base, overlay)
     assert len(merged["tools"]) == 1
-    assert merged["tools"][0]["input_schema"] == {"type": "object", "properties": {}}
+    assert merged["tools"][0]["input_schema"] == {}
     assert set(merged["degraded_servers"]) == {"global-down", "ws-down"}
 
 

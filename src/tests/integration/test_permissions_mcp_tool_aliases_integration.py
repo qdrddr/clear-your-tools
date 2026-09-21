@@ -88,6 +88,7 @@ def test_hook_registry_catalog_respects_hedl_batch_alias_deny(tmp_path: Path) ->
             "agent": "cursor",
             "scope": "workspace",
             "workspace_root": str(pack.workspace),
+            "catalog_layer": "ws",
             "instance_id": "pid:test",
             "content_hash": "abc",
             "tools": tools,

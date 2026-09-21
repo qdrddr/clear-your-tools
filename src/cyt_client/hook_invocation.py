@@ -31,6 +31,8 @@ CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
 HOOK_TIMEOUT_SECONDS = 60
 CURSOR_POST_TOOL_DEFINITIONS_MATCHER = (
     r"get-tool-definitions|cyt-mcp_get-tool-definitions|"
+    r"mcp__cyt-mcp-usr__get-tool-definitions|"
+    r"mcp__cyt-mcp-ws__get-tool-definitions|"
     r"mcp__cyt-mcp__get-tool-definitions|"
     r"MCP:get-tool-definitions|MCP:cyt-mcp_get-tool-definitions"
 )
@@ -44,6 +46,9 @@ WINDOWS_CLIENT_WRAPPER = "cyt-client.cmd"
 WINDOWS_CLIENT_DEV_WRAPPER = "cyt-client-dev.cmd"
 WINDOWS_DAEMON_START_WRAPPER = "cyt-hook-daemon-start.cmd"
 WINDOWS_DAEMON_START_DEV_WRAPPER = "cyt-hook-daemon-start-dev.cmd"
+WINDOWS_CYT_MCP_DEV_WRAPPER_NAME = "mcp-dev.cmd"
+WINDOWS_CYT_MCP_DEV_WRAPPER = f"cyt/{WINDOWS_CYT_MCP_DEV_WRAPPER_NAME}"
+LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER = "cyt-mcp-dev.cmd"
 _WINDOWS_HOOK_WRAPPER_NAMES = (
     WINDOWS_CLIENT_WRAPPER,
     WINDOWS_CLIENT_DEV_WRAPPER,
@@ -60,6 +65,27 @@ def use_windows_hook_wrappers(*, use_dev: bool) -> bool:
 
 def cursor_hooks_dir() -> Path:
     return Path("~/.cursor/hooks").expanduser()
+
+
+def agent_hooks_cyt_dir(agent: str = "cursor") -> Path:
+    """``~/.<agent>/hooks/cyt`` directory for cyt dev wrapper scripts."""
+    from cyt.hook.workspace_resolution import agent_cyt_uv_dir
+
+    cyt_dir = agent_cyt_uv_dir(agent)
+    if cyt_dir is not None:
+        return cyt_dir
+    return cursor_hooks_dir() / "cyt"
+
+
+def cyt_mcp_dev_wrapper_path(agent: str = "cursor") -> Path:
+    return agent_hooks_cyt_dir(agent) / WINDOWS_CYT_MCP_DEV_WRAPPER_NAME
+
+
+def is_cyt_mcp_dev_wrapper_command(command: str) -> bool:
+    normalized = command.strip().strip('"').casefold().replace("\\", "/")
+    return normalized.endswith(WINDOWS_CYT_MCP_DEV_WRAPPER.casefold()) or normalized.endswith(
+        LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER.casefold(),
+    )
 
 
 _AGENT_WORKSPACE_ENV_VARS: tuple[str, ...] = (
@@ -98,13 +124,11 @@ def _windows_wrapper_env_lines(env: dict[str, str]) -> list[str]:
     lines: list[str] = []
     for key, value in env.items():
         if value == CURSOR_WORKSPACE_FOLDER and key == CYT_WORKSPACE_ENV:
-            lines.append(f"if not defined {key} (")
-            for index, agent_var in enumerate(_AGENT_WORKSPACE_ENV_VARS):
-                prefix = "  " if index == 0 else "  else "
+            for agent_var in _AGENT_WORKSPACE_ENV_VARS:
                 lines.append(
-                    f'{prefix}if defined {agent_var} set "{key}=!{agent_var}!"',
+                    f'if not defined {key} if defined {agent_var} '
+                    f'set "{key}=!{agent_var}!"',
                 )
-            lines.append(")")
             continue
         escaped = value.replace("%", "%%")
         lines.append(f'set "{key}={escaped}"')
@@ -163,6 +187,30 @@ def install_windows_hook_wrappers(
         "client": client_path,
         "daemon_start": daemon_path,
     }
+
+
+def install_windows_cyt_mcp_dev_wrapper(
+    *,
+    dev_repo_root: Path,
+    agent: str = "cursor",
+    hook_env: dict[str, str] | None = None,
+) -> Path:
+    """Write ``hooks/cyt/mcp-dev.cmd`` so Cursor MCP spawn uses absolute ``uv`` on Windows."""
+    cyt_dir = agent_hooks_cyt_dir(agent)
+    cyt_dir.mkdir(parents=True, exist_ok=True)
+    inner = build_uv_run_dev_command(dev_repo_root, CYT_MCP_SCRIPT_REL) + " %*"
+    wrapper_env = dict(
+        hook_env
+        or {
+            CYT_WORKSPACE_ENV: CURSOR_WORKSPACE_FOLDER,
+        },
+    )
+    wrapper_path = cyt_dir / WINDOWS_CYT_MCP_DEV_WRAPPER_NAME
+    _write_windows_wrapper(wrapper_path, inner, env=wrapper_env)
+    legacy = cursor_hooks_dir() / LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER
+    if legacy.is_file():
+        legacy.unlink()
+    return wrapper_path
 
 
 def _inline_cyt_client_command(*, use_dev: bool, dev_repo_root: Path | None) -> str:

@@ -125,12 +125,11 @@ def when_mount_backends(gherkin_context: GherkinContext) -> None:
                 degraded.append(str(name))
         return degraded
 
-    with patch("cyt_mcp.aggregator.mount_backend_servers", side_effect=_fail_broken):
-        server, _middleware = build_aggregator(ConfigHolder(config), cache)
+    with patch("cyt_mcp.backends.mount_backend_servers", side_effect=_fail_broken):
+        server, _middleware, coordinator = build_aggregator(ConfigHolder(config), cache)
         gherkin_context.payload["server"] = server
-        gherkin_context.payload["degraded"] = _fail_broken(
-            gherkin_context.payload["server"],
-            gherkin_context.payload["mcp_servers"],
+        gherkin_context.payload["degraded"] = coordinator.ensure_backends_mounted(
+            config.mcp_servers,
         )
 
 

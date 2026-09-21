@@ -95,9 +95,9 @@ def merge_catalog_payloads(
     base: dict[str, Any],
     overlay: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge tool lists; workspace *overlay* overrides *base* on name conflict."""
-    by_name = _tools_indexed_by_name(base.get("tools"))
-    by_name.update(_tools_indexed_by_name(overlay.get("tools")))
+    """Merge tool lists; *base* (user-origin) wins on name conflict."""
+    by_name = _tools_indexed_by_name(overlay.get("tools"))
+    by_name.update(_tools_indexed_by_name(base.get("tools")))
 
     degraded: set[str] = set()
     for payload in (base, overlay):

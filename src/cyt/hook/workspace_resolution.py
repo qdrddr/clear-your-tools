@@ -501,6 +501,25 @@ def write_cyt_uv_wrapper_invocation(agent: str = "cursor") -> Path | None:
     return path
 
 
+def ensure_cyt_mcp_dev_wrapper(agent: str = "cursor") -> Path | None:
+    """Install ``~/.<agent>/hooks/cyt/mcp-dev.cmd`` when cyt hook setup runs in dev mode."""
+    from cyt.platform.compat import is_windows
+
+    if not is_windows():
+        return None
+    from cyt.hook.cli_invocation import detect_hook_cli_invocation
+
+    invocation = detect_hook_cli_invocation()
+    if not invocation.is_dev or invocation.repo_root is None:
+        return None
+    from cyt_client.hook_invocation import install_windows_cyt_mcp_dev_wrapper
+
+    return install_windows_cyt_mcp_dev_wrapper(
+        dev_repo_root=invocation.repo_root,
+        agent=agent,
+    )
+
+
 def ensure_cyt_uv_wrapper_scripts(agent: str = "cursor") -> tuple[Path, Path]:
     """Copy packaged uv wrappers into ``~/.<agent>/hooks/cyt/``."""
     dest_dir = agent_cyt_uv_dir(agent)
@@ -684,6 +703,22 @@ def _consumer_root_from_hook_resolution(resolution: WorkspaceResolution) -> Path
     if cyt_root is not None and root.resolve() == cyt_root.resolve():
         return None
     return root
+
+
+def hook_setup_mcp_workspace_root(
+    resolution: WorkspaceResolution,
+    consumer_root: Path | None,
+) -> Path | None:
+    """Workspace root for MCP migration during hook setup.
+
+    Consumer-only setup (vscode env, workspace config refresh) skips the cyt
+    checkout, but workspace MCP migration should still move ``.cursor/mcp.json``
+    backends into ``.agents/cyt/config/mcp/`` when that checkout is the active
+    workspace.
+    """
+    if consumer_root is not None:
+        return consumer_root
+    return resolution.root
 
 
 def finalize_hook_setup_consumer_root(

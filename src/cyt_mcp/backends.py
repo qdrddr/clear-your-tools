@@ -28,3 +28,23 @@ def mount_backend_servers(
             logger.warning("cyt-mcp: backend %s unavailable: %s", server_key, exc)
             degraded.append(server_key)
     return degraded
+
+
+def ensure_backend_servers_mounted(
+    server: FastMCP,
+    mcp_servers: dict[str, Any],
+) -> list[str]:
+    """Mount any not-yet-mounted backend proxies (lazy mount for stdio startup)."""
+    mounted: set[str] = getattr(server, "_cyt_mcp_mounted_servers", None) or set()
+    new_servers = {
+        name: spec
+        for name, spec in mcp_servers.items()
+        if str(name).strip() and str(name).strip() not in mounted
+    }
+    if not new_servers:
+        server._cyt_mcp_mounted_servers = mounted  # type: ignore[attr-defined]
+        return []
+    degraded = mount_backend_servers(server, new_servers)
+    mounted.update(str(name).strip() for name in new_servers)
+    server._cyt_mcp_mounted_servers = mounted  # type: ignore[attr-defined]
+    return degraded

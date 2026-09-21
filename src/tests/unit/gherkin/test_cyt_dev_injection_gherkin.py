@@ -20,9 +20,9 @@ from cyt.hook.cli_invocation import (
 )
 from cyt.tools import cyt_mcp_setup
 from cyt_client.mcp_entry import (
-    CYT_MCP_SERVER_KEY,
+    CYT_MCP_USER_SERVER_KEY,
     build_cyt_mcp_mcp_server_entry,
-    workspace_aggregator_config_ref,
+    user_aggregator_config_ref,
 )
 from cyt_client.pairing import repair_pairing
 from tests.unit.gherkin.conftest import GherkinContext
@@ -97,11 +97,11 @@ def then_mcp_entry_uses_uv(gherkin_context: GherkinContext) -> None:
     mcp_path = gherkin_context.payload.get("mcp_path")
     if mcp_path is not None:
         payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-        entry = payload["mcpServers"][CYT_MCP_SERVER_KEY]
+        entry = payload["mcpServers"][CYT_MCP_USER_SERVER_KEY]
     else:
         entry = gherkin_context.payload["mcp_entry"]
 
-    aggregator_config = workspace_aggregator_config_ref("cursor")
+    aggregator_config = user_aggregator_config_ref()
     expected = build_cyt_mcp_mcp_server_entry(
         "cursor",
         dev_repo_root=repo_root,
@@ -184,7 +184,7 @@ def when_pairing_repairs(
     )
     gherkin_context.payload["mcp_entry"] = json.loads(mcp_path.read_text(encoding="utf-8"))[
         "mcpServers"
-    ][CYT_MCP_SERVER_KEY]
+    ][CYT_MCP_USER_SERVER_KEY]
 
 
 @given("cursor mcp.json contains cyt-mcp frontend and a backend server")
@@ -238,7 +238,7 @@ def when_setup_migrates_backends(
 @then("cursor agent mcp.json should contain only cyt-mcp")
 def then_agent_mcp_frontend_only(gherkin_context: GherkinContext) -> None:
     payload = json.loads(gherkin_context.payload["source_mcp_path"].read_text(encoding="utf-8"))
-    assert set(payload["mcpServers"]) == {CYT_MCP_SERVER_KEY}
+    assert set(payload["mcpServers"]) == {CYT_MCP_USER_SERVER_KEY}
 
 
 @when("backend MCP servers are migrated for cursor")

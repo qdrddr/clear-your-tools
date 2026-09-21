@@ -17,9 +17,9 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from mcp.server.session import ServerSession
 from mcp.types import InitializeRequest, InitializeResult
 
-from cyt_mcp.catalog_build import refresh_catalog_cache
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from cyt_mcp.session_runtime import MultiWorkspaceCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +36,14 @@ class ToolListChangedMiddleware(Middleware):
         cache: RuntimeToolCache,
         config_holder: ConfigHolder,
         *,
+        coordinator: MultiWorkspaceCoordinator | None = None,
         notify_attempts: int = DEFAULT_NOTIFY_ATTEMPTS,
         notify_delay_s: float = DEFAULT_NOTIFY_DELAY_S,
     ) -> None:
         self._server = server
         self._cache = cache
         self._config_holder = config_holder
+        self._coordinator = coordinator
         self._notify_attempts = max(1, notify_attempts)
         self._notify_delay_s = max(0.0, notify_delay_s)
         self._pending: set[str] = set()
@@ -75,29 +77,39 @@ class ToolListChangedMiddleware(Middleware):
     async def _notify_when_ready(self, session: ServerSession, *, session_key: str) -> None:
         try:
             self._sessions[session_key] = session
+            bootstrap_count = len(self._cache.snapshot())
+            if bootstrap_count > 0:
+                await session.send_tool_list_changed()
+                logger.info(
+                    "cyt-mcp: sent notifications/tools/list_changed tool_count=%d (cached bootstrap)",
+                    bootstrap_count,
+                )
+                return
+            if self._coordinator is not None:
+                runtime = await self._coordinator.bind_session(session, session_key=session_key)
+            else:
+                runtime = None
+            active_cache = runtime.cache if runtime is not None else self._cache
+            from cyt_mcp.catalog_build import wait_for_catalog_cache_ready
+
             previous_count = -1
             for attempt in range(self._notify_attempts):
-                try:
-                    await refresh_catalog_cache(
-                        self._server,
-                        self._cache,
-                        self._config_holder.config,
+                tool_count = len(active_cache.snapshot())
+                if tool_count == 0:
+                    tool_count = await wait_for_catalog_cache_ready(
+                        active_cache,
+                        timeout=None,
                     )
-                except Exception as exc:
-                    logger.debug(
-                        "cyt-mcp: catalog refresh before list_changed failed: %s",
-                        exc,
-                    )
-                tool_count = len(self._cache.snapshot())
                 stable = tool_count > 0 and tool_count == previous_count
                 previous_count = tool_count
                 if stable or attempt == self._notify_attempts - 1:
-                    await session.send_tool_list_changed()
-                    logger.info(
-                        "cyt-mcp: sent notifications/tools/list_changed tool_count=%d attempt=%d",
-                        tool_count,
-                        attempt + 1,
-                    )
+                    if tool_count > 0:
+                        await session.send_tool_list_changed()
+                        logger.info(
+                            "cyt-mcp: sent notifications/tools/list_changed tool_count=%d attempt=%d",
+                            tool_count,
+                            attempt + 1,
+                        )
                     return
                 if self._notify_delay_s:
                     await asyncio.sleep(self._notify_delay_s)
@@ -106,8 +118,39 @@ class ToolListChangedMiddleware(Middleware):
         finally:
             self._pending.discard(session_key)
 
+    async def _refresh_and_notify(self, session: ServerSession, *, session_key: str) -> None:
+        """Background catalog refresh after an immediate bootstrap list_changed."""
+        try:
+            if self._coordinator is not None:
+                runtime = await self._coordinator.bind_session(session, session_key=session_key)
+            else:
+                runtime = None
+            active_cache = runtime.cache if runtime is not None else self._cache
+            from cyt_mcp.catalog_build import wait_for_catalog_cache_ready
+
+            previous_count = len(active_cache.snapshot())
+            for attempt in range(self._notify_attempts):
+                tool_count = len(active_cache.snapshot())
+                if tool_count == 0:
+                    tool_count = await wait_for_catalog_cache_ready(
+                        active_cache,
+                        timeout=None,
+                    )
+                stable = tool_count > 0 and tool_count == previous_count
+                previous_count = tool_count
+                if stable or attempt == self._notify_attempts - 1:
+                    if tool_count > 0:
+                        await session.send_tool_list_changed()
+                    return
+                if self._notify_delay_s:
+                    await asyncio.sleep(self._notify_delay_s)
+        except Exception as exc:
+            logger.warning("cyt-mcp: background tools/list_changed failed: %s", exc)
+
     async def notify_all_sessions(self) -> None:
         """Notify every live MCP session that the tool list changed."""
+        if len(self._cache.snapshot()) == 0:
+            return
         sessions = list(self._sessions.values())
         for session in sessions:
             try:
@@ -126,7 +169,14 @@ def register_tool_list_changed_middleware(
     server: FastMCP,
     cache: RuntimeToolCache,
     config_holder: ConfigHolder,
+    *,
+    coordinator: MultiWorkspaceCoordinator | None = None,
 ) -> ToolListChangedMiddleware:
-    middleware = ToolListChangedMiddleware(server, cache, config_holder)
+    middleware = ToolListChangedMiddleware(
+        server,
+        cache,
+        config_holder,
+        coordinator=coordinator,
+    )
     server.add_middleware(middleware)
     return middleware

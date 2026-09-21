@@ -195,7 +195,7 @@ async def _fetch_catalog_tools(
 
     cache = RuntimeToolCache()
     config_holder = ConfigHolder(config)
-    server, _middleware = build_aggregator(config_holder, cache)
+    server, _middleware, _coordinator = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
     return cache.snapshot()
 

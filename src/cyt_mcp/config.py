@@ -28,6 +28,7 @@ GLOBAL_MCP_CONFIG_PATH = DEFAULT_MCP_CONFIG_PATH
 GLOBAL_AGGREGATOR_PATH = DEFAULT_MCP_CONFIG_PATH  # deprecated alias
 
 CatalogScope = Literal["user", "workspace"]
+CatalogLayer = Literal["usr", "ws"]
 ServerOrigin = Literal["user", "workspace"]
 
 _MCP_VAR_PATTERN = re.compile(r"\$\{(userHome|workspaceFolder|env:([^}]+))\}")
@@ -222,30 +223,31 @@ def _resolve_workspace_server_defs_path(
     return scope.resolve_workspace_server_defs_path(agent)
 
 
-def _load_unified_mcp_servers(
+def _load_user_origin_servers(
     *,
     agent: str,
-    workspace_root: Path | None,
     workspace_folder: Path | None,
 ) -> tuple[dict[str, Any], dict[str, ServerOrigin]]:
-    """Load user + workspace backend defs separately, merge at runtime (workspace wins)."""
-    from cyt.permissions.merge import (
-        effective_mcp_permissions_global_only,
-        effective_permissions,
-    )
+    from cyt.permissions.merge import effective_mcp_permissions_global_only
 
-    ws_folder = workspace_root or workspace_folder
     user_path = _global_default_agent_mcp_path(agent)
     user_deny = effective_mcp_permissions_global_only(agent=agent).deny
     user_servers = load_mcp_servers(
         user_path,
-        workspace_folder=ws_folder,
+        workspace_folder=workspace_folder,
         deny_entries=user_deny,
     )
     origins: dict[str, ServerOrigin] = dict.fromkeys(user_servers, "user")
+    return user_servers, origins
 
-    if workspace_root is None:
-        return user_servers, origins
+
+def _load_project_origin_servers(
+    *,
+    agent: str,
+    workspace_root: Path,
+    user_server_names: frozenset[str] | set[str] | None = None,
+) -> tuple[dict[str, Any], dict[str, ServerOrigin]]:
+    from cyt.permissions.merge import effective_permissions
 
     ws_defs = _resolve_workspace_server_defs_path(agent, workspace_root)
     ws_path = ws_defs if ws_defs is not None else Path()
@@ -255,11 +257,52 @@ def _load_unified_mcp_servers(
         workspace_folder=workspace_root,
         deny_entries=effective_deny,
     )
-    merged = dict(user_servers)
-    merged.update(workspace_servers)
-    for name in workspace_servers:
-        origins[name] = "workspace"
+    excluded = user_server_names or frozenset()
+    filtered = {
+        name: spec for name, spec in workspace_servers.items() if name not in excluded
+    }
+    if excluded and len(filtered) < len(workspace_servers):
+        dropped = sorted(set(workspace_servers) - set(filtered))
+        logger.info(
+            "cyt-mcp-ws: omitted %d backend(s) present in user defs (user wins): %s",
+            len(dropped),
+            ", ".join(dropped),
+        )
+    origins: dict[str, ServerOrigin] = dict.fromkeys(filtered, "workspace")
+    return filtered, origins
+
+
+def _load_unified_mcp_servers(
+    *,
+    agent: str,
+    workspace_root: Path | None,
+    workspace_folder: Path | None,
+) -> tuple[dict[str, Any], dict[str, ServerOrigin]]:
+    """Load user + workspace backend defs; merge for ancillary callers (user wins on conflict)."""
+    ws_folder = workspace_root or workspace_folder
+    user_servers, origins = _load_user_origin_servers(agent=agent, workspace_folder=ws_folder)
+
+    if workspace_root is None:
+        return user_servers, origins
+
+    workspace_servers, ws_origins = _load_project_origin_servers(
+        agent=agent,
+        workspace_root=workspace_root,
+        user_server_names=frozenset(user_servers),
+    )
+    merged = dict(workspace_servers)
+    merged.update(user_servers)
+    origins = dict(ws_origins)
+    origins.update(dict.fromkeys(user_servers, "user"))
     return merged, origins
+
+
+def catalog_layer_for_scope(catalog_scope: CatalogScope) -> CatalogLayer:
+    return "ws" if catalog_scope == "workspace" else "usr"
+
+
+def frontend_server_name_for_scope(catalog_scope: CatalogScope) -> str:
+    return "cyt-mcp-ws" if catalog_scope == "workspace" else "cyt-mcp-usr"
 
 
 def load_mcp_servers(
@@ -533,13 +576,13 @@ def _resolve_workspace_root_for_scope(
         return None
 
 
-def _resolve_workspace_root_for_unified_load(
+def _resolve_project_workspace_root(
     *,
     catalog_scope: CatalogScope,
     workspace_folder: Path | None,
     aggregator_path: Path,
 ) -> Path | None:
-    """Resolve workspace root for merging user + workspace MCP server defs."""
+    """Resolve project workspace root for registry push, tiers, and deny overlays."""
     scoped = _resolve_workspace_root_for_scope(
         catalog_scope,
         workspace_folder=workspace_folder,
@@ -547,8 +590,6 @@ def _resolve_workspace_root_for_unified_load(
     )
     if scoped is not None:
         return scoped
-    if catalog_scope != "user":
-        return None
     from cyt.hook.install_scope import detect_workspace_root
 
     return detect_workspace_root(cwd=workspace_folder)
@@ -586,7 +627,7 @@ def load_aggregator_config(
     catalog_scope = _infer_catalog_scope(raw, resolved_agg_path)
     if catalog_scope == "user":
         agent_path = _resolve_user_agent_mcp_path(agent_path, resolved_agent)
-    workspace_root = _resolve_workspace_root_for_unified_load(
+    workspace_root = _resolve_project_workspace_root(
         catalog_scope=catalog_scope,
         workspace_folder=effective_workspace,
         aggregator_path=resolved_agg_path,
@@ -602,11 +643,24 @@ def load_aggregator_config(
         catalog_scope=catalog_scope,
         workspace_root=workspace_root,
     )
-    loaded_servers, server_origins = _load_unified_mcp_servers(
-        agent=resolved_agent,
-        workspace_root=workspace_root,
-        workspace_folder=effective_workspace,
-    )
+    if catalog_scope == "workspace":
+        user_servers, _user_origins = _load_user_origin_servers(
+            agent=resolved_agent,
+            workspace_folder=effective_workspace,
+        )
+        if workspace_root is not None:
+            loaded_servers, server_origins = _load_project_origin_servers(
+                agent=resolved_agent,
+                workspace_root=workspace_root,
+                user_server_names=frozenset(user_servers),
+            )
+        else:
+            loaded_servers, server_origins = {}, {}
+    else:
+        loaded_servers, server_origins = _load_user_origin_servers(
+            agent=resolved_agent,
+            workspace_folder=effective_workspace,
+        )
     return AggregatorConfig(
         agent=resolved_agent,
         mcp_servers=loaded_servers,

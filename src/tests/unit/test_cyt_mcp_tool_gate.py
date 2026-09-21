@@ -252,6 +252,17 @@ def test_is_cyt_mcp_get_tool_definitions_tool_normalizes_codex_name() -> None:
     )
 
 
+def test_is_cyt_mcp_get_tool_definitions_tool_normalizes_dual_frontend_names() -> None:
+    assert is_cyt_mcp_get_tool_definitions_tool(
+        "mcp__cyt-mcp-usr__get-tool-definitions",
+        agent="cursor",
+    )
+    assert is_cyt_mcp_get_tool_definitions_tool(
+        "mcp__cyt-mcp-ws__get-tool-definitions",
+        agent="cursor",
+    )
+
+
 def test_is_cyt_mcp_get_tool_definitions_tool_normalizes_cursor_wire_name() -> None:
     assert is_cyt_mcp_get_tool_definitions_tool("get-tool-definitions", agent="cursor")
     assert is_cyt_mcp_get_tool_definitions_tool("MCP:get-tool-definitions", agent="cursor")

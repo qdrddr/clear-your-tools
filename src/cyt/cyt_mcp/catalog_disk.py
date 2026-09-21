@@ -26,6 +26,19 @@ def cyt_mcp_catalog_cache_dir() -> Path:
     return _CYT_MCP_CATALOG_CACHE_DIR.expanduser()
 
 
+def clear_cyt_mcp_disk_catalog_cache() -> None:
+    """Remove on-disk cyt-mcp catalog cache (no migration on dual-layer upgrade)."""
+    cache_dir = cyt_mcp_catalog_cache_dir()
+    if not cache_dir.is_dir():
+        return
+    import shutil
+
+    try:
+        shutil.rmtree(cache_dir)
+    except OSError as exc:
+        logger.warning("cyt-mcp disk catalog cache clear failed: %s", exc)
+
+
 def _canonical_tool_entry(tool: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "name": str(tool.get("name") or ""),

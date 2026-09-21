@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from typing import Any, cast
 
@@ -12,7 +13,7 @@ from mcp.types import Tool as McpWireTool
 from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
-from cyt_mcp.tool_identity import enrich_tool_identity
+from cyt_mcp.tool_identity import enrich_tool_identity, tool_name_allowed_for_servers
 
 JsonScalar = str | int | float | bool | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
@@ -76,14 +77,18 @@ def build_catalog_from_tools(
     tools: Sequence[Tool],
     *,
     deny_entries: tuple[str, ...] | list[str] | None = None,
+    mcp_server_keys: Sequence[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     catalog_entries: list[dict[str, Any]] = []
     search_index: dict[str, dict[str, Any]] = {}
     deny_filter = deny_entries or ()
+    server_keys = list(mcp_server_keys or [])
     for tool in tools:
         mcp_tool = tool.to_mcp_tool()
         name = str(mcp_tool.name)
         if name == MCP_WIRE_SEARCH_TOOL_NAME:
+            continue
+        if server_keys and not tool_name_allowed_for_servers(name, server_keys):
             continue
         if deny_filter:
             from cyt.permissions.match import is_catalog_tool_denied
@@ -95,27 +100,454 @@ def build_catalog_from_tools(
     return catalog_entries, search_index
 
 
+_refresh_locks: dict[int, asyncio.Lock] = {}
+
+
+def _refresh_lock_for(cache: RuntimeToolCache) -> asyncio.Lock:
+    key = id(cache)
+    lock = _refresh_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _refresh_locks[key] = lock
+    return lock
+
+
+async def wait_for_catalog_cache_ready(
+    cache: RuntimeToolCache,
+    *,
+    timeout: float | None = 3.0,
+) -> int:
+    """Wait briefly for an in-flight refresh on *cache*, then return entry count."""
+    lock = _refresh_lock_for(cache)
+    if timeout is None or timeout <= 0:
+        async with lock:
+            return len(cache.snapshot())
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=timeout)
+    except TimeoutError:
+        return len(cache.snapshot())
+    try:
+        return len(cache.snapshot())
+    finally:
+        lock.release()
+
+
+def hydrate_offerings_cache(
+    offerings_cache: "OfferingsCache",
+    config: AggregatorConfig,
+    *,
+    runtime_key: str | None = None,
+) -> bool:
+    """Warm offerings snapshot from disk (same slug as tool catalog)."""
+    from cyt_mcp.offerings_cache import hydrate_offerings_snapshot
+
+    slug = disk_catalog_slug_for_config(config)
+    if not slug:
+        return False
+    key = runtime_key or slug
+    snapshot = hydrate_offerings_snapshot(slug)
+    if snapshot is None:
+        return False
+    offerings_cache.replace(key, snapshot)
+    return True
+
+
+def persist_runtime_cache_to_disk(cache: RuntimeToolCache, config: AggregatorConfig) -> bool:
+    """Write the runtime catalog to disk so the next process can hydrate quickly."""
+    from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash, write_disk_catalog
+    from cyt_mcp.debug_session_log import debug_session_log
+
+    slug = disk_catalog_slug_for_config(config)
+    if not slug:
+        return False
+    tools = cache.snapshot()
+    if not tools:
+        return False
+    existing_disk = _read_disk_catalog_tools(slug)
+    if existing_disk and len(tools) < len(existing_disk):
+        debug_session_log(
+            hypothesis_id="G",
+            location="catalog_build.py:persist_runtime_cache_to_disk:skip_regression",
+            message="skipping disk persist; cache smaller than existing disk catalog",
+            data={
+                "slug_prefix": slug[:12],
+                "cache_count": len(tools),
+                "disk_count": len(existing_disk),
+                "catalog_scope": config.catalog_scope,
+            },
+            run_id="post-fix",
+        )
+        return False
+    content_hash = raw_catalog_content_hash(tools)
+    action = write_disk_catalog(
+        slug,
+        agent=config.agent,
+        tools=tools,
+        content_hash=content_hash,
+    )
+    debug_session_log(
+        hypothesis_id="G",
+        location="catalog_build.py:persist_runtime_cache_to_disk",
+        message="runtime cache persisted to disk",
+        data={
+            "slug_prefix": slug[:12],
+            "tool_count": len(tools),
+            "action": action,
+            "catalog_scope": config.catalog_scope,
+        },
+        run_id="post-fix",
+    )
+    return action != "disk_write_skipped"
+
+
+def _workspace_scope_fingerprint(config: AggregatorConfig) -> str | None:
+    from pathlib import Path
+
+    from cyt.cyt_mcp.catalog_disk import scope_config_fingerprint
+    from cyt_mcp.config import DEFAULT_MCP_CONFIG_PATH
+
+    if config.workspace_root is None:
+        return None
+    agent = config.agent.strip() or "cursor"
+    agg_path = config.aggregator_path or DEFAULT_MCP_CONFIG_PATH.expanduser()
+    defs_path = config.agent_mcp_path
+    if defs_path is None:
+        from cyt_mcp.workspace_catalog import workspace_server_defs_path
+
+        defs_path = workspace_server_defs_path(config.workspace_root, agent)
+    if defs_path is None:
+        return None
+    try:
+        workspace_key = str(config.workspace_root.expanduser().resolve())
+    except OSError:
+        workspace_key = str(config.workspace_root)
+    return scope_config_fingerprint(
+        Path(agg_path),
+        Path(defs_path),
+        version=workspace_key,
+    )
+
+
+def merged_hook_disk_catalog_slug(config: AggregatorConfig) -> str | None:
+    """Merged usr+ws slug used by hook injection disk cache (legacy hydrate fallback)."""
+    from pathlib import Path
+
+    from cyt.cyt_mcp.catalog_disk import merged_hook_catalog_slug, scope_config_fingerprint
+    from cyt_mcp.config import DEFAULT_MCP_CONFIG_PATH
+
+    ws_fp = _workspace_scope_fingerprint(config)
+    if ws_fp is None:
+        return None
+    agent = config.agent.strip() or "cursor"
+    user_agg = DEFAULT_MCP_CONFIG_PATH.expanduser()
+    user_defs = Path(f"~/.config/cyt/mcp/{agent}.json").expanduser()
+    global_fp = scope_config_fingerprint(user_agg, user_defs)
+    return merged_hook_catalog_slug(global_fp, ws_fp)
+
+
+def disk_catalog_slug_for_config(config: AggregatorConfig) -> str | None:
+    """Runtime disk slug for this cyt-mcp frontend instance (usr or ws scope only)."""
+    from pathlib import Path
+
+    from cyt.cyt_mcp.catalog_disk import scope_config_fingerprint
+    from cyt_mcp.config import DEFAULT_MCP_CONFIG_PATH
+
+    agent = config.agent.strip() or "cursor"
+    user_agg = DEFAULT_MCP_CONFIG_PATH.expanduser()
+    user_defs = Path(f"~/.config/cyt/mcp/{agent}.json").expanduser()
+    if config.catalog_scope != "workspace" or config.workspace_root is None:
+        return scope_config_fingerprint(user_agg, user_defs)
+    ws_fp = _workspace_scope_fingerprint(config)
+    return ws_fp or scope_config_fingerprint(user_agg, user_defs)
+
+
+def _search_index_from_catalog_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    schema = entry.get("inputSchema")
+    if not isinstance(schema, dict):
+        schema = entry.get("input_schema")
+    index: dict[str, Any] = {
+        "name": str(entry.get("name") or ""),
+        "inputSchema": dict(schema) if isinstance(schema, dict) else {},
+    }
+    for key in (
+        "description",
+        "title",
+        "outputSchema",
+        "annotations",
+        "execution",
+        "meta",
+        "server_key",
+        "tool_name",
+    ):
+        if key in entry and entry[key] is not None:
+            index[key] = entry[key]
+    return index
+
+
+def _catalog_entries_from_dicts(
+    tools: list[dict[str, Any]],
+    config: AggregatorConfig,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    from cyt.permissions.match import is_catalog_tool_denied
+
+    deny_entries = config.mcp_deny
+    server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
+    catalog_entries: list[dict[str, Any]] = []
+    search_index: dict[str, dict[str, Any]] = {}
+    for raw in tools:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name or name == MCP_WIRE_SEARCH_TOOL_NAME:
+            continue
+        if server_keys and not tool_name_allowed_for_servers(name, server_keys):
+            continue
+        if deny_entries and is_catalog_tool_denied(name, deny_entries):
+            continue
+        entry = dict(raw)
+        schema = entry.get("inputSchema")
+        if not isinstance(schema, dict):
+            schema = entry.get("input_schema")
+        if isinstance(schema, dict):
+            entry["inputSchema"] = dict(schema)
+        entry = enrich_tool_identity(entry, server_keys)
+        catalog_entries.append(entry)
+        search_index[name] = _search_index_from_catalog_entry(entry)
+    return catalog_entries, search_index
+
+
+def _catalog_tools_from_registry(config: AggregatorConfig) -> list[dict[str, Any]]:
+    if config.workspace_root is None:
+        return []
+    from cyt.hook.catalog_registry import catalog_for_layer, load_catalog_registry_from_disk
+    from cyt_mcp.config import catalog_layer_for_scope
+
+    load_catalog_registry_from_disk(mark_stale=True)
+    layer = catalog_layer_for_scope(config.catalog_scope)
+    return catalog_for_layer(
+        config.agent,
+        config.workspace_root,
+        layer,
+        allow_stale=True,
+    )
+
+
+def _read_disk_catalog_tools(slug: str) -> list[dict[str, Any]]:
+    from cyt.cyt_mcp.catalog_disk import read_disk_catalog
+
+    envelope = read_disk_catalog(slug)
+    if envelope is None:
+        return []
+    tools = envelope.get("tools")
+    if not isinstance(tools, list):
+        return []
+    return [dict(item) for item in tools if isinstance(item, dict)]
+
+
+def _catalog_tools_from_disk(config: AggregatorConfig) -> list[dict[str, Any]]:
+    slug_candidates: list[str] = []
+    primary = disk_catalog_slug_for_config(config)
+    if primary:
+        slug_candidates.append(primary)
+    if config.catalog_scope == "workspace":
+        merged = merged_hook_disk_catalog_slug(config)
+        if merged and merged not in slug_candidates:
+            slug_candidates.append(merged)
+    for slug in slug_candidates:
+        tools = _read_disk_catalog_tools(slug)
+        if tools:
+            return tools
+    return []
+
+
+def hydrate_runtime_cache(cache: RuntimeToolCache, config: AggregatorConfig) -> bool:
+    """Warm runtime cache from registry/disk so list_tools works before live backend fetch."""
+    from cyt_mcp.debug_session_log import debug_session_log
+
+    source = "none"
+    # Disk is written by this frontend instance; registry may hold stale/partial layers.
+    disk_tools = _catalog_tools_from_disk(config)
+    registry_tools = _catalog_tools_from_registry(config)
+    if disk_tools and registry_tools:
+        if len(disk_tools) >= len(registry_tools):
+            tools = disk_tools
+            source = "disk"
+        else:
+            tools = registry_tools
+            source = "registry"
+    elif disk_tools:
+        tools = disk_tools
+        source = "disk"
+    elif registry_tools:
+        tools = registry_tools
+        source = "registry"
+    else:
+        tools = []
+    if not tools:
+        debug_session_log(
+            hypothesis_id="G",
+            location="catalog_build.py:hydrate_runtime_cache:miss",
+            message="runtime cache hydrate missed",
+            data={"catalog_scope": config.catalog_scope},
+            run_id="post-fix",
+        )
+        return False
+    catalog_entries, search_index = _catalog_entries_from_dicts(tools, config)
+    if not catalog_entries:
+        debug_session_log(
+            hypothesis_id="G",
+            location="catalog_build.py:hydrate_runtime_cache:filtered_empty",
+            message="runtime cache hydrate filtered to empty",
+            data={"source": source, "raw_count": len(tools)},
+            run_id="post-fix",
+        )
+        return False
+    cache.replace(catalog_entries, search_index=search_index)
+    refresh_search_tool_schema(cache)
+    debug_session_log(
+        hypothesis_id="G",
+        location="catalog_build.py:hydrate_runtime_cache:hit",
+        message="runtime cache hydrated",
+        data={
+            "source": source,
+            "cache_after": len(catalog_entries),
+            "catalog_scope": config.catalog_scope,
+        },
+        run_id="post-fix",
+    )
+    return True
+
+
+def reapply_deny_overlays(cache: RuntimeToolCache, config: AggregatorConfig) -> bool:
+    """Re-filter cached catalog entries by the current deny list."""
+    from cyt.permissions.match import is_catalog_tool_denied
+
+    deny_entries = config.mcp_deny
+    entries = cache.snapshot()
+    search_index = cache.search_index_snapshot()
+    if not entries:
+        return False
+    filtered_entries = [
+        entry
+        for entry in entries
+        if not is_catalog_tool_denied(str(entry.get("name") or ""), deny_entries)
+    ]
+    allowed_names = {str(entry.get("name") or "") for entry in filtered_entries}
+    filtered_index = {
+        name: value for name, value in search_index.items() if name in allowed_names
+    }
+    if len(filtered_entries) == len(entries):
+        return False
+    if not filtered_entries and entries:
+        from cyt_mcp.debug_session_log import debug_session_log
+
+        debug_session_log(
+            hypothesis_id="D",
+            location="catalog_build.py:reapply_deny_overlays:preserve",
+            message="deny overlay would empty cache; keeping existing entries",
+            data={"cache_before": len(entries), "deny_count": len(deny_entries)},
+            run_id="post-fix",
+        )
+        return False
+    cache.replace(filtered_entries, search_index=filtered_index)
+    refresh_search_tool_schema(cache)
+    return True
+
+
 async def refresh_catalog_cache(
     server: FastMCP,
     cache: RuntimeToolCache,
     config: AggregatorConfig | None = None,
     *,
     skip_push: bool = False,
+    force: bool = False,
 ) -> None:
     """Populate hook-daemon catalog + search index from raw backend tools."""
-    backend_server = cast(Any, server)
-    backend_tools = await backend_server._list_tools()
-    deny_entries = config.mcp_deny if config is not None else ()
-    catalog_entries, search_index = build_catalog_from_tools(
-        backend_tools,
-        deny_entries=deny_entries,
-    )
-    if config is not None:
-        server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
-        catalog_entries = [enrich_tool_identity(entry, server_keys) for entry in catalog_entries]
-    cache.replace(catalog_entries, search_index=search_index)
-    refresh_search_tool_schema(cache)
-    if config is not None:
-        from cyt_mcp.hook_daemon_push import schedule_catalog_push
+    import time as _time
 
-        schedule_catalog_push(cache, config, skip_push=skip_push)
+    from cyt_mcp.debug_session_log import debug_session_log
+
+    async with _refresh_lock_for(cache):
+        _start = _time.monotonic()
+        _before = len(cache.snapshot())
+        if _before > 0 and not force:
+            debug_session_log(
+                hypothesis_id="J",
+                location="catalog_build.py:refresh_catalog_cache:skip_warm",
+                message="skipping backend refresh; runtime cache already populated",
+                data={
+                    "cache_before": _before,
+                    "skip_push": skip_push,
+                    "catalog_scope": config.catalog_scope if config is not None else None,
+                },
+                run_id="post-fix",
+            )
+            return
+        debug_session_log(
+            hypothesis_id="A",
+            location="catalog_build.py:refresh_catalog_cache:start",
+            message="refresh_catalog_cache starting",
+            data={
+                "skip_push": skip_push,
+                "force": force,
+                "cache_before": _before,
+                "agent": config.agent if config is not None else None,
+                "catalog_scope": config.catalog_scope if config is not None else None,
+                "backend_count": len(config.mcp_servers) if config is not None else 0,
+            },
+        )
+        if config is not None and config.mcp_servers:
+            from cyt_mcp.backends import ensure_backend_servers_mounted
+
+            await asyncio.to_thread(ensure_backend_servers_mounted, server, config.mcp_servers)
+
+        backend_server = cast(Any, server)
+
+        async def _list_backend_tools() -> list[Tool]:
+            listed = backend_server._list_tools()
+            if asyncio.iscoroutine(listed) or asyncio.isfuture(listed):
+                return await listed
+            return await asyncio.to_thread(listed)
+
+        backend_tools = await _list_backend_tools()
+        deny_entries = config.mcp_deny if config is not None else ()
+        server_keys = (
+            sorted(config.mcp_servers.keys(), key=len, reverse=True) if config is not None else []
+        )
+        catalog_entries, search_index = build_catalog_from_tools(
+            backend_tools,
+            deny_entries=deny_entries,
+            mcp_server_keys=server_keys,
+        )
+        if config is not None:
+            server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
+            catalog_entries = [enrich_tool_identity(entry, server_keys) for entry in catalog_entries]
+        if not catalog_entries and _before > 0:
+            debug_session_log(
+                hypothesis_id="A",
+                location="catalog_build.py:refresh_catalog_cache:preserve",
+                message="refresh skipped empty regression; keeping existing cache",
+                data={
+                    "duration_ms": int((_time.monotonic() - _start) * 1000),
+                    "cache_before": _before,
+                },
+            )
+            return
+        cache.replace(catalog_entries, search_index=search_index)
+        refresh_search_tool_schema(cache)
+        if config is not None:
+            persist_runtime_cache_to_disk(cache, config)
+        debug_session_log(
+            hypothesis_id="A",
+            location="catalog_build.py:refresh_catalog_cache:done",
+            message="refresh_catalog_cache finished",
+            data={
+                "duration_ms": int((_time.monotonic() - _start) * 1000),
+                "cache_after": len(catalog_entries),
+                "skip_push": skip_push,
+            },
+        )
+        if config is not None:
+            from cyt_mcp.hook_daemon_push import schedule_catalog_push
+
+            schedule_catalog_push(cache, config, skip_push=skip_push)

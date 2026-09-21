@@ -150,6 +150,10 @@ def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
     if name.startswith("mcp__"):
         normalized = _normalize_mcp_double_underscore_name(name)
         if normalized is not None:
+            for server_name in _CYT_MCP_SERVER_NAMES:
+                prefix = f"{server_name}_"
+                if normalized.startswith(prefix) and normalized.endswith("_get-tool-definitions"):
+                    return _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL
             return normalized
     if agent == "codex" and name.count("__") >= 2 and name.startswith("mcp__"):
         _, server, tool = name.split("__", 2)
@@ -206,7 +210,13 @@ def _extract_dynamic_mcp_tool_call(
         return None, None
     namespace = str(args.get("namespace") or "").strip().lower()
     inner_name = args.get("toolName") or args.get("tool_name")
-    if namespace not in {"user-cyt-mcp", "cyt-mcp", "user_cyt_mcp"}:
+    if namespace not in {
+        "user-cyt-mcp",
+        "cyt-mcp",
+        "cyt-mcp-usr",
+        "cyt-mcp-ws",
+        "user_cyt_mcp",
+    }:
         return None, None
     if not isinstance(inner_name, str) or not inner_name.strip():
         return None, None

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
+
+from cyt_client.hook_executable import resolve_hook_executable
+from cyt_client.hook_invocation import cyt_mcp_dev_wrapper_path
 
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
@@ -17,6 +21,7 @@ from cyt.tools import cyt_mcp_setup
 from cyt_client.hook_executable import repo_root_from_uv_run_hook_command
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
+    CYT_MCP_USER_SERVER_KEY,
     LEGACY_CYT_MCP_SERVER_KEY,
     backend_mcp_servers,
     build_cyt_mcp_mcp_server_entry,
@@ -29,9 +34,10 @@ from cyt_client.mcp_entry import (
 def test_build_installed_cyt_mcp_entry() -> None:
     entry = build_cyt_mcp_mcp_server_entry("cursor")
     assert entry == {
-        "command": "cyt-mcp",
-        "args": ["--agent", "cursor"],
+        "command": resolve_hook_executable("cyt-mcp"),
+        "args": ["--agent", "cursor", "--workspace", "${workspaceFolder}"],
         "env": {"CYT_WORKSPACE": "${workspaceFolder}"},
+        "cwd": "${workspaceFolder}",
     }
 
 
@@ -43,18 +49,28 @@ def test_build_dev_cyt_mcp_entry() -> None:
         dev_repo_root=repo_root,
         dev_script_rel=script_rel,
     )
-    assert entry == {
-        "command": "uv",
-        "args": [
+    if sys.platform == "win32":
+        assert entry["command"] == str(cyt_mcp_dev_wrapper_path("cursor"))
+        assert entry["args"] == [
+            "--agent",
+            "cursor",
+            "--workspace",
+            "${workspaceFolder}",
+        ]
+    else:
+        assert entry["command"] == resolve_hook_executable("uv")
+        assert entry["args"] == [
             "run",
             "--directory",
             str(repo_root),
             script_rel,
             "--agent",
             "cursor",
-        ],
-        "env": {"CYT_WORKSPACE": "${workspaceFolder}"},
-    }
+            "--workspace",
+            "${workspaceFolder}",
+        ]
+    assert entry["env"] == {"CYT_WORKSPACE": "${workspaceFolder}"}
+    assert entry["cwd"] == "${workspaceFolder}"
 
 
 def test_build_dev_workspace_cyt_mcp_entry_uses_env_and_relative_config() -> None:
@@ -67,22 +83,33 @@ def test_build_dev_workspace_cyt_mcp_entry_uses_env_and_relative_config() -> Non
         aggregator_config=".agents/cyt/config/mcp-config.yaml",
     )
     assert entry["env"] == {"CYT_WORKSPACE": "${workspaceFolder}"}
-    assert "cwd" not in entry
-    assert "--workspace" not in entry["args"]
-    assert entry["args"][1:3] == ["--directory", str(repo_root)]
-    assert entry["args"][-2:] == [
+    assert entry["cwd"] == "${workspaceFolder}"
+    assert entry["args"][-4:] == [
         "--config",
         ".agents/cyt/config/mcp-config.yaml",
+        "--workspace",
+        "${workspaceFolder}",
     ]
+    if sys.platform != "win32":
+        assert entry["args"][1:3] == ["--directory", str(repo_root)]
 
 
 def test_cyt_mcp_mcp_server_entry_uses_dev_invocation() -> None:
     repo_root = Path("/tmp/clear-your-tools")
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     entry = cyt_mcp_mcp_server_entry("cursor", invocation=invocation)
-    assert entry["command"] == "uv"
-    assert entry["args"][0:3] == ["run", "--directory", str(repo_root)]
-    assert entry["args"][-2:] == ["--agent", "cursor"]
+    if sys.platform == "win32":
+        assert entry["command"].replace("\\", "/").endswith("cyt/mcp-dev.cmd")
+    else:
+        assert entry["command"] == resolve_hook_executable("uv")
+        assert entry["args"][0:3] == ["run", "--directory", str(repo_root)]
+    assert entry["args"][-4:] == [
+        "--agent",
+        "cursor",
+        "--workspace",
+        "${workspaceFolder}",
+    ]
+    assert entry["cwd"] == "${workspaceFolder}"
 
 
 def test_repo_root_from_uv_run_hook_command() -> None:
@@ -149,10 +176,14 @@ def test_write_agent_cyt_mcp_entry_dev_mode(
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     cyt_mcp_setup.write_agent_cyt_mcp_entry("cursor", invocation=invocation)
     payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-    entry = payload["mcpServers"][CYT_MCP_SERVER_KEY]
-    assert entry["command"] == "uv"
-    assert entry["args"][1:3] == ["--directory", str(repo_root)]
+    entry = payload["mcpServers"][CYT_MCP_USER_SERVER_KEY]
+    if sys.platform == "win32":
+        assert entry["command"].replace("\\", "/").endswith("cyt/mcp-dev.cmd")
+    else:
+        assert entry["command"] == resolve_hook_executable("uv")
+        assert entry["args"][1:3] == ["--directory", str(repo_root)]
     assert payload["mcpServers"]["other"]["command"] == "echo"
+    assert CYT_MCP_SERVER_KEY not in payload["mcpServers"]
 
 
 def test_prompt_cyt_mcp_transport_defaults_to_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,7 +199,7 @@ def test_write_agent_cyt_mcp_entry_http_mode(
     monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", mcp_path)
     cyt_mcp_setup.write_agent_cyt_mcp_entry("cursor", transport="http")
     payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-    assert payload["mcpServers"][CYT_MCP_SERVER_KEY] == {"url": "http://127.0.0.1:8765/mcp"}
+    assert payload["mcpServers"][CYT_MCP_USER_SERVER_KEY] == {"url": "http://127.0.0.1:8765/mcp"}
 
 
 def test_cyt_mcp_hook_settings_overlay() -> None:
@@ -263,8 +294,12 @@ def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     cyt_mcp_setup.setup_cyt_mcp_for_agent("cursor", invocation=invocation, transport="stdio")
     agent_payload = json.loads(source.read_text(encoding="utf-8"))
-    assert set(agent_payload["mcpServers"]) == {CYT_MCP_SERVER_KEY}
-    assert agent_payload["mcpServers"][CYT_MCP_SERVER_KEY]["command"] == "uv"
+    assert set(agent_payload["mcpServers"]) == {CYT_MCP_USER_SERVER_KEY}
+    user_command = agent_payload["mcpServers"][CYT_MCP_USER_SERVER_KEY]["command"]
+    if sys.platform == "win32":
+        assert str(user_command).replace("\\", "/").endswith("cyt/mcp-dev.cmd")
+    else:
+        assert user_command == resolve_hook_executable("uv")
     backend_payload = json.loads((target_dir / "cursor.json").read_text(encoding="utf-8"))
     assert "codebase-memory-mcp" in backend_payload["mcpServers"]
     assert CYT_MCP_SERVER_KEY not in backend_payload["mcpServers"]
@@ -511,6 +546,43 @@ def test_has_migratable_mcp_backends_true_from_agent_native_before_migration(
     )
     scope = CytInstallScope(workspace_root=None)
 
+    assert cyt_mcp_setup.has_migratable_mcp_backends("cursor", scope) is True
+
+
+def test_has_migratable_mcp_backends_split_by_user_and_workspace_layers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook.install_scope import CytInstallScope
+
+    home = tmp_path / "home"
+    home.mkdir()
+    user_mcp = home / ".cursor" / "mcp.json"
+    user_mcp.parent.mkdir(parents=True)
+    user_mcp.write_text(
+        json.dumps({"mcpServers": {"backend-a": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    project_mcp = tmp_path / ".cursor" / "mcp.json"
+    project_mcp.parent.mkdir(parents=True)
+    project_mcp.write_text(
+        json.dumps({"mcpServers": {"backend-b": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+
+    import cyt.hook.install_scope as install_scope
+
+    monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
+    monkeypatch.setitem(
+        install_scope.GLOBAL_AGENT_MCP_PATHS,
+        "cursor",
+        Path(str(user_mcp)),
+    )
+    scope = CytInstallScope(workspace_root=tmp_path.resolve())
+
+    assert cyt_mcp_setup.has_migratable_user_mcp_backends("cursor", scope) is True
+    assert cyt_mcp_setup.has_migratable_workspace_mcp_backends("cursor", scope) is True
     assert cyt_mcp_setup.has_migratable_mcp_backends("cursor", scope) is True
 
 

@@ -232,24 +232,16 @@ async def test_maybe_reload_permissions_on_revision_bump(tmp_path: Path) -> None
         list_changed_middleware=middleware,
     )
 
-    async def fake_refresh(
-        _server: object,
-        runtime_cache: RuntimeToolCache,
-        _config: object,
-        *,
-        skip_push: bool = False,
-    ) -> None:
-        del skip_push
-        runtime_cache.replace([{"name": "tool_b", "inputSchema": {"type": "object"}}])
-
-    with patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=fake_refresh):
+    with patch("cyt_mcp.catalog_build.refresh_catalog_cache", new_callable=AsyncMock) as refresh:
         await _maybe_reload_permissions(key=key, revision=0, context=context)
         config_holder.reload_mcp_deny.assert_not_called()
         middleware.notify_all_sessions.assert_not_awaited()
+        refresh.assert_not_awaited()
 
         await _maybe_reload_permissions(key=key, revision=1, context=context)
         config_holder.reload_mcp_deny.assert_called_once()
-        middleware.notify_all_sessions.assert_awaited_once()
+        middleware.notify_all_sessions.assert_not_awaited()
+        refresh.assert_not_awaited()
 
         await _maybe_reload_permissions(key=key, revision=1, context=context)
         assert config_holder.reload_mcp_deny.call_count == 1

@@ -140,3 +140,66 @@ def test_prompt_tools_hook_config_clears_stale_verify_only_in_aggregator(
     text = aggregator_path.read_text(encoding="utf-8")
     assert "verify_only: false" in text
     assert "verify_only: true" not in text
+
+
+def test_prompt_tools_hook_config_prompts_user_and_workspace_migration_separately(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import patch
+
+    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
+    from cyt.hook.install_scope import CytInstallScope
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / ".git").mkdir()
+    scope = CytInstallScope(workspace_root=consumer.resolve())
+    yes_no_calls: list[str] = []
+
+    def capture_yes_no(text: str, *args: object, **kwargs: object) -> bool:
+        yes_no_calls.append(text)
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt", lambda _label, default: "cyt_mcp")
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", capture_yes_no)
+    monkeypatch.setattr(
+        cyt_mcp_setup,
+        "prompt_cyt_mcp_transport",
+        lambda **kwargs: "stdio",
+    )
+    monkeypatch.setattr(
+        cyt_mcp_setup,
+        "has_migratable_mcp_backends",
+        lambda *_args, **_kwargs: True,
+    )
+
+    config = load_config()
+    apply_inject_via_overlay(
+        config,
+        {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+    )
+
+    with patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp:
+        prompt_tools_hook_config(
+            config,
+            context="hook",
+            agent="cursor",
+            install_scope=scope,
+        )
+
+    assert any(
+        "Migrate user-global MCP backends and install cyt-mcp-usr?" in text
+        for text in yes_no_calls
+    )
+    assert any(
+        "Migrate project MCP backends and install cyt-mcp-ws?" in text for text in yes_no_calls
+    )
+    setup_cyt_mcp.assert_called_once()
+    setup_kwargs = setup_cyt_mcp.call_args.kwargs
+    assert setup_kwargs["configure_user"] is True
+    assert setup_kwargs["configure_workspace"] is True
+    assert setup_kwargs["migrate_user_backends"] is True
+    assert setup_kwargs["migrate_workspace_backends"] is True
+    assert setup_kwargs["require_user_backends"] is False
+    assert setup_kwargs["require_workspace_backends"] is False

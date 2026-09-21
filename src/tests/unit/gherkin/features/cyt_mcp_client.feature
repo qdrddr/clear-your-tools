@@ -63,6 +63,8 @@ Feature: cyt-mcp cyt-client gate and pairing
     Examples:
       | agent  | raw_name                                  |
       | codex  | mcp__cyt-mcp__get-tool-definitions        |
+      | cursor | mcp__cyt-mcp-usr__get-tool-definitions    |
+      | cursor | mcp__cyt-mcp-ws__get-tool-definitions     |
       | cursor | MCP:get-tool-definitions                  |
       | cursor | MCP:cyt-mcp_get-tool-definitions          |
       | claude | cyt-mcp_get-tool-definitions              |

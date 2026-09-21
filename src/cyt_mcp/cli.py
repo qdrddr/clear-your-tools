@@ -97,7 +97,7 @@ def _build_parser() -> argparse.ArgumentParser:
 async def _run_search(config: AggregatorConfig, tool_name: str) -> int:
     cache = RuntimeToolCache()
     config_holder = ConfigHolder(config)
-    server, _middleware = build_aggregator(config_holder, cache)
+    server, _middleware, _coordinator = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
     try:
         definition = lookup_tool_definition(cache, tool_name)
@@ -167,7 +167,7 @@ def _catalog_export_payload(
 async def _run_catalog(config: AggregatorConfig, args: argparse.Namespace) -> int:
     cache = RuntimeToolCache()
     config_holder = ConfigHolder(config)
-    server, _middleware = build_aggregator(config_holder, cache)
+    server, _middleware, _coordinator = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
 
     source = str(getattr(args, "source", "backend") or "backend")
@@ -212,7 +212,9 @@ async def _run_catalog(config: AggregatorConfig, args: argparse.Namespace) -> in
     return 0
 
 
-async def _run_server(config: AggregatorConfig) -> int:
+async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None = None) -> int:
+    import threading
+
     from cyt_client.pairing import repair_pairing_from_mcp_runtime
     from cyt_client.skip import hook_skip_enabled
     from cyt_mcp.hook_daemon_push import PushContext, deregister_catalog_push, register_push_context
@@ -224,10 +226,23 @@ async def _run_server(config: AggregatorConfig) -> int:
         "cwd": str(Path.cwd()),
     }
     if not hook_skip_enabled(startup_payload):
-        repair_pairing_from_mcp_runtime(agent=config.agent, verbose=False)
+        threading.Thread(
+            target=repair_pairing_from_mcp_runtime,
+            kwargs={
+                "agent": config.agent,
+                "catalog_scope": config.catalog_scope,
+                "verbose": False,
+            },
+            name="cyt-mcp-pairing-repair",
+            daemon=True,
+        ).start()
     cache = RuntimeToolCache()
     config_holder = ConfigHolder(config)
-    server, list_changed_middleware = build_aggregator(config_holder, cache)
+    server, list_changed_middleware, coordinator = build_aggregator(
+        config_holder,
+        cache,
+        aggregator_path=aggregator_path,
+    )
     register_push_context(
         PushContext(
             config_holder=config_holder,
@@ -240,7 +255,86 @@ async def _run_server(config: AggregatorConfig) -> int:
         from cyt.hook.active_workspace import touch_active_workspace
 
         touch_active_workspace(config.agent, config.workspace_root)
-    await refresh_runtime_cache(server, cache, config)
+    from cyt_mcp.catalog_build import hydrate_runtime_cache, refresh_catalog_cache
+
+    hydrate_runtime_cache(cache, config)
+    if config.workspace_root is not None:
+        from cyt_mcp.catalog_build import hydrate_offerings_cache
+
+        runtime_key = coordinator._runtime_key(config.workspace_root)
+        if runtime_key is not None:
+            hydrate_offerings_cache(
+                coordinator.offerings_cache,
+                config,
+                runtime_key=runtime_key,
+            )
+    cache_warmed = bool(cache.snapshot())
+
+    async def _background_catalog_refresh() -> None:
+        try:
+            before_count = len(cache.snapshot())
+            await refresh_catalog_cache(server, cache, config)
+            after_count = len(cache.snapshot())
+            if config.workspace_root is not None:
+                from cyt_mcp.catalog_build import disk_catalog_slug_for_config
+
+                runtime_key = coordinator._runtime_key(config.workspace_root)
+                if runtime_key is not None:
+
+                    async def _refresh_offerings_after_catalog() -> None:
+                        await coordinator.offerings_cache.refresh_from_server(
+                            server,
+                            runtime_key=runtime_key,
+                            mcp_servers=config.mcp_servers,
+                            ensure_mounted=coordinator.ensure_backends_mounted,
+                            disk_slug=disk_catalog_slug_for_config(config),
+                        )
+
+                    coordinator.offerings_cache.schedule_refresh_once(
+                        runtime_key=runtime_key,
+                        delay_s=0.0,
+                        coro_factory=_refresh_offerings_after_catalog,
+                    )
+            if (
+                list_changed_middleware is not None
+                and after_count > 0
+                and after_count >= before_count
+            ):
+                from cyt_mcp.tool_list_notify import notify_all_sessions_list_changed
+
+                await notify_all_sessions_list_changed(list_changed_middleware)
+        except Exception as exc:
+            logger.warning("cyt-mcp background catalog refresh failed: %s", exc)
+
+    refresh_task: asyncio.Task[None] | None = None
+    from cyt_mcp.debug_session_log import debug_session_log
+
+    if cache_warmed:
+        debug_session_log(
+            hypothesis_id="I",
+            location="cli.py:_run_server:skip_background_refresh",
+            message="skipping background refresh; hydrated cache is warm",
+            data={
+                "catalog_scope": config.catalog_scope,
+                "cache_count": len(cache.snapshot()),
+            },
+            run_id="post-fix",
+        )
+    else:
+        debug_session_log(
+            hypothesis_id="H",
+            location="cli.py:_run_server:background_refresh",
+            message="cold cache; starting stdio immediately with background catalog refresh",
+            data={
+                "catalog_scope": config.catalog_scope,
+                "backend_count": len(config.mcp_servers),
+            },
+            run_id="post-fix",
+        )
+        refresh_task = asyncio.create_task(
+            _background_catalog_refresh(),
+            name="cyt-mcp-catalog-refresh",
+        )
     try:
         if config.transport == "http":
             from cyt_mcp.transport import run_http
@@ -249,6 +343,12 @@ async def _run_server(config: AggregatorConfig) -> int:
         else:
             await cast(Any, server).run_async("stdio", show_banner=False)
     finally:
+        if refresh_task is not None:
+            refresh_task.cancel()
+            try:
+                await refresh_task
+            except asyncio.CancelledError:
+                pass
         deregister_catalog_push(config)
     return 0
 
@@ -330,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
             server_origins=config.server_origins,
         )
     try:
-        return asyncio.run(_run_server(config))
+        return asyncio.run(_run_server(config, aggregator_path=args.config))
     except KeyboardInterrupt:
         return 0
     except Exception as exc:

@@ -253,17 +253,31 @@ def prompt_tools_hook_config(
                         invocation=invocation,
                         transport=transport,
                     )
-                print(f"\n--- Migrate ({launch_agent})'s MCP config ---")
-                if _prompt_yes_no(
-                    "Migrate agent MCP config to cyt-mcp aggregator?",
+                print(f"\n--- Migrate ({launch_agent}) user-global MCP config ---")
+                migrate_user = _prompt_yes_no(
+                    "Migrate user-global MCP backends and install cyt-mcp-usr?",
                     default_yes=True,
-                ):
+                )
+                migrate_workspace = False
+                if scope.has_workspace:
+                    print(f"\n--- Migrate ({launch_agent}) workspace MCP config ---")
+                    migrate_workspace = _prompt_yes_no(
+                        "Migrate project MCP backends and install cyt-mcp-ws?",
+                        default_yes=True,
+                    )
+                if migrate_user or migrate_workspace:
                     setup_cyt_mcp_for_agent(
                         launch_agent,
                         invocation=invocation,
                         transport=transport,
                         verify_only=False,
                         scope=scope,
+                        configure_user=migrate_user,
+                        configure_workspace=migrate_workspace,
+                        migrate_user_backends=migrate_user,
+                        migrate_workspace_backends=migrate_workspace,
+                        require_user_backends=False,
+                        require_workspace_backends=False,
                     )
                 elif not (invocation.is_dev and invocation.repo_root is not None):
                     write_agent_cyt_mcp_entry(

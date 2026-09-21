@@ -23,16 +23,18 @@ from cyt.hook.catalog_registry import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry() -> Iterator[None]:
+def _clear_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr("cyt.hook.active_workspace.touch_active_workspace", lambda *_a, **_k: None)
     clear_catalog_registry()
     yield
     clear_catalog_registry()
 
 
-def _register_workspace(
+def _register_layer(
     ws_root: Path,
     tools: list[dict[str, Any]],
     *,
+    catalog_layer: str = "ws",
     instance_id: str = "pid:1",
 ) -> None:
     content_hash = raw_catalog_content_hash(tools)
@@ -41,6 +43,7 @@ def _register_workspace(
             "agent": "cursor",
             "scope": "workspace",
             "workspace_root": str(ws_root),
+            "catalog_layer": catalog_layer,
             "instance_id": instance_id,
             "content_hash": content_hash,
             "tools": tools,
@@ -57,6 +60,7 @@ def test_register_rejects_legacy_global_scope() -> None:
             "agent": "cursor",
             "scope": "global",
             "workspace_root": None,
+            "catalog_layer": "usr",
             "instance_id": "pid:1",
             "content_hash": content_hash,
             "tools": tools,
@@ -66,14 +70,39 @@ def test_register_rejects_legacy_global_scope() -> None:
     assert result.http_status == 400
 
 
-def test_workspace_lookup_only(tmp_path: Path) -> None:
+def test_register_rejects_missing_catalog_layer(tmp_path: Path) -> None:
     ws_root = tmp_path / "project"
     ws_root.mkdir()
-    ws_tools = [
-        {"name": "ws_tool", "input_schema": {}, "cyt_catalog_scope": "workspace"},
-        {"name": "user_tool", "input_schema": {}, "cyt_catalog_scope": "user"},
-    ]
-    _register_workspace(ws_root, ws_tools)
+    tools = [{"name": "t1", "input_schema": {}}]
+    content_hash = raw_catalog_content_hash(tools)
+    result = register_catalog(
+        {
+            "agent": "cursor",
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
+            "instance_id": "pid:1",
+            "content_hash": content_hash,
+            "tools": tools,
+        },
+    )
+    assert result.status == RegisterStatus.INVALID
+    assert result.http_status == 400
+
+
+def test_workspace_lookup_unions_usr_and_ws_layers(tmp_path: Path) -> None:
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    _register_layer(
+        ws_root,
+        [{"name": "ws_tool", "input_schema": {}, "cyt_catalog_scope": "workspace"}],
+        catalog_layer="ws",
+    )
+    _register_layer(
+        ws_root,
+        [{"name": "user_tool", "input_schema": {}, "cyt_catalog_scope": "user"}],
+        catalog_layer="usr",
+        instance_id="pid:2",
+    )
 
     merged = catalog_for_hook("cursor", ws_root)
     assert {tool["name"] for tool in merged} == {"ws_tool", "user_tool"}
@@ -82,17 +111,39 @@ def test_workspace_lookup_only(tmp_path: Path) -> None:
     assert catalog_for_hook("cursor", tmp_path / "other") == []
 
 
+def test_union_usr_wins_on_wire_name_conflict(tmp_path: Path) -> None:
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    _register_layer(
+        ws_root,
+        [{"name": "shared", "input_schema": {"type": "object"}, "cyt_catalog_scope": "workspace"}],
+        catalog_layer="ws",
+    )
+    _register_layer(
+        ws_root,
+        [{"name": "shared", "input_schema": {}, "cyt_catalog_scope": "user"}],
+        catalog_layer="usr",
+        instance_id="pid:2",
+    )
+
+    merged = catalog_for_hook("cursor", ws_root)
+    assert len(merged) == 1
+    assert merged[0]["input_schema"] == {}
+    assert merged[0]["cyt_catalog_scope"] == "user"
+
+
 def test_hash_only_heartbeat_returns_unchanged(tmp_path: Path) -> None:
     ws_root = tmp_path / "project"
     ws_root.mkdir()
     tools = [{"name": "t1", "input_schema": {}}]
     content_hash = raw_catalog_content_hash(tools)
-    _register_workspace(ws_root, tools)
+    _register_layer(ws_root, tools)
     result = register_catalog(
         {
             "agent": "cursor",
             "scope": "workspace",
             "workspace_root": str(ws_root),
+            "catalog_layer": "ws",
             "instance_id": "pid:1",
             "content_hash": content_hash,
         },
@@ -109,6 +160,7 @@ def test_hash_only_unknown_returns_404(tmp_path: Path) -> None:
             "agent": "cursor",
             "scope": "workspace",
             "workspace_root": str(ws_root),
+            "catalog_layer": "ws",
             "instance_id": "pid:1",
             "content_hash": "missing",
         },
@@ -122,13 +174,14 @@ def test_touch_heartbeat_records_unchanged(tmp_path: Path) -> None:
     ws_root.mkdir()
     tools = [{"name": "t1", "input_schema": {}}]
     content_hash = raw_catalog_content_hash(tools)
-    _register_workspace(ws_root, tools)
+    _register_layer(ws_root, tools)
     result = touch_heartbeat(
         "cursor",
         "workspace",
         ws_root,
         content_hash=content_hash,
         instance_id="pid:1",
+        catalog_layer="ws",
     )
     assert result.status == RegisterStatus.UNCHANGED
     assert result.http_status == 204
@@ -143,7 +196,7 @@ def test_ttl_expiry_excludes_live_lookup_but_keeps_stale_snapshot(
     tools = [{"name": "ttl_tool", "input_schema": {}}]
     now = {"value": 1000.0}
     monkeypatch.setattr("cyt.hook.catalog_registry.time.monotonic", lambda: now["value"])
-    _register_workspace(ws_root, tools)
+    _register_layer(ws_root, tools)
 
     now["value"] += 11.0
     assert catalog_for_hook("cursor", ws_root, allow_stale=False) == []
@@ -172,6 +225,7 @@ def test_daemon_restart_stale_snapshot_repushed_clears_stale(
                     "agent": "cursor",
                     "scope": "workspace",
                     "workspace_root": str(ws_root.resolve()),
+                    "catalog_layer": "ws",
                     "tools": tools,
                     "content_hash": content_hash,
                     "instance_id": "pid:old",
@@ -196,6 +250,7 @@ def test_daemon_restart_stale_snapshot_repushed_clears_stale(
             "agent": "cursor",
             "scope": "workspace",
             "workspace_root": str(ws_root),
+            "catalog_layer": "ws",
             "instance_id": "pid:new",
             "content_hash": content_hash,
             "tools": tools,
@@ -236,3 +291,40 @@ def test_disk_snapshot_drops_legacy_global_entries(
     monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE", snapshot_file)
 
     assert load_catalog_registry_from_disk(mark_stale=True) == 0
+    assert not snapshot_file.is_file()
+
+
+def test_disk_snapshot_purges_entries_missing_catalog_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    snapshot_dir = tmp_path / "catalog-registry"
+    snapshot_dir.mkdir()
+    snapshot_file = snapshot_dir / "registrations.json"
+    tools = [{"name": "legacy_tool", "input_schema": {}}]
+    content_hash = raw_catalog_content_hash(tools)
+    snapshot_file.write_text(
+        json.dumps(
+            [
+                {
+                    "agent": "cursor",
+                    "scope": "workspace",
+                    "workspace_root": str(ws_root.resolve()),
+                    "tools": tools,
+                    "content_hash": content_hash,
+                    "instance_id": "pid:old",
+                    "registered_at": 1.0,
+                    "last_seen_at": 1.0,
+                    "stale": False,
+                },
+            ],
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_DIR", snapshot_dir)
+    monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE", snapshot_file)
+
+    assert load_catalog_registry_from_disk(mark_stale=True) == 0
+    assert not snapshot_file.is_file()

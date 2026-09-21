@@ -47,21 +47,22 @@ async def test_notify_after_initialize_waits_for_stable_catalog() -> None:
     )
     context = _initialize_context()
 
-    async def _refresh(_server: object, active_cache: RuntimeToolCache) -> None:
+    async def _wait_ready(active_cache: RuntimeToolCache, **_kwargs: object) -> int:
         count = len(active_cache.snapshot())
         if count == 0:
             active_cache.replace([{"name": "alpha_tool", "inputSchema": {"type": "object"}}])
-        else:
-            active_cache.replace(
-                [
-                    {"name": "alpha_tool", "inputSchema": {"type": "object"}},
-                    {"name": "beta_tool", "inputSchema": {"type": "object"}},
-                ],
-            )
+            return 1
+        active_cache.replace(
+            [
+                {"name": "alpha_tool", "inputSchema": {"type": "object"}},
+                {"name": "beta_tool", "inputSchema": {"type": "object"}},
+            ],
+        )
+        return 2
 
     with patch(
-        "cyt_mcp.tool_list_notify.refresh_catalog_cache",
-        side_effect=_refresh,
+        "cyt_mcp.catalog_build.wait_for_catalog_cache_ready",
+        side_effect=_wait_ready,
     ):
         result = await middleware.on_initialize(context, AsyncMock(return_value=None))
         assert result is None
@@ -89,8 +90,9 @@ async def test_notify_dedupes_per_session() -> None:
     context = _initialize_context()
 
     with patch(
-        "cyt_mcp.tool_list_notify.refresh_catalog_cache",
+        "cyt_mcp.catalog_build.wait_for_catalog_cache_ready",
         new_callable=AsyncMock,
+        return_value=1,
     ):
         await middleware.on_initialize(context, AsyncMock(return_value=None))
         await middleware.on_initialize(context, AsyncMock(return_value=None))
@@ -106,6 +108,7 @@ async def test_notify_dedupes_per_session() -> None:
 async def test_notify_all_sessions_sends_list_changed() -> None:
     server = MagicMock()
     cache = RuntimeToolCache()
+    cache.replace([{"name": "alpha_tool", "inputSchema": {"type": "object"}}])
     middleware = ToolListChangedMiddleware(server, cache, _test_config_holder())
     session = MagicMock()
     session.send_tool_list_changed = AsyncMock()

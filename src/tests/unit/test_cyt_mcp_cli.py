@@ -21,19 +21,60 @@ def _stdio_config() -> AggregatorConfig:
 
 
 def test_run_server_stdio_uses_run_async() -> None:
-    """stdio must await run_async; sync run() inside asyncio.run() crashes."""
+    """stdio must await run_async; cold cache refresh runs in background, not before stdio."""
     config = _stdio_config()
+    refresh_calls: list[str] = []
+
+    async def _refresh(*_args: object, **_kwargs: object) -> None:
+        refresh_calls.append("refresh")
+        await asyncio.sleep(0)
+
+    async def _run_async(*_args: object, **_kwargs: object) -> None:
+        await asyncio.sleep(0.05)
+
     with (
         patch("cyt_mcp.cli.build_aggregator") as build,
-        patch("cyt_mcp.cli.refresh_runtime_cache", new_callable=AsyncMock) as refresh,
+        patch("cyt_mcp.catalog_build.hydrate_runtime_cache", return_value=False),
+        patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=_refresh),
+        patch("cyt_mcp.hook_daemon_push.register_push_context"),
+        patch("cyt_mcp.hook_daemon_push.deregister_catalog_push"),
     ):
         server = AsyncMock()
-        build.return_value = (server, None)
-        server.run_async = AsyncMock()
+        build.return_value = (server, None, None)
+        server.run_async = AsyncMock(side_effect=_run_async)
         result = asyncio.run(_run_server(config))
     assert result == 0
-    refresh.assert_awaited_once()
+    assert refresh_calls == ["refresh"]
     server.run_async.assert_awaited_once_with("stdio", show_banner=False)
+
+
+def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
+    config = _stdio_config()
+    refresh_calls: list[str] = []
+
+    def _hydrate_warm(cache: RuntimeToolCache, _config: object) -> None:
+        cache.replace([{"name": "tool-a"}])
+
+    async def _refresh(*_args: object, **_kwargs: object) -> None:
+        refresh_calls.append("refresh")
+        await asyncio.sleep(0)
+
+    async def _run_async(*_args: object, **_kwargs: object) -> None:
+        await asyncio.sleep(0.01)
+
+    with (
+        patch("cyt_mcp.cli.build_aggregator") as build,
+        patch("cyt_mcp.catalog_build.hydrate_runtime_cache", side_effect=_hydrate_warm),
+        patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=_refresh),
+        patch("cyt_mcp.hook_daemon_push.register_push_context"),
+        patch("cyt_mcp.hook_daemon_push.deregister_catalog_push"),
+    ):
+        server = AsyncMock()
+        build.return_value = (server, None, None)
+        server.run_async = AsyncMock(side_effect=_run_async)
+        result = asyncio.run(_run_server(config))
+    assert result == 0
+    assert refresh_calls == []
 
 
 def test_run_search_wires_refresh_and_lookup(
@@ -231,7 +272,7 @@ def test_run_server_skips_pairing_when_skip_txt_present(
         patch("cyt_client.pairing.repair_pairing_from_mcp_runtime") as repair,
     ):
         server = AsyncMock()
-        build.return_value = (server, None)
+        build.return_value = (server, None, None)
         server.run_async = AsyncMock()
         result = asyncio.run(_run_server(config))
 

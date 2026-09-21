@@ -83,7 +83,11 @@ CURSOR_PRE_COMPACT_EVENT = "preCompact"
 # Legacy Cursor MCP-only hook events removed in favor of preToolUse/postToolUse.
 _LEGACY_CURSOR_TOOL_HOOK_EVENTS = ("beforeMCPExecution", "afterMCPExecution")
 POST_TOOL_USE_EVENT = "PostToolUse"
-POST_TOOL_USE_MATCHER = "mcp__cyt-mcp__get-tool-definitions"
+POST_TOOL_USE_MATCHER = (
+    "mcp__cyt-mcp-usr__get-tool-definitions|"
+    "mcp__cyt-mcp-ws__get-tool-definitions|"
+    "mcp__cyt-mcp__get-tool-definitions"
+)
 PRE_TOOL_USE_EVENT = "PreToolUse"
 PRE_TOOL_USE_MATCHER = "mcp__*"
 PRE_TOOL_USE_READ_MATCHER = "Read"
@@ -2195,14 +2199,28 @@ def _prompt_prevent_hallucinations_inject_via(
     )
 
 
-def _prompt_prevent_hallucinations_mcp_migration(agent: HookAgentName) -> bool:
+def _prompt_prevent_hallucinations_mcp_migration(
+    agent: HookAgentName,
+    *,
+    install_scope: CytInstallScope,
+) -> tuple[bool, bool]:
     if not sys.stdin.isatty():
-        return True
-    print(f"\n--- Migrate ({agent})'s MCP config ---")
-    return _prompt_yes_no(
-        "Migrate agent MCP config to cyt-mcp aggregator?",
+        migrate_user = True
+        migrate_workspace = install_scope.has_workspace
+        return migrate_user, migrate_workspace
+    print(f"\n--- Migrate ({agent}) user-global MCP config ---")
+    migrate_user = _prompt_yes_no(
+        "Migrate user-global MCP backends and install cyt-mcp-usr?",
         default_yes=True,
     )
+    migrate_workspace = False
+    if install_scope.has_workspace:
+        print(f"\n--- Migrate ({agent}) workspace MCP config ---")
+        migrate_workspace = _prompt_yes_no(
+            "Migrate project MCP backends and install cyt-mcp-ws?",
+            default_yes=True,
+        )
+    return migrate_user, migrate_workspace
 
 
 def _apply_injection_hook_config(
@@ -2314,16 +2332,24 @@ def _apply_prevent_hallucinations_config(
                 file=sys.stderr,
             )
             continue
-        migrate_backends = _prompt_prevent_hallucinations_mcp_migration(agent)
-        setup_cyt_mcp_for_agent(
+        migrate_user, migrate_workspace = _prompt_prevent_hallucinations_mcp_migration(
             agent,
-            invocation=invocation,
-            transport="stdio",
-            migrate_backends=migrate_backends,
-            verify_only=True,
-            configure_workspace=True,
-            scope=scope,
+            install_scope=scope,
         )
+        if migrate_user or migrate_workspace:
+            setup_cyt_mcp_for_agent(
+                agent,
+                invocation=invocation,
+                transport="stdio",
+                verify_only=True,
+                configure_user=migrate_user,
+                configure_workspace=migrate_workspace,
+                migrate_user_backends=migrate_user,
+                migrate_workspace_backends=migrate_workspace,
+                require_user_backends=False,
+                require_workspace_backends=False,
+                scope=scope,
+            )
     return config
 
 
@@ -2523,6 +2549,7 @@ def run_hook_setup(
     ensure_config_file_current(resolved_config_path, scope="user")
     from cyt.hook.workspace_resolution import (
         WorkspaceResolutionConflictError,
+        ensure_cyt_mcp_dev_wrapper,
         ensure_cyt_uv_wrapper_scripts,
         ensure_vscode_terminal_workspace_env,
         finalize_hook_setup_consumer_root,
@@ -2533,6 +2560,7 @@ def run_hook_setup(
     hook_agent = selected_agents[0] if len(selected_agents) == 1 else "cursor"
     for agent in selected_agents:
         ensure_cyt_uv_wrapper_scripts(agent)
+        ensure_cyt_mcp_dev_wrapper(agent)
     try:
         hook_workspace_resolution = resolve_hook_setup_workspace(
             workspace=workspace,
@@ -2556,8 +2584,11 @@ def run_hook_setup(
                 f"CYT_WORKSPACE (Windows/Linux/macOS)",
             )
     from cyt.hook.install_scope import CytInstallScope
+    from cyt.hook.workspace_resolution import hook_setup_mcp_workspace_root
 
-    install_scope = CytInstallScope.from_consumer_root(consumer_root)
+    install_scope = CytInstallScope.from_consumer_root(
+        hook_setup_mcp_workspace_root(hook_workspace_resolution, consumer_root),
+    )
     config = _load_hook_setup_config(
         config_path=config_path,
         resolved_config_path=resolved_config_path,

@@ -26,7 +26,11 @@ from cyt.hook.cli_invocation import (
     proxy_cli_script_relpath,
     repo_root_from_proxy_cli_script,
 )
-from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
+from cyt_client.mcp_entry import (
+    CYT_MCP_SERVER_KEY,
+    CYT_MCP_USER_SERVER_KEY,
+    CYT_MCP_WORKSPACE_SERVER_KEY,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -109,6 +113,24 @@ def _write_duplicate_cursor_hooks(cursor_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _prepare_hook_setup_consumer_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Return a consumer git repo distinct from the mocked cyt package checkout."""
+    cyt_repo = tmp_path / "cyt-checkout"
+    consumer = tmp_path / "consumer"
+    for repo in (cyt_repo, consumer):
+        repo.mkdir()
+        (repo / ".git").mkdir()
+    monkeypatch.chdir(cyt_repo)
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
+    return consumer.resolve()
 
 
 def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
@@ -1302,9 +1324,11 @@ def test_run_hook_uninstall_restores_mcp(
     hook_setup.run_hook_uninstall(agents=["cursor"])
 
     user_payload = json.loads(user_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_USER_SERVER_KEY not in user_payload["mcpServers"]
     assert CYT_MCP_SERVER_KEY not in user_payload["mcpServers"]
     assert user_payload["mcpServers"]["backend-a"]["command"] == "echo"
     project_payload = json.loads(project_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_WORKSPACE_SERVER_KEY not in project_payload["mcpServers"]
     assert CYT_MCP_SERVER_KEY not in project_payload["mcpServers"]
     assert project_payload["mcpServers"]["backend-b"]["command"] == "echo"
 
@@ -1620,6 +1644,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    consumer = _prepare_hook_setup_consumer_workspace(tmp_path, monkeypatch)
     cursor_path = tmp_path / "cursor" / "hooks.json"
     config_path = tmp_path / "config.yaml"
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
@@ -1641,6 +1666,10 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
         ),
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
+        patch(
+            "cyt.tools.cyt_mcp_setup.has_migratable_mcp_backends",
+            return_value=True,
+        ),
         patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
         patch("cyt.hook.daemon.daemon_start") as daemon_start,
         patch(
@@ -1652,12 +1681,14 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
             config_path=config_path,
             agents=["cursor"],
             prevent_hallucinations=True,
+            workspace=consumer,
         )
 
     daemon_start.assert_called_once_with(config_path=config_path, unattended=True)
     setup_cyt_mcp.assert_called_once()
     setup_kwargs = setup_cyt_mcp.call_args.kwargs
-    assert setup_kwargs["migrate_backends"] is True
+    assert setup_kwargs["migrate_user_backends"] is True
+    assert setup_kwargs["migrate_workspace_backends"] is True
     assert setup_kwargs["verify_only"] is True
     output = capsys.readouterr().out
     assert "CYT hook setup (cursor)" in output
@@ -2004,6 +2035,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
 ) -> None:
     import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
 
+    consumer = _prepare_hook_setup_consumer_workspace(tmp_path, monkeypatch)
     cursor_hooks_path = tmp_path / "cursor" / "hooks.json"
     mcp_source = tmp_path / "cursor" / "mcp.json"
     mcp_target_dir = tmp_path / "cyt_mcp"
@@ -2021,6 +2053,9 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
         + "\n",
         encoding="utf-8",
     )
+    project_mcp = consumer / ".cursor" / "mcp.json"
+    project_mcp.parent.mkdir(parents=True)
+    project_mcp.write_text(json.dumps({"mcpServers": {}}) + "\n", encoding="utf-8")
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_hooks_path)
     monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", mcp_source)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_target_dir)
@@ -2032,22 +2067,112 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
 
     def capture_yes_no(text: str, *args: object, **kwargs: object) -> bool:
         yes_no_calls.append(text)
-        if "Configure workspace-scoped cyt-mcp" in text:
+        if "Migrate user-global MCP backends and install cyt-mcp-usr?" in text:
+            return True
+        if "Migrate project MCP backends and install cyt-mcp-ws?" in text:
             return False
-        if "Migrate agent MCP config" in text:
+        if "choose action" in text.lower():
+            return True
+        raise AssertionError(f"unexpected yes/no prompt: {text!r}")
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", capture_yes_no)
+    monkeypatch.setattr(hook_setup, "_prompt_choice", lambda text, *a, **k: "update")
+
+    with (
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={"skills": {"enabled": False}},
+        ),
+        patch("cyt.config.save_user_config", return_value=True),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.hook.daemon.daemon_start"),
+        patch(
+            "cyt.hook.setup_wizard.resolve_setup_config_path",
+            return_value=config_path,
+        ),
+    ):
+        hook_setup.run_hook_setup(
+            config_path=config_path,
+            agents=["cursor"],
+            prevent_hallucinations=True,
+            workspace=consumer,
+        )
+
+    output = capsys.readouterr()
+    assert "--- Migrate (cursor) user-global MCP config ---" in output.out
+    assert "--- Migrate (cursor) workspace MCP config ---" in output.out
+    assert any(
+        "Migrate user-global MCP backends and install cyt-mcp-usr?" in text
+        for text in yes_no_calls
+    )
+    assert any(
+        "Migrate project MCP backends and install cyt-mcp-ws?" in text for text in yes_no_calls
+    )
+    assert "Detect tools for cursor" not in output.out
+    backend_payload = json.loads((mcp_target_dir / "cursor.json").read_text(encoding="utf-8"))
+    assert "example-backend" in backend_payload["mcpServers"]
+    agent_payload = json.loads(mcp_source.read_text(encoding="utf-8"))
+    assert set(agent_payload["mcpServers"]) == {CYT_MCP_USER_SERVER_KEY}
+    assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
+
+
+def test_run_hook_setup_migrates_workspace_mcp_when_cyt_checkout_is_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
+    from cyt.hook.workspace_resolution import CYT_WORKSPACE_ENV
+
+    cyt_repo = tmp_path / "clear-your-tools"
+    cyt_repo.mkdir()
+    (cyt_repo / ".git").mkdir()
+    cursor_hooks_path = tmp_path / "cursor" / "hooks.json"
+    mcp_source = tmp_path / "cursor" / "mcp.json"
+    mcp_target_dir = tmp_path / "cyt_mcp"
+    aggregator_path = tmp_path / "mcp-config.yaml"
+    config_path = tmp_path / "config.yaml"
+    mcp_source.parent.mkdir(parents=True)
+    mcp_source.write_text(json.dumps({"mcpServers": {}}) + "\n", encoding="utf-8")
+    project_mcp = cyt_repo / ".cursor" / "mcp.json"
+    project_mcp.parent.mkdir(parents=True)
+    project_mcp.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "example-backend": {"url": "https://mcp.example.com/mcp"},
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cyt_repo)
+    monkeypatch.setenv(CYT_WORKSPACE_ENV, str(cyt_repo))
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_hooks_path)
+    monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", mcp_source)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_target_dir)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    yes_no_calls: list[str] = []
+
+    def capture_yes_no(text: str, *args: object, **kwargs: object) -> bool:
+        yes_no_calls.append(text)
+        if "Migrate user-global MCP backends and install cyt-mcp-usr?" in text:
+            return False
+        if "Migrate project MCP backends and install cyt-mcp-ws?" in text:
             return True
         if "choose action" in text.lower():
             return True
         raise AssertionError(f"unexpected yes/no prompt: {text!r}")
 
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", capture_yes_no)
-    import cyt.hook.install_scope as install_scope
-
-    monkeypatch.setattr(
-        install_scope.CytInstallScope,
-        "from_cwd",
-        classmethod(lambda cls, *, cwd=None: install_scope.CytInstallScope(workspace_root=None)),
-    )
     monkeypatch.setattr(hook_setup, "_prompt_choice", lambda text, *a, **k: "update")
 
     with (
@@ -2070,14 +2195,16 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
         )
 
     output = capsys.readouterr()
-    assert "--- Migrate (cursor)'s MCP config ---" in output.out
-    assert any("Migrate agent MCP config" in text for text in yes_no_calls)
-    assert "Detect tools for cursor" not in output.out
-    backend_payload = json.loads((mcp_target_dir / "cursor.json").read_text(encoding="utf-8"))
+    assert "cyt package - consumer setup skipped" in output.out
+    assert "--- Migrate (cursor) workspace MCP config ---" in output.out
+    assert any(
+        "Migrate project MCP backends and install cyt-mcp-ws?" in text for text in yes_no_calls
+    )
+    workspace_defs = cyt_repo / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    backend_payload = json.loads(workspace_defs.read_text(encoding="utf-8"))
     assert "example-backend" in backend_payload["mcpServers"]
-    agent_payload = json.loads(mcp_source.read_text(encoding="utf-8"))
-    assert set(agent_payload["mcpServers"]) == {CYT_MCP_SERVER_KEY}
-    assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
+    project_payload = json.loads(project_mcp.read_text(encoding="utf-8"))
+    assert set(project_payload["mcpServers"]) == {CYT_MCP_WORKSPACE_SERVER_KEY}
 
 
 def test_should_propose_hook_daemon_start() -> None:

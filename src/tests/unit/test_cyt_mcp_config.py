@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from cyt_mcp.config import (
+    _load_unified_mcp_servers,
     expand_mcp_value,
     is_mcp_server_enabled,
     listed_mcp_server_names,
@@ -127,7 +128,54 @@ def test_listed_mcp_server_names_includes_disabled_entries(tmp_path: Path) -> No
     assert listed_mcp_server_names(path) == frozenset({"fff", "active"})
 
 
-def test_unified_load_workspace_overrides_user_on_name_conflict(
+def test_unified_load_user_overrides_workspace_on_name_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_mcp_dir = tmp_path / "user-mcp"
+    user_mcp_dir.mkdir()
+    user_defs = user_mcp_dir / "cursor.json"
+    user_defs.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo", "args": ["user"]},
+                    "global-only": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo", "args": ["workspace"]},
+                    "workspace-only": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("cyt_mcp.config.DEFAULT_MCP_DIR", user_mcp_dir)
+    monkeypatch.chdir(tmp_path)
+    merged, origins = _load_unified_mcp_servers(
+        agent="cursor",
+        workspace_root=tmp_path.resolve(),
+        workspace_folder=tmp_path,
+    )
+
+    assert set(merged) == {"fff", "global-only", "workspace-only"}
+    assert merged["fff"]["args"] == ["user"]
+    assert origins["fff"] == "user"
+    assert origins["global-only"] == "user"
+    assert origins["workspace-only"] == "workspace"
+
+
+def test_workspace_layer_load_excludes_user_server_names(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -168,14 +216,12 @@ def test_unified_load_workspace_overrides_user_on_name_conflict(
     config = load_aggregator_config(agent="cursor", aggregator_path=agg, workspace_folder=tmp_path)
 
     assert config.catalog_scope == "workspace"
-    assert set(config.mcp_servers) == {"fff", "global-only", "workspace-only"}
-    assert config.mcp_servers["fff"]["args"] == ["workspace"]
-    assert config.server_origins["fff"] == "workspace"
-    assert config.server_origins["global-only"] == "user"
+    assert set(config.mcp_servers) == {"workspace-only"}
+    assert "fff" not in config.mcp_servers
     assert config.server_origins["workspace-only"] == "workspace"
 
 
-def test_unified_load_user_scope_merges_workspace_from_project_cwd(
+def test_user_layer_load_resolves_workspace_root_but_loads_user_servers_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -216,11 +262,10 @@ def test_unified_load_user_scope_merges_workspace_from_project_cwd(
 
     assert config.catalog_scope == "user"
     assert config.workspace_root == tmp_path.resolve()
-    assert set(config.mcp_servers) == {"fff", "global-only", "workspace-only"}
-    assert config.mcp_servers["fff"]["args"] == ["workspace"]
-    assert config.server_origins["fff"] == "workspace"
+    assert set(config.mcp_servers) == {"fff", "global-only"}
+    assert config.mcp_servers["fff"]["args"] == ["user"]
+    assert config.server_origins["fff"] == "user"
     assert config.server_origins["global-only"] == "user"
-    assert config.server_origins["workspace-only"] == "workspace"
 
 
 def test_unified_load_user_only_without_workspace_root(
@@ -253,14 +298,14 @@ def test_load_aggregator_config_expands_workspace_folder_token(
 ) -> None:
     user_mcp_dir = tmp_path / "user-mcp"
     user_mcp_dir.mkdir()
-    (user_mcp_dir / "cursor.json").write_text(
-        json.dumps({"mcpServers": {"context7": {"url": "https://example.com/mcp"}}}),
-        encoding="utf-8",
-    )
+    (user_mcp_dir / "cursor.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
     (tmp_path / ".git").mkdir()
     ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
     ws_defs.parent.mkdir(parents=True)
-    ws_defs.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    ws_defs.write_text(
+        json.dumps({"mcpServers": {"context7": {"url": "https://example.com/mcp"}}}),
+        encoding="utf-8",
+    )
     agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-config.yaml"
     agg.write_text(
         "default_agent: cursor\ncatalog_scope: workspace\nagents:\n  cursor: mcp/cursor.json\n",
@@ -310,7 +355,7 @@ def test_load_aggregator_config_resolves_relative_config_against_workspace(
     assert config.aggregator_path == agg
 
 
-def test_unified_load_merges_user_and_workspace_defs(
+def test_workspace_layer_loads_project_servers_excluding_user_names(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -334,7 +379,36 @@ def test_unified_load_merges_user_and_workspace_defs(
     monkeypatch.chdir(tmp_path)
     config = load_aggregator_config(agent="cursor", aggregator_path=agg, workspace_folder=tmp_path)
 
-    assert set(config.mcp_servers) == {"user-only", "workspace-only"}
+    assert set(config.mcp_servers) == {"workspace-only"}
+
+
+def test_unified_load_merges_user_and_workspace_defs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_mcp_dir = tmp_path / "user-mcp"
+    user_mcp_dir.mkdir()
+    (user_mcp_dir / "cursor.json").write_text(
+        json.dumps({"mcpServers": {"user-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps({"mcpServers": {"workspace-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("cyt_mcp.config.DEFAULT_MCP_DIR", user_mcp_dir)
+    monkeypatch.chdir(tmp_path)
+    merged, _origins = _load_unified_mcp_servers(
+        agent="cursor",
+        workspace_root=tmp_path.resolve(),
+        workspace_folder=tmp_path,
+    )
+
+    assert set(merged) == {"user-only", "workspace-only"}
 
 
 def test_workspace_load_uses_canonical_defs_when_aggregator_missing(
@@ -366,7 +440,7 @@ def test_workspace_load_uses_canonical_defs_when_aggregator_missing(
 
     assert config.catalog_scope == "workspace"
     assert config.agent_mcp_path == ws_defs.resolve()
-    assert set(config.mcp_servers) == {"global-only", "workspace-only"}
+    assert set(config.mcp_servers) == {"workspace-only"}
 
 
 def test_workspace_load_rejects_global_agent_path_in_aggregator(
@@ -410,7 +484,7 @@ def test_workspace_load_rejects_global_agent_path_in_aggregator(
     )
 
     assert config.agent_mcp_path == ws_defs.resolve()
-    assert set(config.mcp_servers) == {"global-only", "workspace-only"}
+    assert set(config.mcp_servers) == {"workspace-only"}
 
 
 def test_workspace_load_resolves_relative_agent_path_from_aggregator_dir(
@@ -452,7 +526,7 @@ def test_workspace_load_resolves_relative_agent_path_from_aggregator_dir(
     assert set(config.mcp_servers) == {"relative-only"}
 
 
-def test_unified_load_user_deny_does_not_apply_to_workspace_servers(
+def test_workspace_layer_deny_does_not_use_user_global_deny_overlay(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -489,4 +563,4 @@ def test_unified_load_user_deny_does_not_apply_to_workspace_servers(
     monkeypatch.chdir(tmp_path)
     config = load_aggregator_config(agent="cursor", aggregator_path=agg, workspace_folder=tmp_path)
 
-    assert set(config.mcp_servers) == {"global-only", "workspace-only"}
+    assert set(config.mcp_servers) == {"workspace-only"}

@@ -18,13 +18,14 @@ from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash
 logger = logging.getLogger(__name__)
 
 CatalogScope = Literal["workspace"]
+CatalogLayer = Literal["usr", "ws"]
 
 REGISTRY_TTL_SECONDS = 10.0
 REGISTRY_SNAPSHOT_DIR = Path("~/.config/cyt/cache/catalog-registry").expanduser()
 REGISTRY_SNAPSHOT_FILE = REGISTRY_SNAPSHOT_DIR / "registrations.json"
 
 _registry_lock = threading.Lock()
-_registrations: dict[tuple[str, str, str], _CatalogRegistration] = {}
+_registrations: dict[tuple[str, str, str, str], _CatalogRegistration] = {}
 
 
 class RegisterStatus(StrEnum):
@@ -47,6 +48,7 @@ class _CatalogRegistration:
     agent: str
     scope: CatalogScope
     workspace_root: str
+    catalog_layer: CatalogLayer
     tools: list[dict[str, Any]] = field(default_factory=list)
     content_hash: str = ""
     instance_id: str = ""
@@ -66,6 +68,15 @@ def _normalize_scope(raw: object) -> CatalogScope | None:
         return None
     if text == "workspace":
         return "workspace"
+    return None
+
+
+def _normalize_catalog_layer(raw: object) -> CatalogLayer | None:
+    text = str(raw or "").strip().lower()
+    if text in {"usr", "user"}:
+        return "usr"
+    if text in {"ws", "workspace"}:
+        return "ws"
     return None
 
 
@@ -91,9 +102,10 @@ def normalize_registry_workspace_path(raw: object) -> str | None:
 def _registry_key(
     agent: str,
     workspace_root: str | None,
-) -> tuple[str, str, str]:
+    catalog_layer: CatalogLayer,
+) -> tuple[str, str, str, str]:
     ws = workspace_root or ""
-    return (agent, "workspace", ws)
+    return (agent, "workspace", ws, catalog_layer)
 
 
 def _normalize_tools(raw: object) -> list[dict[str, Any]]:
@@ -111,6 +123,7 @@ def _registration_to_dict(entry: _CatalogRegistration) -> dict[str, Any]:
         "agent": entry.agent,
         "scope": entry.scope,
         "workspace_root": entry.workspace_root or None,
+        "catalog_layer": entry.catalog_layer,
         "tools": entry.tools,
         "content_hash": entry.content_hash,
         "instance_id": entry.instance_id,
@@ -125,6 +138,9 @@ def _entry_from_dict(raw: dict[str, Any]) -> _CatalogRegistration | None:
     scope = _normalize_scope(raw.get("scope"))
     if scope is None:
         return None
+    catalog_layer = _normalize_catalog_layer(raw.get("catalog_layer"))
+    if catalog_layer is None:
+        return None
     workspace = normalize_registry_workspace_path(raw.get("workspace_root"))
     if workspace is None:
         return None
@@ -136,6 +152,7 @@ def _entry_from_dict(raw: dict[str, Any]) -> _CatalogRegistration | None:
         agent=agent,
         scope=scope,
         workspace_root=str(workspace),
+        catalog_layer=catalog_layer,
         tools=tools,
         content_hash=content_hash,
         instance_id=str(raw.get("instance_id") or ""),
@@ -154,19 +171,19 @@ def _is_entry_live(entry: _CatalogRegistration, *, now: float | None = None) -> 
     return current - entry.last_seen_at <= REGISTRY_TTL_SECONDS
 
 
-def _get_entry(key: tuple[str, str, str]) -> _CatalogRegistration | None:
+def _get_entry(key: tuple[str, str, str, str]) -> _CatalogRegistration | None:
     with _registry_lock:
         return _registrations.get(key)
 
 
 def _upsert_entry(entry: _CatalogRegistration) -> None:
-    key = _registry_key(entry.agent, entry.workspace_root or None)
+    key = _registry_key(entry.agent, entry.workspace_root or None, entry.catalog_layer)
     with _registry_lock:
         _registrations[key] = entry
     _schedule_snapshot_write()
 
 
-def _remove_entry(key: tuple[str, str, str], *, instance_id: str | None = None) -> bool:
+def _remove_entry(key: tuple[str, str, str, str], *, instance_id: str | None = None) -> bool:
     with _registry_lock:
         existing = _registrations.get(key)
         if existing is None:
@@ -212,8 +229,40 @@ def _write_snapshot_async() -> None:
             _snapshot_pending = False
 
 
+def _purge_legacy_snapshot_file() -> bool:
+    """Delete on-disk snapshot when it lacks dual-layer ``catalog_layer`` metadata."""
+    if not REGISTRY_SNAPSHOT_FILE.is_file():
+        return False
+    try:
+        raw = json.loads(REGISTRY_SNAPSHOT_FILE.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        try:
+            REGISTRY_SNAPSHOT_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
+    if not isinstance(raw, list):
+        try:
+            REGISTRY_SNAPSHOT_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
+    for item in raw:
+        if isinstance(item, dict) and _normalize_catalog_layer(item.get("catalog_layer")) is None:
+            try:
+                REGISTRY_SNAPSHOT_FILE.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("catalog registry legacy snapshot purge failed: %s", exc)
+                return False
+            logger.info("purged legacy catalog registry snapshot (missing catalog_layer)")
+            return True
+    return False
+
+
 def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
-    """Load registry snapshot; return count loaded."""
+    """Load registry snapshot; return count loaded. Skips legacy entries without catalog_layer."""
+    if _purge_legacy_snapshot_file():
+        return 0
     if not REGISTRY_SNAPSHOT_FILE.is_file():
         return 0
     try:
@@ -234,7 +283,7 @@ def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
         if mark_stale:
             entry.stale = True
         entry.last_seen_at = now
-        key = _registry_key(entry.agent, entry.workspace_root or None)
+        key = _registry_key(entry.agent, entry.workspace_root or None, entry.catalog_layer)
         with _registry_lock:
             _registrations[key] = entry
         loaded += 1
@@ -242,9 +291,14 @@ def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
     return loaded
 
 
-def clear_catalog_registry() -> None:
+def clear_catalog_registry(*, purge_disk_snapshot: bool = True) -> None:
     with _registry_lock:
         _registrations.clear()
+    if purge_disk_snapshot and REGISTRY_SNAPSHOT_FILE.is_file():
+        try:
+            REGISTRY_SNAPSHOT_FILE.unlink()
+        except OSError as exc:
+            logger.warning("catalog registry snapshot delete failed: %s", exc)
 
 
 def touch_heartbeat(
@@ -254,6 +308,7 @@ def touch_heartbeat(
     *,
     content_hash: str,
     instance_id: str = "",
+    catalog_layer: CatalogLayer = "ws",
 ) -> RegisterResult:
     """Hash-only heartbeat for an existing registration."""
     payload: dict[str, Any] = {
@@ -262,6 +317,7 @@ def touch_heartbeat(
         "workspace_root": str(workspace_root) if workspace_root is not None else None,
         "content_hash": content_hash,
         "instance_id": instance_id,
+        "catalog_layer": catalog_layer,
     }
     return register_catalog(payload)
 
@@ -303,6 +359,7 @@ def _register_full_tools(
     agent: str,
     scope: CatalogScope,
     workspace_root: str | None,
+    catalog_layer: CatalogLayer,
     tools: list[dict[str, Any]],
     content_hash: str,
     instance_id: str,
@@ -325,6 +382,7 @@ def _register_full_tools(
         agent=agent,
         scope="workspace",
         workspace_root=str(workspace_root),
+        catalog_layer=catalog_layer,
         tools=tools,
         content_hash=content_hash,
         instance_id=instance_id,
@@ -354,12 +412,16 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
     if workspace_root is None:
         return RegisterResult(RegisterStatus.INVALID, 400, "invalid workspace_root")
 
+    catalog_layer = _normalize_catalog_layer(payload.get("catalog_layer"))
+    if catalog_layer is None:
+        return RegisterResult(RegisterStatus.INVALID, 400, "invalid catalog_layer")
+
     content_hash = str(payload.get("content_hash") or "").strip()
     instance_id = str(payload.get("instance_id") or "").strip()
     if not content_hash:
         return RegisterResult(RegisterStatus.INVALID, 400, "content_hash required")
 
-    key = _registry_key(agent, workspace_root)
+    key = _registry_key(agent, workspace_root, catalog_layer)
     tools_raw = payload.get("tools")
     has_tools = isinstance(tools_raw, list) and len(tools_raw) > 0
 
@@ -379,6 +441,7 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
         agent=agent,
         scope="workspace",
         workspace_root=workspace_root,
+        catalog_layer=catalog_layer,
         tools=tools,
         content_hash=content_hash,
         instance_id=instance_id,
@@ -398,8 +461,11 @@ def deregister_catalog(payload: dict[str, Any]) -> bool:
     workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
     if workspace_root is None:
         return False
+    catalog_layer = _normalize_catalog_layer(payload.get("catalog_layer"))
+    if catalog_layer is None:
+        return False
     instance_id = str(payload.get("instance_id") or "").strip() or None
-    key = _registry_key(agent, workspace_root)
+    key = _registry_key(agent, workspace_root, catalog_layer)
     return _remove_entry(key, instance_id=instance_id)
 
 
@@ -422,13 +488,31 @@ def _entry_tools(
     return []
 
 
-def catalog_for_hook(
+def _union_layer_tools(
+    usr_tools: list[dict[str, Any]],
+    ws_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Union usr + ws catalogs; usr wins on wire name conflict."""
+    by_name: dict[str, dict[str, Any]] = {}
+    for tool in ws_tools:
+        name = str(tool.get("name") or "").strip()
+        if name:
+            by_name[name] = tool
+    for tool in usr_tools:
+        name = str(tool.get("name") or "").strip()
+        if name:
+            by_name[name] = tool
+    return list(by_name.values())
+
+
+def catalog_for_layer(
     agent: str,
     workspace_root: str | Path | None,
+    catalog_layer: CatalogLayer,
     *,
     allow_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    """Return workspace-keyed cyt-mcp catalog for hook injection."""
+    """Return one cyt-mcp catalog layer (``usr`` or ``ws``) for runtime hydration."""
     normalized_agent = _normalize_agent(agent)
     ws_path = (
         normalize_registry_workspace_path(str(workspace_root))
@@ -437,9 +521,42 @@ def catalog_for_hook(
     )
     if not ws_path:
         return []
-    ws_key = _registry_key(normalized_agent, ws_path)
+    key = _registry_key(normalized_agent, ws_path, catalog_layer)
+    return _entry_tools(_get_entry(key), allow_stale=allow_stale)
+
+
+def catalog_for_hook(
+    agent: str,
+    workspace_root: str | Path | None,
+    *,
+    allow_stale: bool = True,
+) -> list[dict[str, Any]]:
+    """Return union of usr + ws cyt-mcp catalog layers for hook injection."""
+    normalized_agent = _normalize_agent(agent)
+    ws_path = (
+        normalize_registry_workspace_path(str(workspace_root))
+        if workspace_root is not None
+        else None
+    )
+    if not ws_path:
+        return []
+
+    usr_key = _registry_key(normalized_agent, ws_path, "usr")
+    ws_key = _registry_key(normalized_agent, ws_path, "ws")
+    usr_entry = _get_entry(usr_key)
     ws_entry = _get_entry(ws_key)
-    return _entry_tools(ws_entry, allow_stale=allow_stale)
+
+    usr_tools = _entry_tools(usr_entry, allow_stale=allow_stale)
+    ws_tools = _entry_tools(ws_entry, allow_stale=allow_stale)
+
+    if not usr_tools and not ws_tools:
+        return []
+
+    if not usr_tools:
+        return ws_tools
+    if not ws_tools:
+        return usr_tools
+    return _union_layer_tools(usr_tools, ws_tools)
 
 
 def merge_catalog_for_hook(
