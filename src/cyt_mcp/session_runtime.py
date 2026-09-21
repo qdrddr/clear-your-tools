@@ -225,22 +225,25 @@ class MultiWorkspaceCoordinator:
                 async def _background_runtime_refresh() -> None:
                     try:
                         await refresh_catalog_cache(self._server, cache, config)
-                        runtime_key = self._runtime_key(workspace_root)
-                        if runtime_key is not None:
+                        from cyt_mcp.catalog_build import (
+                            disk_catalog_slug_for_config,
+                            offerings_runtime_key,
+                        )
+
+                        offerings_key = offerings_runtime_key(config)
+                        if offerings_key is not None:
 
                             async def _refresh_offerings() -> None:
-                                from cyt_mcp.catalog_build import disk_catalog_slug_for_config
-
                                 await self._offerings_cache.refresh_from_server(
                                     self._server,
-                                    runtime_key=runtime_key,
+                                    runtime_key=offerings_key,
                                     mcp_servers=config.mcp_servers,
                                     ensure_mounted=self.ensure_backends_mounted,
                                     disk_slug=disk_catalog_slug_for_config(config),
                                 )
 
                             self._offerings_cache.schedule_refresh_once(
-                                runtime_key=runtime_key,
+                                runtime_key=offerings_key,
                                 delay_s=0.0,
                                 coro_factory=_refresh_offerings,
                             )

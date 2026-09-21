@@ -13,15 +13,27 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import Tool
 from mcp.types import (
     CallToolRequestParams,
+    GetPromptRequestParams,
     InitializeRequest,
     InitializeResult,
     ListPromptsRequest,
     ListResourceTemplatesRequest,
     ListResourcesRequest,
     ListToolsRequest,
+    Prompt,
+    ReadResourceRequestParams,
+    Resource,
+    ResourceTemplate,
 )
 
-from cyt_mcp.offerings_cache import enter_tools_list, exit_tools_list
+from fastmcp.prompts.base import PromptResult
+from fastmcp.resources.base import ResourceResult
+
+from cyt_mcp.offerings_cache import (
+    enter_tools_list,
+    exit_tools_list,
+    offerings_to_wire,
+)
 from cyt_mcp.session_context import (
     reset_current_session_runtime,
     reset_session_scoping_active,
@@ -91,9 +103,10 @@ class SessionWorkspaceMiddleware(Middleware):
             if token is not None:
                 reset_current_session_runtime(token)
 
-    def _runtime_key(self, runtime: Any) -> str:
-        key = self._coordinator._runtime_key(runtime.workspace_root)
-        return key or "bootstrap"
+    def _offerings_key(self, runtime: Any) -> str:
+        from cyt_mcp.catalog_build import offerings_runtime_key
+
+        return offerings_runtime_key(runtime.config) or "bootstrap"
 
     async def _resolve_runtime(self, context: MiddlewareContext[Any]) -> Any:
         runtime = self._coordinator.bootstrap
@@ -112,51 +125,77 @@ class SessionWorkspaceMiddleware(Middleware):
         call_next: CallNext[InitializeRequest, InitializeResult | None],
     ) -> InitializeResult | None:
         result = await call_next(context)
-        runtime = self._coordinator.bootstrap
-        runtime_key = self._runtime_key(runtime)
-        from cyt_mcp.catalog_build import disk_catalog_slug_for_config, hydrate_offerings_cache
+        runtime = await self._resolve_runtime(context)
+        offerings_key = self._offerings_key(runtime)
+        from cyt_mcp.catalog_build import hydrate_offerings_cache
 
         hydrate_offerings_cache(
             self._coordinator.offerings_cache,
             runtime.config,
-            runtime_key=runtime_key,
+            runtime_key=offerings_key,
         )
-        if self._coordinator.offerings_cache.get(runtime_key) is None:
-            self._coordinator.offerings_cache.schedule_refresh_once(
-                runtime_key=runtime_key,
-                delay_s=15.0,
-                coro_factory=lambda: self._refresh_offerings_cache(runtime, runtime_key),
-            )
+        if self._coordinator.offerings_cache.get(offerings_key) is None:
+            self._schedule_offerings_refresh(runtime, offerings_key, delay_s=0.0)
         return result
 
-    async def _refresh_offerings_cache(self, runtime: Any, runtime_key: str) -> None:
+    def _schedule_offerings_refresh(
+        self,
+        runtime: Any,
+        offerings_key: str,
+        *,
+        delay_s: float = 0.0,
+    ) -> None:
+        self._coordinator.offerings_cache.schedule_refresh_once(
+            runtime_key=offerings_key,
+            delay_s=delay_s,
+            coro_factory=lambda: self._refresh_offerings_cache(runtime, offerings_key),
+        )
+
+    async def _notify_offerings_changed(self, runtime: Any) -> None:
+        from cyt_mcp.hook_daemon_push import _instance_key, _push_contexts
+
+        ctx_key = _instance_key(runtime.config)
+        ctx = _push_contexts.get(ctx_key)
+        if ctx is None or ctx.list_changed_middleware is None:
+            return
+        await ctx.list_changed_middleware.notify_all_sessions_offerings_changed()
+
+    async def _refresh_offerings_cache(self, runtime: Any, offerings_key: str) -> None:
         from cyt_mcp.catalog_build import disk_catalog_slug_for_config
 
+        before = self._coordinator.offerings_cache.snapshot_or_empty(offerings_key)
         try:
-            await self._coordinator.offerings_cache.refresh_from_server(
+            snapshot = await self._coordinator.offerings_cache.refresh_from_server(
                 self._coordinator.server,
-                runtime_key=runtime_key,
+                runtime_key=offerings_key,
                 mcp_servers=runtime.config.mcp_servers,
                 ensure_mounted=self._coordinator.ensure_backends_mounted,
                 disk_slug=disk_catalog_slug_for_config(runtime.config),
             )
         except Exception as exc:
             logger.warning("cyt-mcp offerings refresh failed: %s", exc)
+            return
+        if snapshot.total_count > 0 and snapshot.total_count != before.total_count:
+            await self._notify_offerings_changed(runtime)
 
     async def _cached_offerings(
         self,
         context: MiddlewareContext[Any],
         *,
         kind: str,
+        wire_type: type[Any],
     ) -> Sequence[Any]:
         runtime = await self._resolve_runtime(context)
-        runtime_key = self._runtime_key(runtime)
-        snapshot = self._coordinator.offerings_cache.snapshot_or_empty(runtime_key)
-        return {
+        offerings_key = self._offerings_key(runtime)
+        snapshot = self._coordinator.offerings_cache.snapshot_or_empty(offerings_key)
+        if snapshot.total_count == 0:
+            self._schedule_offerings_refresh(runtime, offerings_key, delay_s=0.0)
+        items = {
             "resources": snapshot.resources,
             "prompts": snapshot.prompts,
             "resource_templates": snapshot.resource_templates,
         }[kind]
+        return offerings_to_wire(items, wire_type)
 
     async def on_list_prompts(
         self,
@@ -164,7 +203,7 @@ class SessionWorkspaceMiddleware(Middleware):
         call_next: CallNext[ListPromptsRequest, Sequence[Any]],
     ) -> Sequence[Any]:
         _ = call_next
-        return await self._cached_offerings(context, kind="prompts")
+        return await self._cached_offerings(context, kind="prompts", wire_type=Prompt)
 
     async def on_list_resources(
         self,
@@ -172,7 +211,7 @@ class SessionWorkspaceMiddleware(Middleware):
         call_next: CallNext[ListResourcesRequest, Sequence[Any]],
     ) -> Sequence[Any]:
         _ = call_next
-        return await self._cached_offerings(context, kind="resources")
+        return await self._cached_offerings(context, kind="resources", wire_type=Resource)
 
     async def on_list_resource_templates(
         self,
@@ -180,7 +219,34 @@ class SessionWorkspaceMiddleware(Middleware):
         call_next: CallNext[ListResourceTemplatesRequest, Sequence[Any]],
     ) -> Sequence[Any]:
         _ = call_next
-        return await self._cached_offerings(context, kind="resource_templates")
+        return await self._cached_offerings(
+            context,
+            kind="resource_templates",
+            wire_type=ResourceTemplate,
+        )
+
+    async def _proxy_offering_request(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, Any],
+    ) -> Any:
+        runtime = await self._resolve_runtime(context)
+        self._coordinator.ensure_backends_mounted(runtime.config.mcp_servers)
+        return await call_next(context)
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[ReadResourceRequestParams],
+        call_next: CallNext[ReadResourceRequestParams, ResourceResult],
+    ) -> ResourceResult:
+        return await self._proxy_offering_request(context, call_next)
+
+    async def on_get_prompt(
+        self,
+        context: MiddlewareContext[GetPromptRequestParams],
+        call_next: CallNext[GetPromptRequestParams, PromptResult],
+    ) -> PromptResult:
+        return await self._proxy_offering_request(context, call_next)
 
     async def on_list_tools(
         self,

@@ -5,11 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import asdict, dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+
+from mcp.types import Prompt, Resource, ResourceTemplate
 
 logger = logging.getLogger(__name__)
+
+TWire = TypeVar("TWire", Resource, Prompt, ResourceTemplate)
 
 _tools_list_depth = 0
 
@@ -45,7 +50,15 @@ class OfferingsSnapshot:
         return len(self.resources) + len(self.prompts) + len(self.resource_templates)
 
     def to_json(self) -> dict[str, Any]:
-        return asdict(self)
+        from cyt_mcp.catalog_build import json_safe_value
+
+        return {
+            "resources": [json_safe_value(item) for item in self.resources],
+            "prompts": [json_safe_value(item) for item in self.prompts],
+            "resource_templates": [
+                json_safe_value(item) for item in self.resource_templates
+            ],
+        }
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> OfferingsSnapshot:
@@ -54,6 +67,42 @@ class OfferingsSnapshot:
             prompts=list(payload.get("prompts") or []),
             resource_templates=list(payload.get("resource_templates") or []),
         )
+
+
+def normalize_offering_items(items: Sequence[Any] | None) -> list[dict[str, Any]]:
+    from cyt_mcp.catalog_build import json_safe_value
+
+    return [json_safe_value(item) for item in (items or [])]
+
+
+def offerings_snapshot_from_server(
+    *,
+    resources: Sequence[Any] | None,
+    prompts: Sequence[Any] | None,
+    resource_templates: Sequence[Any] | None,
+) -> OfferingsSnapshot:
+    return OfferingsSnapshot(
+        resources=normalize_offering_items(resources),
+        prompts=normalize_offering_items(prompts),
+        resource_templates=normalize_offering_items(resource_templates),
+    )
+
+
+def offerings_to_wire(
+    items: Sequence[Any],
+    wire_type: type[TWire],
+) -> list[TWire]:
+    wired: list[TWire] = []
+    for item in items:
+        if isinstance(item, wire_type):
+            wired.append(item)
+        elif isinstance(item, dict):
+            wired.append(wire_type.model_validate(item))
+        else:
+            from cyt_mcp.catalog_build import json_safe_value
+
+            wired.append(wire_type.model_validate(json_safe_value(item)))
+    return wired
 
 
 def _offerings_disk_path(slug: str) -> Path:
@@ -70,7 +119,7 @@ def persist_offerings_snapshot(slug: str, snapshot: OfferingsSnapshot) -> bool:
     try:
         path.write_text(json.dumps(snapshot.to_json(), ensure_ascii=False), encoding="utf-8")
         return True
-    except OSError as exc:
+    except (OSError, TypeError, ValueError) as exc:
         logger.debug("cyt-mcp offerings disk persist failed: %s", exc)
         return False
 
@@ -165,10 +214,10 @@ class OfferingsCache:
             resources = await server._list_resources()
             prompts = await server._list_prompts()
             templates = await server._list_resource_templates()
-            snapshot = OfferingsSnapshot(
-                resources=list(resources or []),
-                prompts=list(prompts or []),
-                resource_templates=list(templates or []),
+            snapshot = offerings_snapshot_from_server(
+                resources=resources,
+                prompts=prompts,
+                resource_templates=templates,
             )
             stored = self.replace(runtime_key, snapshot)
             if disk_slug and stored.total_count > 0:

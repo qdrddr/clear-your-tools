@@ -258,43 +258,51 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
     from cyt_mcp.catalog_build import hydrate_runtime_cache, refresh_catalog_cache
 
     hydrate_runtime_cache(cache, config)
-    if config.workspace_root is not None:
-        from cyt_mcp.catalog_build import hydrate_offerings_cache
+    from cyt_mcp.catalog_build import (
+        disk_catalog_slug_for_config,
+        hydrate_offerings_cache,
+        offerings_runtime_key,
+    )
 
-        runtime_key = coordinator._runtime_key(config.workspace_root)
-        if runtime_key is not None:
-            hydrate_offerings_cache(
-                coordinator.offerings_cache,
-                config,
-                runtime_key=runtime_key,
-            )
+    offerings_key = offerings_runtime_key(config)
+    if offerings_key is not None:
+        hydrate_offerings_cache(
+            coordinator.offerings_cache,
+            config,
+            runtime_key=offerings_key,
+        )
     cache_warmed = bool(cache.snapshot())
+
+    async def _refresh_offerings(*, notify: bool = True) -> None:
+        key = offerings_runtime_key(config)
+        if key is None:
+            return
+        before = coordinator.offerings_cache.snapshot_or_empty(key)
+        try:
+            snapshot = await coordinator.offerings_cache.refresh_from_server(
+                server,
+                runtime_key=key,
+                mcp_servers=config.mcp_servers,
+                ensure_mounted=coordinator.ensure_backends_mounted,
+                disk_slug=disk_catalog_slug_for_config(config),
+            )
+        except Exception as exc:
+            logger.warning("cyt-mcp offerings refresh failed: %s", exc)
+            return
+        if (
+            notify
+            and list_changed_middleware is not None
+            and snapshot.total_count > 0
+            and snapshot.total_count != before.total_count
+        ):
+            await list_changed_middleware.notify_all_sessions_offerings_changed()
 
     async def _background_catalog_refresh() -> None:
         try:
             before_count = len(cache.snapshot())
             await refresh_catalog_cache(server, cache, config)
             after_count = len(cache.snapshot())
-            if config.workspace_root is not None:
-                from cyt_mcp.catalog_build import disk_catalog_slug_for_config
-
-                runtime_key = coordinator._runtime_key(config.workspace_root)
-                if runtime_key is not None:
-
-                    async def _refresh_offerings_after_catalog() -> None:
-                        await coordinator.offerings_cache.refresh_from_server(
-                            server,
-                            runtime_key=runtime_key,
-                            mcp_servers=config.mcp_servers,
-                            ensure_mounted=coordinator.ensure_backends_mounted,
-                            disk_slug=disk_catalog_slug_for_config(config),
-                        )
-
-                    coordinator.offerings_cache.schedule_refresh_once(
-                        runtime_key=runtime_key,
-                        delay_s=0.0,
-                        coro_factory=_refresh_offerings_after_catalog,
-                    )
+            await _refresh_offerings()
             if (
                 list_changed_middleware is not None
                 and after_count > 0
@@ -311,6 +319,13 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
         refresh_task = asyncio.create_task(
             _background_catalog_refresh(),
             name="cyt-mcp-catalog-refresh",
+        )
+    elif offerings_key is not None:
+        hydrated = coordinator.offerings_cache.get(offerings_key) is not None
+        coordinator.offerings_cache.schedule_refresh_once(
+            runtime_key=offerings_key,
+            delay_s=5.0 if hydrated else 0.0,
+            coro_factory=lambda: _refresh_offerings(),
         )
     try:
         if config.transport == "http":

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from mcp.types import Resource
 
-from cyt_mcp.offerings_cache import OfferingsCache, OfferingsSnapshot
+from cyt_mcp.offerings_cache import (
+    OfferingsCache,
+    OfferingsSnapshot,
+    offerings_snapshot_from_server,
+    offerings_to_wire,
+    persist_offerings_snapshot,
+)
 
 
 @pytest.mark.asyncio
@@ -49,3 +57,32 @@ def test_snapshot_or_empty_returns_empty_when_missing() -> None:
     assert empty == OfferingsSnapshot()
     cache.replace("ws-a", OfferingsSnapshot(resources=[{"uri": "a"}]))
     assert len(cache.snapshot_or_empty("ws-a").resources) == 1
+
+
+def test_offerings_snapshot_serializes_mcp_resource_for_disk(tmp_path, monkeypatch) -> None:
+    from cyt.cyt_mcp import catalog_disk
+
+    monkeypatch.setattr(
+        catalog_disk,
+        "cyt_mcp_catalog_cache_dir",
+        lambda: tmp_path,
+    )
+    resource = Resource(uri="gitnexus://repo/demo/process/main", name="main")
+    snapshot = offerings_snapshot_from_server(
+        resources=[resource],
+        prompts=[],
+        resource_templates=[],
+    )
+    assert persist_offerings_snapshot("slug-a", snapshot) is True
+    payload = json.loads((tmp_path / "offerings" / "slug-a.json").read_text(encoding="utf-8"))
+    assert payload["resources"][0]["uri"] == "gitnexus://repo/demo/process/main"
+
+
+def test_offerings_to_wire_restores_resource_objects() -> None:
+    wired = offerings_to_wire(
+        [{"uri": "gitnexus://repo/demo/process/main", "name": "main"}],
+        Resource,
+    )
+    assert len(wired) == 1
+    assert isinstance(wired[0], Resource)
+    assert str(wired[0].uri) == "gitnexus://repo/demo/process/main"

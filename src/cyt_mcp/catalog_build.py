@@ -132,6 +132,18 @@ async def wait_for_catalog_cache_ready(
         lock.release()
 
 
+def offerings_runtime_key(config: AggregatorConfig) -> str | None:
+    """Stable per-frontend cache key for usr/ws offerings (resources, prompts, templates)."""
+    slug = disk_catalog_slug_for_config(config)
+    if slug:
+        return slug
+    from cyt_mcp.config import catalog_layer_for_scope
+
+    layer = catalog_layer_for_scope(config.catalog_scope)
+    agent = config.agent.strip() or "cursor"
+    return f"{layer}:{agent}"
+
+
 def hydrate_offerings_cache(
     offerings_cache: "OfferingsCache",
     config: AggregatorConfig,
@@ -144,7 +156,7 @@ def hydrate_offerings_cache(
     slug = disk_catalog_slug_for_config(config)
     if not slug:
         return False
-    key = runtime_key or slug
+    key = runtime_key or offerings_runtime_key(config) or slug
     snapshot = hydrate_offerings_snapshot(slug)
     if snapshot is None:
         return False
