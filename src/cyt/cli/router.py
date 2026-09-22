@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from cyt.cli.exit import run_main
+from cyt.cli.exit import parse_quiet_cli_flags, run_main, run_quiet_stop
 
 
 def _permissions_argv(argv: list[str]) -> list[str] | None:
@@ -52,8 +52,41 @@ def main(argv: list[str] | None = None) -> None:
     run_main(_route, argv)
 
 
+def _run_quiet_stop_if_requested(cli_argv: list[str]) -> bool:
+    """Handle ``stop`` and ``hook daemon stop`` without printing tracebacks."""
+    if not cli_argv:
+        return False
+
+    if cli_argv[0] == "stop":
+        verbose, config_path = parse_quiet_cli_flags(cli_argv[1:])
+
+        def _stop_all() -> None:
+            from cyt.stop import stop_all
+
+            stop_all(verbose=verbose, config_path=config_path)
+
+        run_quiet_stop(_stop_all, verbose=verbose)
+        return True
+
+    if len(cli_argv) >= 3 and cli_argv[:3] == ["hook", "daemon", "stop"]:
+        verbose, config_path = parse_quiet_cli_flags(cli_argv[3:])
+
+        def _daemon_stop() -> None:
+            from cyt.hook.daemon import daemon_stop
+
+            daemon_stop(verbose=verbose, config_path=config_path)
+
+        run_quiet_stop(_daemon_stop, verbose=verbose)
+        return True
+
+    return False
+
+
 def _route(argv: list[str] | None = None) -> None:
     cli_argv = sys.argv[1:] if argv is None else argv
+
+    if _run_quiet_stop_if_requested(cli_argv):
+        return
 
     perm_argv = _permissions_argv(cli_argv)
     if perm_argv is not None:

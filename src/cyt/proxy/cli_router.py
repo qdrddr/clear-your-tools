@@ -4,6 +4,9 @@ from __future__ import annotations
 
 
 def main(argv: list[str] | None = None) -> None:
+    import os
+
+    os.environ.setdefault("CYT_NO_AUTO_BOOTSTRAP", "1")
     try:
         from cyt.cli.exit import run_main
 

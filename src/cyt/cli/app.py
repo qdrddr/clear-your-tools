@@ -11,6 +11,9 @@ Examples::
 from __future__ import annotations
 
 if __name__ == "__main__":
+    import os
+
+    os.environ.setdefault("CYT_NO_AUTO_BOOTSTRAP", "1")
     try:
         from cyt.cli.exit import run_main
 
