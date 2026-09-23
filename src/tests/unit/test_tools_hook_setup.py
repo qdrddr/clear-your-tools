@@ -189,8 +189,7 @@ def test_prompt_tools_hook_config_prompts_user_and_workspace_migration_separatel
         )
 
     assert any(
-        "Migrate user-global MCP backends and install cyt-mcp-usr?" in text
-        for text in yes_no_calls
+        "Migrate user-global MCP backends and install cyt-mcp-usr?" in text for text in yes_no_calls
     )
     assert any(
         "Migrate project MCP backends and install cyt-mcp-ws?" in text for text in yes_no_calls

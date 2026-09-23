@@ -32,7 +32,10 @@ def test_cyt_install_scope_from_consumer_root(tmp_path: Path) -> None:
     assert CytInstallScope.from_consumer_root(None).workspace_root is None
 
 
-def test_detect_workspace_root_excludes_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_detect_workspace_root_excludes_user_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     home = tmp_path / "home"
     home.mkdir()
     (home / ".cursor").mkdir()

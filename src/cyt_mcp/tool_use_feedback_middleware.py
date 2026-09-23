@@ -14,8 +14,8 @@ from cyt_mcp.catalog import catalog_tools_content_hash
 from cyt_mcp.config import AggregatorConfig, load_known_mcp_server_keys
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.session_context import get_current_session_runtime
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
+from cyt_mcp.session_context import get_current_session_runtime
 from cyt_mcp.tier_feedback_push import schedule_tool_use_feedback
 from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
 
@@ -120,7 +120,9 @@ class ToolUseFeedbackMiddleware(Middleware):
                 runtime = get_current_session_runtime()
                 active_config = runtime.config if runtime is not None else self._config
                 active_cache = runtime.cache if runtime is not None else self._cache
-                active_holder = runtime.config_holder if runtime is not None else self._config_holder
+                active_holder = (
+                    runtime.config_holder if runtime is not None else self._config_holder
+                )
                 project_root = (
                     str(active_config.workspace_root.expanduser().resolve())
                     if active_config.workspace_root is not None

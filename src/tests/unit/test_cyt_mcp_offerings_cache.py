@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp.types import Resource
+from pydantic.networks import AnyUrl
 
 from cyt_mcp.offerings_cache import (
     OfferingsCache,
@@ -27,8 +29,9 @@ async def test_refresh_from_server_stores_snapshot_on_main_loop() -> None:
     cache = OfferingsCache()
     mounted: list[str] = []
 
-    def _ensure_mounted(_servers: dict[str, object]) -> None:
+    def _ensure_mounted(_servers: dict[str, object]) -> list[str]:
         mounted.append("ok")
+        return []
 
     snapshot = await cache.refresh_from_server(
         server,
@@ -59,7 +62,10 @@ def test_snapshot_or_empty_returns_empty_when_missing() -> None:
     assert len(cache.snapshot_or_empty("ws-a").resources) == 1
 
 
-def test_offerings_snapshot_serializes_mcp_resource_for_disk(tmp_path, monkeypatch) -> None:
+def test_offerings_snapshot_serializes_mcp_resource_for_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from cyt.cyt_mcp import catalog_disk
 
     monkeypatch.setattr(
@@ -67,7 +73,7 @@ def test_offerings_snapshot_serializes_mcp_resource_for_disk(tmp_path, monkeypat
         "cyt_mcp_catalog_cache_dir",
         lambda: tmp_path,
     )
-    resource = Resource(uri="gitnexus://repo/demo/process/main", name="main")
+    resource = Resource(uri=AnyUrl("gitnexus://repo/demo/process/main"), name="main")
     snapshot = offerings_snapshot_from_server(
         resources=[resource],
         prompts=[],

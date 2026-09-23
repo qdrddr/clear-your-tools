@@ -90,15 +90,15 @@ def _workspace_path_raw_is_relative_or_home(text: str) -> bool:
         return True
     if stripped in {".", ".."}:
         return True
-    if stripped.startswith("./") or stripped.startswith(".\\"):
+    if stripped.startswith(("./", ".\\")):
         return True
-    if stripped.startswith("../") or stripped.startswith("..\\"):
+    if stripped.startswith(("../", "..\\")):
         return True
     return not Path(stripped).is_absolute()
 
 
-def require_absolute_workspace_dir(raw: str | Path, *, label: str = "workspace") -> Path:
-    """Validate *raw* is a full absolute directory path and return its resolved form."""
+def resolve_absolute_workspace_path(raw: str | Path, *, label: str = "workspace") -> Path:
+    """Return a resolved absolute workspace path (directory need not exist yet)."""
     from cyt_client.rules_file import normalize_workspace_path_string
 
     text = normalize_workspace_path_string(str(raw).strip())
@@ -106,11 +106,18 @@ def require_absolute_workspace_dir(raw: str | Path, *, label: str = "workspace")
         raise WorkspacePathNotAbsoluteError(str(raw), label=label)
     if _workspace_path_raw_is_relative_or_home(text):
         raise WorkspacePathNotAbsoluteError(str(raw), label=label)
+    path = Path(text)
+    if not path.is_absolute():
+        raise WorkspacePathNotAbsoluteError(str(raw), label=label)
     try:
-        path = Path(text)
-        resolved = path.resolve()
+        return path.resolve()
     except OSError as exc:
         raise WorkspacePathNotAbsoluteError(str(raw), label=label) from exc
+
+
+def require_absolute_workspace_dir(raw: str | Path, *, label: str = "workspace") -> Path:
+    """Validate *raw* is a full absolute directory path and return its resolved form."""
+    resolved = resolve_absolute_workspace_path(raw, label=label)
     if not resolved.is_dir():
         raise ValueError(f"{label} is not an existing directory: {resolved}")
     return resolved
@@ -340,6 +347,14 @@ def resolve_consumer_workspace(
     cyt_root = cyt_package_git_root()
 
     if workspace is not None:
+        from cyt.common.paths import is_ephemeral_workspace_path
+
+        if is_ephemeral_workspace_path(workspace):
+            return WorkspaceResolution(
+                root=None,
+                source=WorkspaceResolutionSource.EXPLICIT,
+                detail=str(workspace),
+            )
         abs_workspace = require_absolute_workspace_dir(workspace, label="--workspace")
         root = _canonical_git_root(abs_workspace)
         return WorkspaceResolution(
@@ -361,13 +376,11 @@ def resolve_consumer_workspace(
             return resolution
 
     cwd_detected = detect_workspace_root(cwd=cwd)
-    cwd_git = _canonical_git_repo_root(cwd) if cwd_detected is None else _canonical_git_root(cwd_detected)
+    cwd_git = (
+        _canonical_git_repo_root(cwd) if cwd_detected is None else _canonical_git_root(cwd_detected)
+    )
 
-    if (
-        cwd_git is not None
-        and cyt_root is not None
-        and cwd_git.resolve() == cyt_root.resolve()
-    ):
+    if cwd_git is not None and cyt_root is not None and cwd_git.resolve() == cyt_root.resolve():
         registry_resolution = _resolve_from_active_registry(
             agent=agent,
             exclude_root=cyt_root,
@@ -584,45 +597,63 @@ def _resolve_hook_setup_from_terminal_env() -> WorkspaceResolution | None:
     )
 
 
+def _hook_setup_env_description(
+    prefix: str,
+    *,
+    env_key: str | None,
+    default_key: str,
+) -> str:
+    key = env_key or default_key
+    raw = os.environ.get(key, "").strip()
+    return f"{prefix} (${key}={raw})"
+
+
+def _hook_setup_detection_description_for_source(
+    source: WorkspaceResolutionSource,
+    detail: str | None,
+) -> str:
+    match source:
+        case WorkspaceResolutionSource.EXPLICIT:
+            return f"explicit --workspace ({detail})"
+        case WorkspaceResolutionSource.SHELL:
+            return _hook_setup_env_description(
+                "shell env",
+                env_key=detail,
+                default_key=CYT_SHELL_WORKSPACE_ENV,
+            )
+        case WorkspaceResolutionSource.TERMINAL_ENV:
+            return _hook_setup_env_description(
+                "terminal env",
+                env_key=detail,
+                default_key=CYT_WORKSPACE_ENV,
+            )
+        case WorkspaceResolutionSource.HOOK_CONFIG:
+            return f"hook config (${CYT_WORKSPACE_ENV})"
+        case WorkspaceResolutionSource.CURSOR_LABEL:
+            return f"active project label (CURSOR_WORKSPACE_LABEL={detail})"
+        case WorkspaceResolutionSource.ACTIVE_REGISTRY:
+            return f"recent active workspace registry (agent={detail})"
+        case WorkspaceResolutionSource.CWD_MARKERS:
+            return "process cwd (workspace markers)"
+        case WorkspaceResolutionSource.CWD_GIT:
+            return "process cwd (git root)"
+        case WorkspaceResolutionSource.CYT_REPO_DEFAULT:
+            return f"process cwd ({detail or 'cyt checkout'})"
+        case _:
+            raise ValueError(f"Unhandled workspace resolution source: {source!r}")
+
+
 def _hook_setup_detection_description(resolution: WorkspaceResolution) -> str:
-    source = resolution.source
-    detail = resolution.detail
-    if source is None:
+    if resolution.source is None:
         return "none (unresolved)"
-    if source == WorkspaceResolutionSource.EXPLICIT:
-        return f"explicit --workspace ({detail})"
-    if source == WorkspaceResolutionSource.SHELL:
-        env_key = detail or CYT_SHELL_WORKSPACE_ENV
-        raw = os.environ.get(env_key, "").strip()
-        return f"shell env (${env_key}={raw or detail})"
-    if source == WorkspaceResolutionSource.TERMINAL_ENV:
-        env_key = detail or CYT_WORKSPACE_ENV
-        raw = os.environ.get(env_key, "").strip()
-        return f"terminal env (${env_key}={raw})"
-    if source == WorkspaceResolutionSource.HOOK_CONFIG:
-        return f"hook config (${CYT_WORKSPACE_ENV})"
-    if source == WorkspaceResolutionSource.CURSOR_LABEL:
-        return f"active project label (CURSOR_WORKSPACE_LABEL={detail})"
-    if source == WorkspaceResolutionSource.ACTIVE_REGISTRY:
-        return f"recent active workspace registry (agent={detail})"
-    if source == WorkspaceResolutionSource.CWD_MARKERS:
-        return "process cwd (workspace markers)"
-    if source == WorkspaceResolutionSource.CWD_GIT:
-        return "process cwd (git root)"
-    if source == WorkspaceResolutionSource.CYT_REPO_DEFAULT:
-        return f"process cwd ({detail or 'cyt checkout'})"
-    return str(source)
+    return _hook_setup_detection_description_for_source(resolution.source, resolution.detail)
 
 
 def format_hook_setup_workspace_report(resolution: WorkspaceResolution) -> str:
     """Human-readable workspace detection summary for ``cyt hook`` setup."""
     cyt_root = cyt_package_git_root()
     consumer = resolution.root
-    if (
-        consumer is not None
-        and cyt_root is not None
-        and consumer.resolve() == cyt_root.resolve()
-    ):
+    if consumer is not None and cyt_root is not None and consumer.resolve() == cyt_root.resolve():
         consumer_label = f"{consumer} (cyt package - consumer setup skipped)"
     elif consumer is not None:
         consumer_label = str(consumer)

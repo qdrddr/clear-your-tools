@@ -73,10 +73,10 @@ def set_hook_workspace_in_config(
     if workspace is None:
         merged.pop(HOOK_WORKSPACE_CONFIG_KEY, None)
         return merged
-    from cyt.hook.workspace_resolution import require_absolute_workspace_dir
+    from cyt.hook.workspace_resolution import resolve_absolute_workspace_path
 
     merged[HOOK_WORKSPACE_CONFIG_KEY] = str(
-        require_absolute_workspace_dir(workspace, label="hook workspace"),
+        resolve_absolute_workspace_path(workspace, label="hook workspace"),
     )
     return merged
 

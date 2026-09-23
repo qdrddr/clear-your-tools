@@ -83,8 +83,11 @@ def cyt_mcp_dev_wrapper_path(agent: str = "cursor") -> Path:
 
 def is_cyt_mcp_dev_wrapper_command(command: str) -> bool:
     normalized = command.strip().strip('"').casefold().replace("\\", "/")
-    return normalized.endswith(WINDOWS_CYT_MCP_DEV_WRAPPER.casefold()) or normalized.endswith(
-        LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER.casefold(),
+    return normalized.endswith(
+        (
+            WINDOWS_CYT_MCP_DEV_WRAPPER.casefold(),
+            LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER.casefold(),
+        ),
     )
 
 
@@ -104,7 +107,7 @@ def prefix_command_env(env: dict[str, str], command: str) -> str:
             return command
         parts: list[str] = []
         for key, value in env.items():
-            if any(char in value for char in (' ', '"', "&", "|", "<", ">", "^")):
+            if any(char in value for char in (" ", '"', "&", "|", "<", ">", "^")):
                 escaped = value.replace('"', '""')
                 parts.append(f'set "{key}={escaped}"')
             else:
@@ -126,8 +129,7 @@ def _windows_wrapper_env_lines(env: dict[str, str]) -> list[str]:
         if value == CURSOR_WORKSPACE_FOLDER and key == CYT_WORKSPACE_ENV:
             for agent_var in _AGENT_WORKSPACE_ENV_VARS:
                 lines.append(
-                    f'if not defined {key} if defined {agent_var} '
-                    f'set "{key}=!{agent_var}!"',
+                    f'if not defined {key} if defined {agent_var} set "{key}=!{agent_var}!"',
                 )
             continue
         escaped = value.replace("%", "%%")

@@ -63,7 +63,7 @@ def test_filter_tools_shadow_mode_unchanged(shadow_config: dict, project_root: P
             "cyt_catalog_source": "definitions",
         },
     ]
-    with patch("cyt.pruners.tools_filter.get_tier_manager") as get_manager:
+    with patch("cyt.tiers.manager.get_tier_manager_for_config") as get_manager:
         scope = project_root
         manager = TierManager(scope, str(project_root / "tier_state.db"))
         get_manager.return_value = manager
@@ -99,7 +99,7 @@ def test_filter_tools_excludes_dormant_when_enabled(tier_config: dict, project_r
     dormant.stable_tier = Tier.DORMANT
     dormant.effective_tier = Tier.DORMANT
 
-    with patch("cyt.pruners.tools_filter.get_tier_manager", return_value=manager):
+    with patch("cyt.tiers.manager.get_tier_manager_for_config", return_value=manager):
         with patch("cyt.pruners.tools_filter._run_catalog_pruning") as prune_mock:
             prune_mock.return_value = (
                 [{"name": "active_tool"}],

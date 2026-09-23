@@ -20,20 +20,20 @@ from cyt.hook.workspace_resolution import (
     WorkspaceResolutionSource,
     absolute_workspace_arg,
     build_cyt_uv_wrapper_invocation_payload,
-    ensure_vscode_terminal_workspace_env,
     cyt_uv_wrapper_script_paths,
     ensure_cyt_mcp_dev_wrapper,
     ensure_cyt_uv_wrapper_scripts,
+    ensure_vscode_terminal_workspace_env,
     format_hook_setup_workspace_report,
+    hook_setup_mcp_workspace_root,
     hook_setup_workspace_required_message,
     print_hook_setup_workspace_report,
     require_absolute_workspace_dir,
-    write_cyt_uv_wrapper_invocation,
     resolve_consumer_project_root,
     resolve_consumer_workspace,
-    hook_setup_mcp_workspace_root,
     resolve_hook_setup_consumer_root,
     resolve_hook_setup_workspace,
+    write_cyt_uv_wrapper_invocation,
 )
 
 
@@ -182,7 +182,10 @@ def test_resolve_consumer_workspace_uses_active_registry_when_cwd_is_cyt_repo(
 
     monkeypatch.chdir(cyt_repo)
     monkeypatch.setattr("cyt.hook.active_workspace._ACTIVE_WORKSPACE_FILE", registry_path)
-    monkeypatch.setattr("cyt.hook.workspace_resolution.cyt_package_git_root", lambda: cyt_repo.resolve())
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
 
     resolution = resolve_consumer_workspace()
     assert resolution.root == tra_repo.resolve()
@@ -320,6 +323,7 @@ def test_write_cyt_uv_wrapper_invocation_prefers_dev_repo(
 
     path = write_cyt_uv_wrapper_invocation("cursor")
 
+    assert path is not None
     assert path == cyt_dir / CYT_UV_INVOCATION_FILENAME
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload == {
@@ -377,6 +381,7 @@ def test_ensure_cyt_mcp_dev_wrapper_writes_hooks_cyt_mcp_dev_cmd(
 
     wrapper = ensure_cyt_mcp_dev_wrapper("cursor")
 
+    assert wrapper is not None
     assert wrapper == cyt_dir / "mcp-dev.cmd"
     assert wrapper.is_file()
     text = wrapper.read_text(encoding="utf-8")
@@ -676,12 +681,12 @@ def test_resolve_hook_setup_consumer_root_requires_env_when_only_cwd(
 
 
 def test_require_absolute_workspace_dir_rejects_home_shorthand() -> None:
-    with pytest.raises(WorkspacePathNotAbsoluteError, match="not ./, ../, or ~"):
+    with pytest.raises(WorkspacePathNotAbsoluteError, match=r"not \./, \../, or ~"):
         require_absolute_workspace_dir("~/projects/repo")
 
 
 def test_require_absolute_workspace_dir_rejects_relative_path() -> None:
-    with pytest.raises(WorkspacePathNotAbsoluteError, match="not ./, ../, or ~"):
+    with pytest.raises(WorkspacePathNotAbsoluteError, match=r"not \./, \../, or ~"):
         require_absolute_workspace_dir("./repo")
 
 

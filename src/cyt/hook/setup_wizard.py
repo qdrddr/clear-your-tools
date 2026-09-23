@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -47,6 +46,7 @@ from cyt.hook.cli_invocation import (
     prefix_command_env,
     remove_windows_hook_wrappers,
 )
+from cyt.hook.install_scope import CytInstallScope
 from cyt.launch.inject_via_prompt import ensure_hook_inject_via
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
 from cyt.platform.compat import is_windows
@@ -873,13 +873,21 @@ def _is_legacy_cyt_hook_stdin_command(command: str) -> bool:
     )
 
 
+def _command_invokes_cyt_client(command: str) -> bool:
+    normalized = command.strip()
+    if normalized == CYT_CLIENT_COMMAND or normalized.endswith(f" {CYT_CLIENT_COMMAND}"):
+        return True
+    parts = normalized.split()
+    return bool(parts) and Path(parts[-1]).name == CYT_CLIENT_COMMAND
+
+
 def _is_cyt_hook_command(command: object) -> bool:
     if not isinstance(command, str):
         return False
     normalized = command.strip()
     if is_windows_hook_wrapper_command(normalized):
         return True
-    if normalized == CYT_CLIENT_COMMAND or normalized.endswith(f" {CYT_CLIENT_COMMAND}"):
+    if _command_invokes_cyt_client(normalized):
         return True
     if is_dev_cyt_hook_command(normalized):
         return True
@@ -2526,27 +2534,12 @@ def _finish_hook_setup(
     _print_hook_uninstall_instructions()
 
 
-def run_hook_setup(
+def _prepare_hook_setup_workspace(
     *,
-    config_path: Path | None = None,
-    agents: list[HookAgentName] | None = None,
-    prevent_hallucinations: bool = False,
-    workspace: Path | None = None,
-) -> None:
-    """Install CYT agent hooks and ensure runtime credentials."""
-    selected_agents = _resolve_hook_setup_agents(agents)
-    if len(selected_agents) == 1:
-        print(f"CYT hook setup ({selected_agents[0]})\n")
-    else:
-        print("CYT hook setup\n")
-
-    resolved_config_path = resolve_setup_config_path(config_path)
-    from cyt.migrations.migrate import (
-        ensure_config_file_current,
-        ensure_workspace_config_current,
-    )
-
-    ensure_config_file_current(resolved_config_path, scope="user")
+    workspace: Path | None,
+    hook_agent: str,
+    selected_agents: list[HookAgentName],
+) -> tuple[Any, Path | None]:
     from cyt.hook.workspace_resolution import (
         WorkspaceResolutionConflictError,
         ensure_cyt_mcp_dev_wrapper,
@@ -2556,8 +2549,8 @@ def run_hook_setup(
         print_hook_setup_workspace_report,
         resolve_hook_setup_workspace,
     )
+    from cyt.migrations.migrate import ensure_workspace_config_current
 
-    hook_agent = selected_agents[0] if len(selected_agents) == 1 else "cursor"
     for agent in selected_agents:
         ensure_cyt_uv_wrapper_scripts(agent)
         ensure_cyt_mcp_dev_wrapper(agent)
@@ -2583,6 +2576,34 @@ def run_hook_setup(
                 f"Updated {settings_path} with terminal.integrated.env "
                 f"CYT_WORKSPACE (Windows/Linux/macOS)",
             )
+    return hook_workspace_resolution, consumer_root
+
+
+def run_hook_setup(
+    *,
+    config_path: Path | None = None,
+    agents: list[HookAgentName] | None = None,
+    prevent_hallucinations: bool = False,
+    workspace: Path | None = None,
+) -> None:
+    """Install CYT agent hooks and ensure runtime credentials."""
+    selected_agents = _resolve_hook_setup_agents(agents)
+    if len(selected_agents) == 1:
+        print(f"CYT hook setup ({selected_agents[0]})\n")
+    else:
+        print("CYT hook setup\n")
+
+    resolved_config_path = resolve_setup_config_path(config_path)
+    from cyt.migrations.migrate import ensure_config_file_current
+
+    ensure_config_file_current(resolved_config_path, scope="user")
+
+    hook_agent = selected_agents[0] if len(selected_agents) == 1 else "cursor"
+    hook_workspace_resolution, consumer_root = _prepare_hook_setup_workspace(
+        workspace=workspace,
+        hook_agent=hook_agent,
+        selected_agents=selected_agents,
+    )
     from cyt.hook.install_scope import CytInstallScope
     from cyt.hook.workspace_resolution import hook_setup_mcp_workspace_root
 

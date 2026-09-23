@@ -91,23 +91,35 @@ def tools_hook_cloudflare_cache_settings(config: dict[str, Any] | None = None) -
 
 def tools_hook_cloudflare_url(config: dict[str, Any] | None = None) -> str:
     if _tools_hook_cloudflare_url is None:
-        return ""
+        from cyt.config import tools_hook_cloudflare_url as config_tools_hook_cloudflare_url
+
+        return config_tools_hook_cloudflare_url(config)
     return _tools_hook_cloudflare_url(config)
 
 
 def tools_hook_cloudflare_access_client_id_var(config: dict[str, Any] | None = None) -> str:
     if _tools_hook_cloudflare_access_client_id_var is None:
-        return "CF_ACCESS_CLIENT_ID"
+        from cyt.config import (
+            tools_hook_cloudflare_access_client_id_var as config_tools_hook_cloudflare_access_client_id_var,
+        )
+
+        return config_tools_hook_cloudflare_access_client_id_var(config)
     return _tools_hook_cloudflare_access_client_id_var(config)
 
 
 def tools_hook_cloudflare_access_client_secret_var(config: dict[str, Any] | None = None) -> str:
     if _tools_hook_cloudflare_access_client_secret_var is None:
-        return "CF_ACCESS_CLIENT_SECRET"
+        from cyt.config import (
+            tools_hook_cloudflare_access_client_secret_var as config_tools_hook_cloudflare_access_client_secret_var,
+        )
+
+        return config_tools_hook_cloudflare_access_client_secret_var(config)
     return _tools_hook_cloudflare_access_client_secret_var(config)
 
 
 def uses_cloudflare_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     if _uses_cloudflare_tool_catalog is None:
-        return False
+        from cyt.config import uses_cloudflare_tool_catalog as config_uses_cloudflare_tool_catalog
+
+        return config_uses_cloudflare_tool_catalog(config)
     return _uses_cloudflare_tool_catalog(config)

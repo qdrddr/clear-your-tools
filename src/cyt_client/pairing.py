@@ -24,14 +24,11 @@ from cyt_client.mcp_entry import (
     CYT_MCP_FRONTEND_SERVER_KEYS,
     CYT_MCP_USER_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
-    LEGACY_CYT_MCP_SERVER_KEY,
-    LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     build_cyt_mcp_mcp_server_entry,
     codex_cyt_mcp_toml_block,
     load_aggregator_transport_settings,
     mcp_entries_equivalent,
     user_aggregator_config_ref,
-    workspace_aggregator_config_ref,
 )
 from cyt_client.rules_file import workspace_root_from_payload
 from cyt_client.skip import hook_skip_enabled
@@ -401,6 +398,41 @@ def _repair_user_mcp_pairing(
     )
 
 
+def _cyt_mcp_dev_wrapper_needs_repair(command: str) -> bool:
+    from cyt_client.hook_invocation import (
+        LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER,
+        is_cyt_mcp_dev_wrapper_command,
+    )
+
+    normalized = command.strip().casefold().replace("\\", "/")
+    if normalized.endswith(LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER.casefold()):
+        return True
+    if is_cyt_mcp_dev_wrapper_command(command):
+        return not Path(command).expanduser().is_file()
+    return False
+
+
+def _load_mcp_server_entry(
+    mcp_path: Path,
+    server_key: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None:
+    if not mcp_path.is_file():
+        return None
+    try:
+        raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    servers = raw.get("mcpServers")
+    if not isinstance(servers, dict):
+        return None
+    existing = servers.get(server_key)
+    if not isinstance(existing, dict):
+        return None
+    return raw, servers, existing
+
+
 def _repair_cyt_mcp_dev_wrapper_command(
     mcp_path: Path,
     server_key: str,
@@ -410,44 +442,20 @@ def _repair_cyt_mcp_dev_wrapper_command(
     verbose: bool = False,
 ) -> bool:
     """Upgrade legacy ``cyt-mcp-dev.cmd`` to ``hooks/cyt/mcp-dev.cmd`` without full reinstall."""
-    if not mcp_path.is_file():
+    loaded = _load_mcp_server_entry(mcp_path, server_key)
+    if loaded is None:
         return False
-    try:
-        raw = json.loads(mcp_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return False
-    if not isinstance(raw, dict):
-        return False
-    servers = raw.get("mcpServers")
-    if not isinstance(servers, dict):
-        return False
-    existing = servers.get(server_key)
-    if not isinstance(existing, dict):
-        return False
+    raw, servers, existing = loaded
     command = existing.get("command")
     if not isinstance(command, str) or not command.strip():
         return False
-    from cyt_client.hook_invocation import (
-        LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER,
-        cyt_mcp_dev_wrapper_path,
-        install_windows_cyt_mcp_dev_wrapper,
-        is_cyt_mcp_dev_wrapper_command,
-    )
-
-    normalized = command.strip().casefold().replace("\\", "/")
-    wrapper_path = cyt_mcp_dev_wrapper_path(agent)
-    if normalized.endswith(LEGACY_WINDOWS_CYT_MCP_DEV_WRAPPER.casefold()):
-        needs_repair = True
-    elif is_cyt_mcp_dev_wrapper_command(command):
-        expanded = Path(command).expanduser()
-        needs_repair = not expanded.is_file()
-    else:
-        return False
-    if not needs_repair:
+    if not _cyt_mcp_dev_wrapper_needs_repair(command):
         return False
     use_dev, dev_repo_root = _resolve_dev_context(agent, runtime_repo=runtime_repo)
     if not use_dev or dev_repo_root is None:
         return False
+    from cyt_client.hook_invocation import install_windows_cyt_mcp_dev_wrapper
+
     wrapper_path = install_windows_cyt_mcp_dev_wrapper(
         dev_repo_root=dev_repo_root,
         agent=agent,

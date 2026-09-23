@@ -2,32 +2,32 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextvars
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
+# cast used when reading session off FastMCP request context (untyped upstream)
 from fastmcp import FastMCP
+from fastmcp.prompts.base import PromptResult
+from fastmcp.resources.base import ResourceResult
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import Tool, ToolResult
+from mcp.server.session import ServerSession
 from mcp.types import (
     CallToolRequestParams,
     GetPromptRequestParams,
     InitializeRequest,
     InitializeResult,
     ListPromptsRequest,
-    ListResourceTemplatesRequest,
     ListResourcesRequest,
+    ListResourceTemplatesRequest,
     ListToolsRequest,
     Prompt,
     ReadResourceRequestParams,
     Resource,
     ResourceTemplate,
 )
-
-from fastmcp.prompts.base import PromptResult
-from fastmcp.resources.base import ResourceResult
 
 from cyt_mcp.offerings_cache import (
     enter_tools_list,
@@ -40,20 +40,23 @@ from cyt_mcp.session_context import (
     set_current_session_runtime,
     set_session_scoping_active,
 )
-from cyt_mcp.session_runtime import MultiWorkspaceCoordinator
+from cyt_mcp.session_runtime import MultiWorkspaceCoordinator, WorkspaceSessionRuntime
 from cyt_mcp.stubs import list_stubs_from_runtime_cache
 
 logger = logging.getLogger(__name__)
 
 
-def _mcp_session(fastmcp_ctx: Any) -> Any | None:
+def _mcp_session(fastmcp_ctx: object) -> ServerSession | None:
     """Return the live MCP session when established; None for CLI/catalog calls."""
     if fastmcp_ctx is None:
         return None
     request_ctx = getattr(fastmcp_ctx, "request_context", None)
     if request_ctx is None:
         return None
-    return getattr(request_ctx, "session", None)
+    session = getattr(request_ctx, "session", None)
+    if session is None:
+        return None
+    return cast(ServerSession, session)
 
 
 class SessionWorkspaceMiddleware(Middleware):
@@ -64,11 +67,16 @@ class SessionWorkspaceMiddleware(Middleware):
     def __init__(self, coordinator: MultiWorkspaceCoordinator) -> None:
         self._coordinator = coordinator
 
-    async def _bind_request_session(self, context: MiddlewareContext[Any]) -> contextvars.Token[Any] | None:
+    async def _bind_request_session(
+        self,
+        context: MiddlewareContext[Any],
+    ) -> contextvars.Token[Any] | None:
         session_key = self._session_key(context)
         fastmcp_ctx = context.fastmcp_context
         session = _mcp_session(fastmcp_ctx)
-        if session_key is None or session is None:
+        if session_key is None:
+            return None
+        if session is None:
             return None
         runtime = await self._coordinator.bind_session(
             session,
@@ -78,6 +86,8 @@ class SessionWorkspaceMiddleware(Middleware):
 
     def _session_key(self, context: MiddlewareContext[Any]) -> str | None:
         fastmcp_ctx = context.fastmcp_context
+        if fastmcp_ctx is None:
+            return None
         session = _mcp_session(fastmcp_ctx)
         if session is None:
             return None
@@ -87,7 +97,7 @@ class SessionWorkspaceMiddleware(Middleware):
         self,
         context: MiddlewareContext[Any],
         call_next: CallNext[Any, Any],
-    ) -> Any:
+    ) -> object:
         method = str(getattr(context, "method", "") or "")
         token = None
         scoping_token = None
@@ -103,20 +113,24 @@ class SessionWorkspaceMiddleware(Middleware):
             if token is not None:
                 reset_current_session_runtime(token)
 
-    def _offerings_key(self, runtime: Any) -> str:
+    def _offerings_key(self, runtime: WorkspaceSessionRuntime) -> str:
         from cyt_mcp.catalog_build import offerings_runtime_key
 
         return offerings_runtime_key(runtime.config) or "bootstrap"
 
-    async def _resolve_runtime(self, context: MiddlewareContext[Any]) -> Any:
+    async def _resolve_runtime(
+        self,
+        context: MiddlewareContext[Any],
+    ) -> WorkspaceSessionRuntime:
         runtime = self._coordinator.bootstrap
         session_key = self._session_key(context)
         session = _mcp_session(context.fastmcp_context)
-        if session_key is not None and session is not None:
-            runtime = await self._coordinator.bind_session(
-                session,
-                session_key=session_key,
-            )
+        if session_key is not None:
+            if session is not None:
+                runtime = await self._coordinator.bind_session(
+                    session,
+                    session_key=session_key,
+                )
         return runtime
 
     async def on_initialize(
@@ -140,7 +154,7 @@ class SessionWorkspaceMiddleware(Middleware):
 
     def _schedule_offerings_refresh(
         self,
-        runtime: Any,
+        runtime: WorkspaceSessionRuntime,
         offerings_key: str,
         *,
         delay_s: float = 0.0,
@@ -151,7 +165,7 @@ class SessionWorkspaceMiddleware(Middleware):
             coro_factory=lambda: self._refresh_offerings_cache(runtime, offerings_key),
         )
 
-    async def _notify_offerings_changed(self, runtime: Any) -> None:
+    async def _notify_offerings_changed(self, runtime: WorkspaceSessionRuntime) -> None:
         from cyt_mcp.hook_daemon_push import _instance_key, _push_contexts
 
         ctx_key = _instance_key(runtime.config)
@@ -160,7 +174,11 @@ class SessionWorkspaceMiddleware(Middleware):
             return
         await ctx.list_changed_middleware.notify_all_sessions_offerings_changed()
 
-    async def _refresh_offerings_cache(self, runtime: Any, offerings_key: str) -> None:
+    async def _refresh_offerings_cache(
+        self,
+        runtime: WorkspaceSessionRuntime,
+        offerings_key: str,
+    ) -> None:
         from cyt_mcp.catalog_build import disk_catalog_slug_for_config
 
         before = self._coordinator.offerings_cache.snapshot_or_empty(offerings_key)
@@ -229,7 +247,7 @@ class SessionWorkspaceMiddleware(Middleware):
         self,
         context: MiddlewareContext[Any],
         call_next: CallNext[Any, Any],
-    ) -> Any:
+    ) -> object:
         runtime = await self._resolve_runtime(context)
         self._coordinator.ensure_backends_mounted(runtime.config.mcp_servers)
         return await call_next(context)
@@ -239,14 +257,14 @@ class SessionWorkspaceMiddleware(Middleware):
         context: MiddlewareContext[ReadResourceRequestParams],
         call_next: CallNext[ReadResourceRequestParams, ResourceResult],
     ) -> ResourceResult:
-        return await self._proxy_offering_request(context, call_next)
+        return cast(ResourceResult, await self._proxy_offering_request(context, call_next))
 
     async def on_get_prompt(
         self,
         context: MiddlewareContext[GetPromptRequestParams],
         call_next: CallNext[GetPromptRequestParams, PromptResult],
     ) -> PromptResult:
-        return await self._proxy_offering_request(context, call_next)
+        return cast(PromptResult, await self._proxy_offering_request(context, call_next))
 
     async def on_list_tools(
         self,
@@ -261,11 +279,12 @@ class SessionWorkspaceMiddleware(Middleware):
             fastmcp_ctx = context.fastmcp_context
             runtime = self._coordinator.bootstrap
             session = _mcp_session(fastmcp_ctx)
-            if session_key is not None and session is not None:
-                runtime = await self._coordinator.bind_session(
-                    session,
-                    session_key=session_key,
-                )
+            if session_key is not None:
+                if session is not None:
+                    runtime = await self._coordinator.bind_session(
+                        session,
+                        session_key=session_key,
+                    )
             token = set_current_session_runtime(runtime)
             scoping_token = set_session_scoping_active(True)
             try:
@@ -274,7 +293,10 @@ class SessionWorkspaceMiddleware(Middleware):
                     hydrate_runtime_cache(runtime.cache, runtime.config)
                     _cache_count = len(runtime.cache.snapshot())
                 if _cache_count == 0:
-                    _cache_count = await wait_for_catalog_cache_ready(runtime.cache, timeout=3.0)
+                    _cache_count = await wait_for_catalog_cache_ready(
+                        runtime.cache,
+                        max_wait_seconds=3.0,
+                    )
                 if _cache_count == 0 and runtime is not self._coordinator.bootstrap:
                     bootstrap = self._coordinator.bootstrap
                     bootstrap_count = len(bootstrap.cache.snapshot())
@@ -297,17 +319,18 @@ class SessionWorkspaceMiddleware(Middleware):
     async def on_call_tool(
         self,
         context: MiddlewareContext[CallToolRequestParams],
-        call_next: CallNext[CallToolRequestParams, Any],
-    ) -> Any:
+        call_next: CallNext[CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
         session_key = self._session_key(context)
         fastmcp_ctx = context.fastmcp_context
         runtime = self._coordinator.bootstrap
         session = _mcp_session(fastmcp_ctx)
-        if session_key is not None and session is not None:
-            runtime = await self._coordinator.bind_session(
-                session,
-                session_key=session_key,
-            )
+        if session_key is not None:
+            if session is not None:
+                runtime = await self._coordinator.bind_session(
+                    session,
+                    session_key=session_key,
+                )
         token = set_current_session_runtime(runtime)
         scoping_token = set_session_scoping_active(True)
         try:

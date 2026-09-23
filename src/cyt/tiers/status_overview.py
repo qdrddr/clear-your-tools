@@ -224,9 +224,7 @@ def build_status_overview(
     catalog_health = master_catalog_health_snapshot(scoped)
     mcp_config_files = _list_mcp_config_files(agent=agent, workspace_root=workspace_root)
     workspace_mcp_defs = any(
-        row.get("scope") == "workspace"
-        and row.get("exists")
-        and row.get("kind") == "server_defs"
+        row.get("scope") == "workspace" and row.get("exists") and row.get("kind") == "server_defs"
         for row in mcp_config_files
         if isinstance(row, dict)
     )

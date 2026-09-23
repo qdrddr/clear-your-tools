@@ -112,6 +112,14 @@ def repo_root_from_uv_run_hook_command(command: str) -> Path | None:
     return None
 
 
+def is_uv_hook_command(command: object) -> bool:
+    """Return True when *command* names ``uv`` (bare or absolute path)."""
+    if not isinstance(command, str) or not command.strip():
+        return False
+    name = Path(command.strip().strip('"')).name.casefold()
+    return name in {"uv", "uv.exe"}
+
+
 def is_uv_run_dev_hook_command(command: str) -> bool:
     """Return True when *command* is a repo-local ``uv run --directory …`` CYT hook."""
     normalized = command.strip()

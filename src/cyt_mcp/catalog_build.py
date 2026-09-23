@@ -11,6 +11,7 @@ from fastmcp.tools.base import Tool
 from mcp.types import Tool as McpWireTool
 
 from cyt_mcp.config import AggregatorConfig
+from cyt_mcp.offerings_cache import OfferingsCache
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
 from cyt_mcp.tool_identity import enrich_tool_identity, tool_name_allowed_for_servers
@@ -115,15 +116,15 @@ def _refresh_lock_for(cache: RuntimeToolCache) -> asyncio.Lock:
 async def wait_for_catalog_cache_ready(
     cache: RuntimeToolCache,
     *,
-    timeout: float | None = 3.0,
+    max_wait_seconds: float | None = 3.0,
 ) -> int:
     """Wait briefly for an in-flight refresh on *cache*, then return entry count."""
     lock = _refresh_lock_for(cache)
-    if timeout is None or timeout <= 0:
+    if max_wait_seconds is None or max_wait_seconds <= 0:
         async with lock:
             return len(cache.snapshot())
     try:
-        await asyncio.wait_for(lock.acquire(), timeout=timeout)
+        await asyncio.wait_for(lock.acquire(), timeout=max_wait_seconds)
     except TimeoutError:
         return len(cache.snapshot())
     try:
@@ -145,7 +146,7 @@ def offerings_runtime_key(config: AggregatorConfig) -> str | None:
 
 
 def hydrate_offerings_cache(
-    offerings_cache: "OfferingsCache",
+    offerings_cache: OfferingsCache,
     config: AggregatorConfig,
     *,
     runtime_key: str | None = None,
@@ -195,15 +196,8 @@ def _workspace_scope_fingerprint(config: AggregatorConfig) -> str | None:
 
     if config.workspace_root is None:
         return None
-    agent = config.agent.strip() or "cursor"
     agg_path = config.aggregator_path or DEFAULT_MCP_CONFIG_PATH.expanduser()
     defs_path = config.agent_mcp_path
-    if defs_path is None:
-        from cyt_mcp.workspace_catalog import workspace_server_defs_path
-
-        defs_path = workspace_server_defs_path(config.workspace_root, agent)
-    if defs_path is None:
-        return None
     try:
         workspace_key = str(config.workspace_root.expanduser().resolve())
     except OSError:
@@ -282,8 +276,6 @@ def _catalog_entries_from_dicts(
     catalog_entries: list[dict[str, Any]] = []
     search_index: dict[str, dict[str, Any]] = {}
     for raw in tools:
-        if not isinstance(raw, dict):
-            continue
         name = str(raw.get("name") or "").strip()
         if not name or name == MCP_WIRE_SEARCH_TOOL_NAME:
             continue
@@ -388,9 +380,7 @@ def reapply_deny_overlays(cache: RuntimeToolCache, config: AggregatorConfig) -> 
         if not is_catalog_tool_denied(str(entry.get("name") or ""), deny_entries)
     ]
     allowed_names = {str(entry.get("name") or "") for entry in filtered_entries}
-    filtered_index = {
-        name: value for name, value in search_index.items() if name in allowed_names
-    }
+    filtered_index = {name: value for name, value in search_index.items() if name in allowed_names}
     if len(filtered_entries) == len(entries):
         return False
     if not filtered_entries and entries:
@@ -423,8 +413,8 @@ async def refresh_catalog_cache(
         async def _list_backend_tools() -> list[Tool]:
             listed = backend_server._list_tools()
             if asyncio.iscoroutine(listed) or asyncio.isfuture(listed):
-                return await listed
-            return await asyncio.to_thread(listed)
+                return cast(list[Tool], await listed)
+            return cast(list[Tool], await asyncio.to_thread(listed))
 
         backend_tools = await _list_backend_tools()
         deny_entries = config.mcp_deny if config is not None else ()
@@ -438,7 +428,9 @@ async def refresh_catalog_cache(
         )
         if config is not None:
             server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
-            catalog_entries = [enrich_tool_identity(entry, server_keys) for entry in catalog_entries]
+            catalog_entries = [
+                enrich_tool_identity(entry, server_keys) for entry in catalog_entries
+            ]
         if not catalog_entries and _before > 0:
             return
         cache.replace(catalog_entries, search_index=search_index)

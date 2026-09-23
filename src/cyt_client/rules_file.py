@@ -103,9 +103,10 @@ def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
 
 
 def _is_user_profile_root(path: Path) -> bool:
-    from cyt.hook.install_scope import is_user_profile_root
-
-    return is_user_profile_root(path)
+    try:
+        return path.expanduser().resolve() == Path.home().resolve()
+    except OSError:
+        return False
 
 
 def is_valid_workspace_root(workspace: Path) -> bool:

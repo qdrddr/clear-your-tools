@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest
 
+import tests.support.bootstrap_env  # noqa: F401
+from tests.support.credential_helpers import apply_ci_credential_stubs, install_test_pre_dotenv
+
 if os.name == "nt":
     _temporary_directory = tempfile.TemporaryDirectory
 
@@ -29,8 +32,6 @@ if os.name == "nt":
         )
 
     tempfile.TemporaryDirectory = _windows_temporary_directory  # type: ignore[misc,assignment]
-
-from tests.support.credential_helpers import apply_ci_credential_stubs, install_test_pre_dotenv
 
 DEFAULT_LLM_PRUNE_AGENT = "cursor"
 INTEGRATION_SKIP_REASON = (
@@ -118,6 +119,38 @@ def _isolate_cyt_client_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(cyt_client_config, "resolve_config_path", isolated_resolve_config_path)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_workspace_resolution_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Iterator[None]:
+    """Keep developer shell CYT_WORKSPACE/CYT_SHELL_WORKSPACE and launch leaks out of unit tests."""
+    from cyt.hook.workspace_resolution import CYT_SHELL_WORKSPACE_ENV, CYT_WORKSPACE_ENV
+
+    keys = (
+        CYT_WORKSPACE_ENV,
+        CYT_SHELL_WORKSPACE_ENV,
+        "PWD",
+        "OLDPWD",
+        "WORKSPACE_FOLDER",
+        "VSCODE_WORKSPACE_FOLDER",
+        "CURSOR_WORKSPACE_FOLDER",
+        "CYT_HOOK_CWD",
+        "CYT_TIER_WORKSPACE",
+        "CURSOR_WORKSPACE_LABEL",
+    )
+    saved = {key: os.environ.pop(key, None) for key in keys}
+    registry_path = tmp_path / "active-workspaces.json"
+    registry_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr("cyt.hook.active_workspace._ACTIVE_WORKSPACE_FILE", registry_path)
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 @pytest.fixture(autouse=True)

@@ -7,8 +7,11 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, cast
+
+from fastmcp import FastMCP
 
 from cyt.pruners.token_stats import format_catalog_token_line
 from cyt_mcp.aggregator import build_aggregator
@@ -24,11 +27,15 @@ from cyt_mcp.config import AggregatorConfig, load_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import lookup_tool_definition
+from cyt_mcp.session_runtime import MultiWorkspaceCoordinator
+from cyt_mcp.tool_list_notify import ToolListChangedMiddleware
 from cyt_mcp.transport import refresh_runtime_cache
 
 logger = logging.getLogger(__name__)
 
 CatalogSource = str
+OfferingsRefreshFn = Callable[..., Coroutine[Any, Any, None]]
+BackgroundCatalogRefreshFn = Callable[[], Coroutine[Any, Any, None]]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -212,12 +219,11 @@ async def _run_catalog(config: AggregatorConfig, args: argparse.Namespace) -> in
     return 0
 
 
-async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None = None) -> int:
+def _start_pairing_repair_thread(config: AggregatorConfig) -> None:
     import threading
 
     from cyt_client.pairing import repair_pairing_from_mcp_runtime
     from cyt_client.skip import hook_skip_enabled
-    from cyt_mcp.hook_daemon_push import PushContext, deregister_catalog_push, register_push_context
 
     startup_payload = {
         "hook_event_name": "sessionStart",
@@ -225,45 +231,32 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
         "cyt_agent": config.agent,
         "cwd": str(Path.cwd()),
     }
-    if not hook_skip_enabled(startup_payload):
-        threading.Thread(
-            target=repair_pairing_from_mcp_runtime,
-            kwargs={
-                "agent": config.agent,
-                "catalog_scope": config.catalog_scope,
-                "verbose": False,
-            },
-            name="cyt-mcp-pairing-repair",
-            daemon=True,
-        ).start()
-    cache = RuntimeToolCache()
-    config_holder = ConfigHolder(config)
-    server, list_changed_middleware, coordinator = build_aggregator(
-        config_holder,
-        cache,
-        aggregator_path=aggregator_path,
-    )
-    register_push_context(
-        PushContext(
-            config_holder=config_holder,
-            cache=cache,
-            server=server,
-            list_changed_middleware=list_changed_middleware,
-        ),
-    )
-    if config.workspace_root is not None:
-        from cyt.hook.active_workspace import touch_active_workspace
+    if hook_skip_enabled(startup_payload):
+        return
+    threading.Thread(
+        target=repair_pairing_from_mcp_runtime,
+        kwargs={
+            "agent": config.agent,
+            "catalog_scope": config.catalog_scope,
+            "verbose": False,
+        },
+        name="cyt-mcp-pairing-repair",
+        daemon=True,
+    ).start()
 
-        touch_active_workspace(config.agent, config.workspace_root)
-    from cyt_mcp.catalog_build import hydrate_runtime_cache, refresh_catalog_cache
 
-    hydrate_runtime_cache(cache, config)
+def _hydrate_server_runtime_caches(
+    cache: RuntimeToolCache,
+    config: AggregatorConfig,
+    coordinator: MultiWorkspaceCoordinator,
+) -> str | None:
     from cyt_mcp.catalog_build import (
-        disk_catalog_slug_for_config,
         hydrate_offerings_cache,
+        hydrate_runtime_cache,
         offerings_runtime_key,
     )
 
+    hydrate_runtime_cache(cache, config)
     offerings_key = offerings_runtime_key(config)
     if offerings_key is not None:
         hydrate_offerings_cache(
@@ -271,7 +264,17 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
             config,
             runtime_key=offerings_key,
         )
-    cache_warmed = bool(cache.snapshot())
+    return offerings_key
+
+
+def _make_offerings_refresher(
+    *,
+    config: AggregatorConfig,
+    server: FastMCP[Any],
+    coordinator: MultiWorkspaceCoordinator,
+    list_changed_middleware: ToolListChangedMiddleware | None,
+) -> OfferingsRefreshFn:
+    from cyt_mcp.catalog_build import disk_catalog_slug_for_config, offerings_runtime_key
 
     async def _refresh_offerings(*, notify: bool = True) -> None:
         key = offerings_runtime_key(config)
@@ -297,12 +300,25 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
         ):
             await list_changed_middleware.notify_all_sessions_offerings_changed()
 
+    return _refresh_offerings
+
+
+def _make_background_catalog_refresh(
+    *,
+    cache: RuntimeToolCache,
+    config: AggregatorConfig,
+    server: FastMCP[Any],
+    list_changed_middleware: ToolListChangedMiddleware | None,
+    refresh_offerings: OfferingsRefreshFn,
+) -> BackgroundCatalogRefreshFn:
+    from cyt_mcp.catalog_build import refresh_catalog_cache
+
     async def _background_catalog_refresh() -> None:
         try:
             before_count = len(cache.snapshot())
             await refresh_catalog_cache(server, cache, config)
             after_count = len(cache.snapshot())
-            await _refresh_offerings()
+            await refresh_offerings()
             if (
                 list_changed_middleware is not None
                 and after_count > 0
@@ -314,26 +330,92 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
         except Exception as exc:
             logger.warning("cyt-mcp background catalog refresh failed: %s", exc)
 
-    refresh_task: asyncio.Task[None] | None = None
+    return _background_catalog_refresh
+
+
+def _schedule_initial_cache_refresh(
+    *,
+    cache: RuntimeToolCache,
+    offerings_key: str | None,
+    coordinator: MultiWorkspaceCoordinator,
+    background_catalog_refresh: BackgroundCatalogRefreshFn,
+    refresh_offerings: OfferingsRefreshFn,
+) -> asyncio.Task[None] | None:
+    cache_warmed = bool(cache.snapshot())
     if not cache_warmed:
-        refresh_task = asyncio.create_task(
-            _background_catalog_refresh(),
+        return asyncio.create_task(
+            background_catalog_refresh(),
             name="cyt-mcp-catalog-refresh",
         )
-    elif offerings_key is not None:
+    if offerings_key is not None:
         hydrated = coordinator.offerings_cache.get(offerings_key) is not None
         coordinator.offerings_cache.schedule_refresh_once(
             runtime_key=offerings_key,
             delay_s=5.0 if hydrated else 0.0,
-            coro_factory=lambda: _refresh_offerings(),
+            coro_factory=lambda: refresh_offerings(),
         )
-    try:
-        if config.transport == "http":
-            from cyt_mcp.transport import run_http
+    return None
 
-            await run_http(server, cache, config)
-        else:
-            await cast(Any, server).run_async("stdio", show_banner=False)
+
+async def _run_server_transport(
+    server: FastMCP[Any],
+    cache: RuntimeToolCache,
+    config: AggregatorConfig,
+) -> None:
+    if config.transport == "http":
+        from cyt_mcp.transport import run_http
+
+        await run_http(server, cache, config)
+        return
+    await cast(Any, server).run_async("stdio", show_banner=False)
+
+
+async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None = None) -> int:
+    from cyt_mcp.hook_daemon_push import PushContext, deregister_catalog_push, register_push_context
+
+    _start_pairing_repair_thread(config)
+    cache = RuntimeToolCache()
+    config_holder = ConfigHolder(config)
+    server, list_changed_middleware, coordinator = build_aggregator(
+        config_holder,
+        cache,
+        aggregator_path=aggregator_path,
+    )
+    register_push_context(
+        PushContext(
+            config_holder=config_holder,
+            cache=cache,
+            server=server,
+            list_changed_middleware=list_changed_middleware,
+        ),
+    )
+    if config.workspace_root is not None:
+        from cyt.hook.active_workspace import touch_active_workspace
+
+        touch_active_workspace(config.agent, config.workspace_root)
+    offerings_key = _hydrate_server_runtime_caches(cache, config, coordinator)
+    refresh_offerings = _make_offerings_refresher(
+        config=config,
+        server=server,
+        coordinator=coordinator,
+        list_changed_middleware=list_changed_middleware,
+    )
+    background_catalog_refresh = _make_background_catalog_refresh(
+        cache=cache,
+        config=config,
+        server=server,
+        list_changed_middleware=list_changed_middleware,
+        refresh_offerings=refresh_offerings,
+    )
+    refresh_task = _schedule_initial_cache_refresh(
+        cache=cache,
+        offerings_key=offerings_key,
+        coordinator=coordinator,
+        background_catalog_refresh=background_catalog_refresh,
+        refresh_offerings=refresh_offerings,
+    )
+    try:
+        await _run_server_transport(server, cache, config)
     finally:
         if refresh_task is not None:
             refresh_task.cancel()

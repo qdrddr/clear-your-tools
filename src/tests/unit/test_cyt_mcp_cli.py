@@ -73,8 +73,8 @@ def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
         await asyncio.sleep(0.01)
 
     coordinator = _mock_coordinator()
-    coordinator.offerings_cache.schedule_refresh_once.side_effect = (
-        lambda **kwargs: offerings_scheduled.append(str(kwargs.get("runtime_key")))
+    coordinator.offerings_cache.schedule_refresh_once.side_effect = lambda **kwargs: (
+        offerings_scheduled.append(str(kwargs.get("runtime_key")))
     )
 
     with (

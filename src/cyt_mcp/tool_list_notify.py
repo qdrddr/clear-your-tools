@@ -98,7 +98,7 @@ class ToolListChangedMiddleware(Middleware):
                 if tool_count == 0:
                     tool_count = await wait_for_catalog_cache_ready(
                         active_cache,
-                        timeout=None,
+                        max_wait_seconds=None,
                     )
                 stable = tool_count > 0 and tool_count == previous_count
                 previous_count = tool_count
@@ -134,7 +134,7 @@ class ToolListChangedMiddleware(Middleware):
                 if tool_count == 0:
                     tool_count = await wait_for_catalog_cache_ready(
                         active_cache,
-                        timeout=None,
+                        max_wait_seconds=None,
                     )
                 stable = tool_count > 0 and tool_count == previous_count
                 previous_count = tool_count

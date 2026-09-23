@@ -102,6 +102,9 @@ class NoOpTierManager:
     def close(self) -> None:
         return
 
+    def flush_pending(self, *, force: bool = False) -> bool:
+        return False
+
     def snapshot_tools(self, config: dict[str, Any]) -> TierSnapshot:
         cfg = tier_section_config(config, kind="tool")
         return TierSnapshot(

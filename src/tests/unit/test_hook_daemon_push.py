@@ -54,8 +54,8 @@ def _config(
 def test_instance_key_requires_workspace_path(tmp_path: Path) -> None:
     user_config = _config()
     ws_config = _config(workspace_root=tmp_path)
-    assert _instance_key(user_config) == "cursor:workspace:"
-    assert _instance_key(ws_config) == f"cursor:workspace:{tmp_path}"
+    assert _instance_key(user_config) == "cursor:workspace::usr"
+    assert _instance_key(ws_config) == f"cursor:workspace:{tmp_path}:ws"
 
 
 def test_can_push_to_registry_requires_workspace_root(tmp_path: Path) -> None:
@@ -113,7 +113,7 @@ def test_push_once_hash_only_404_triggers_full_resend(tmp_path: Path) -> None:
     from cyt_mcp.catalog import catalog_tools_content_hash
 
     content_hash = catalog_tools_content_hash(cache.snapshot())
-    instance_key = f"cursor:workspace:{tmp_path}"
+    instance_key = _instance_key(config)
 
     def fake_post(_url: str, payload: dict[str, object]) -> tuple[int, dict[str, object] | None]:
         calls.append(payload)

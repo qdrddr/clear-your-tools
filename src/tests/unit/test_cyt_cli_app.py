@@ -31,7 +31,26 @@ def _run_cli(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def test_app_cli_tiers_stats_requires_project(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text("tools:\n  tiers:\n    mode: off\n", encoding="utf-8")
-    env = {**ENV, "CYT_CONFIG": str(config_path)}
+    isolated_home = tmp_path / "home"
+    isolated_home.mkdir()
+    env: dict[str, str] = {
+        **ENV,
+        "CYT_CONFIG": str(config_path),
+        "HOME": str(isolated_home),
+        "XDG_CONFIG_HOME": str(isolated_home / ".config"),
+        "PWD": str(tmp_path),
+    }
+    for key in (
+        "CYT_WORKSPACE",
+        "CYT_SHELL_WORKSPACE",
+        "CYT_HOOK_CWD",
+        "CYT_TIER_WORKSPACE",
+        "WORKSPACE_FOLDER",
+        "VSCODE_WORKSPACE_FOLDER",
+        "CURSOR_WORKSPACE_FOLDER",
+        "OLDPWD",
+    ):
+        env.pop(key, None)
     result = subprocess.run(
         [sys.executable, str(APP), "tiers", "stats"],
         capture_output=True,

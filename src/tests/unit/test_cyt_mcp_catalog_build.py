@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,8 +13,8 @@ from cyt_mcp.catalog_build import (
     offerings_runtime_key,
     refresh_catalog_cache,
 )
-from cyt_mcp.offerings_cache import OfferingsCache, OfferingsSnapshot
 from cyt_mcp.config import sample_aggregator_config
+from cyt_mcp.offerings_cache import OfferingsCache, OfferingsSnapshot
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
 

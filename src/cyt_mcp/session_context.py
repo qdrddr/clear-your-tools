@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cyt_mcp.session_runtime import WorkspaceSessionRuntime
 
-_current_session_runtime: contextvars.ContextVar[WorkspaceSessionRuntime | None] = contextvars.ContextVar(
-    "cyt_mcp_session_runtime",
-    default=None,
+_current_session_runtime: contextvars.ContextVar[WorkspaceSessionRuntime | None] = (
+    contextvars.ContextVar(
+        "cyt_mcp_session_runtime",
+        default=None,
+    )
 )
 
 

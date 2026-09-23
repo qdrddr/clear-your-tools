@@ -5,18 +5,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, cast
 
 from mcp.types import Prompt, Resource, ResourceTemplate
 
 logger = logging.getLogger(__name__)
 
-TWire = TypeVar("TWire", Resource, Prompt, ResourceTemplate)
-
 _tools_list_depth = 0
+
+CoroFactory = Callable[[], Awaitable[None]]
+EnsureMountedFn = Callable[[dict[str, Any]], list[str]]
+OfferingsServer = Any
 
 
 def enter_tools_list() -> None:
@@ -55,9 +57,7 @@ class OfferingsSnapshot:
         return {
             "resources": [json_safe_value(item) for item in self.resources],
             "prompts": [json_safe_value(item) for item in self.prompts],
-            "resource_templates": [
-                json_safe_value(item) for item in self.resource_templates
-            ],
+            "resource_templates": [json_safe_value(item) for item in self.resource_templates],
         }
 
     @classmethod
@@ -72,7 +72,7 @@ class OfferingsSnapshot:
 def normalize_offering_items(items: Sequence[Any] | None) -> list[dict[str, Any]]:
     from cyt_mcp.catalog_build import json_safe_value
 
-    return [json_safe_value(item) for item in (items or [])]
+    return [cast(dict[str, Any], json_safe_value(item)) for item in (items or [])]
 
 
 def offerings_snapshot_from_server(
@@ -88,7 +88,7 @@ def offerings_snapshot_from_server(
     )
 
 
-def offerings_to_wire(
+def offerings_to_wire[TWire: Resource | Prompt | ResourceTemplate](
     items: Sequence[Any],
     wire_type: type[TWire],
 ) -> list[TWire]:
@@ -97,11 +97,15 @@ def offerings_to_wire(
         if isinstance(item, wire_type):
             wired.append(item)
         elif isinstance(item, dict):
-            wired.append(wire_type.model_validate(item))
+            validated = wire_type.model_validate(item)
+            assert isinstance(validated, wire_type)
+            wired.append(validated)
         else:
             from cyt_mcp.catalog_build import json_safe_value
 
-            wired.append(wire_type.model_validate(json_safe_value(item)))
+            validated = wire_type.model_validate(json_safe_value(item))
+            assert isinstance(validated, wire_type)
+            wired.append(validated)
     return wired
 
 
@@ -154,11 +158,7 @@ class OfferingsCache:
 
     def replace(self, runtime_key: str, snapshot: OfferingsSnapshot) -> OfferingsSnapshot:
         existing = self._snapshots.get(runtime_key)
-        if (
-            existing is not None
-            and existing.total_count > 0
-            and snapshot.total_count == 0
-        ):
+        if existing is not None and existing.total_count > 0 and snapshot.total_count == 0:
             return existing
         self._snapshots[runtime_key] = snapshot
         return snapshot
@@ -174,7 +174,7 @@ class OfferingsCache:
         self,
         *,
         runtime_key: str,
-        coro_factory: Any,
+        coro_factory: CoroFactory,
         delay_s: float = 15.0,
     ) -> None:
         existing = self._refresh_tasks.get(runtime_key)
@@ -198,11 +198,11 @@ class OfferingsCache:
 
     async def refresh_from_server(
         self,
-        server: Any,
+        server: OfferingsServer,
         *,
         runtime_key: str,
         mcp_servers: dict[str, Any],
-        ensure_mounted: Any,
+        ensure_mounted: EnsureMountedFn,
         disk_slug: str | None = None,
     ) -> OfferingsSnapshot:
         """Fetch offerings on the main event loop (never a secondary event loop)."""

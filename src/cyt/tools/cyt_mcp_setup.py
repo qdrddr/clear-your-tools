@@ -113,11 +113,12 @@ def _extract_mcp_servers_from_codex_toml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
-        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+        raw_payload: object = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return {}
-    if not isinstance(payload, dict):
+    if not isinstance(raw_payload, dict):
         return {}
+    payload = raw_payload
     servers = payload.get("mcp_servers")
     return servers if isinstance(servers, dict) else {}
 
@@ -202,7 +203,7 @@ def _codex_mcp_server_toml_block(server_key: str, spec: dict[str, Any]) -> str:
     if isinstance(env, dict) and env:
         lines.append("env = {")
         for key, value in env.items():
-            lines.append(f'  {json.dumps(str(key))} = {json.dumps(str(value))}')
+            lines.append(f"  {json.dumps(str(key))} = {json.dumps(str(value))}")
         lines.append("}")
     enabled = spec.get("enabled")
     if isinstance(enabled, bool):
@@ -586,6 +587,45 @@ def _write_codex_cyt_mcp_entry(
     print(f"Wrote {server_key} entry to {path}", file=sys.stderr)
 
 
+def _load_json_mcp_config(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _merge_cyt_mcp_json_servers(
+    raw: dict[str, Any],
+    entry: dict[str, Any],
+    *,
+    server_key: str,
+    frontend_only: bool,
+) -> dict[str, Any] | None:
+    from cyt_client.mcp_entry import mcp_entries_equivalent
+
+    if frontend_only:
+        existing = raw.get("mcpServers")
+        if isinstance(existing, dict) and mcp_entries_equivalent(existing.get(server_key), entry):
+            return None
+        return {server_key: entry}
+
+    existing = raw.get("mcpServers")
+    if not isinstance(existing, dict):
+        existing = {}
+    current = existing.get(server_key)
+    if mcp_entries_equivalent(current, entry):
+        return None
+    servers = dict(existing)
+    for legacy_key in CYT_MCP_FRONTEND_SERVER_KEYS:
+        if legacy_key != server_key:
+            servers.pop(legacy_key, None)
+    servers[server_key] = entry
+    return servers
+
+
 def _write_json_cyt_mcp_entry(
     path: Path,
     entry: dict[str, Any],
@@ -595,34 +635,15 @@ def _write_json_cyt_mcp_entry(
     server_key: str = CYT_MCP_SERVER_KEY,
     frontend_only: bool = False,
 ) -> None:
-    if path.is_file():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raw = {}
-    else:
-        raw = {}
-    if not isinstance(raw, dict):
-        raw = {}
-    from cyt_client.mcp_entry import mcp_entries_equivalent
-
-    if frontend_only:
-        existing = raw.get("mcpServers")
-        if isinstance(existing, dict) and mcp_entries_equivalent(existing.get(server_key), entry):
-            return
-        servers: dict[str, Any] = {server_key: entry}
-    else:
-        existing = raw.get("mcpServers")
-        if not isinstance(existing, dict):
-            existing = {}
-        current = existing.get(server_key)
-        if mcp_entries_equivalent(current, entry):
-            return
-        servers = dict(existing)
-        for legacy_key in CYT_MCP_FRONTEND_SERVER_KEYS:
-            if legacy_key != server_key:
-                servers.pop(legacy_key, None)
-        servers[server_key] = entry
+    raw = _load_json_mcp_config(path)
+    servers = _merge_cyt_mcp_json_servers(
+        raw,
+        entry,
+        server_key=server_key,
+        frontend_only=frontend_only,
+    )
+    if servers is None:
+        return
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
     print(f"Wrote {server_key} entry to {path}", file=sys.stderr)
@@ -840,33 +861,32 @@ def setup_cyt_mcp_workspace_for_agent(
     )
 
 
-def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
-    """Remove cyt-mcp frontend entries from project agent MCP config."""
-    if not scope.has_workspace:
-        return False
-    mcp_path = scope.workspace_agent_mcp_path(agent)
-    user_mcp = scope.user_agent_mcp_path(agent)
-    if mcp_path is not None:
-        try:
-            if mcp_path.resolve() == user_mcp.resolve():
-                logger.debug(
-                    "Skipping cyt-mcp removal: workspace MCP path equals user global MCP (%s)",
-                    mcp_path,
-                )
-                return False
-        except OSError:
-            pass
-    if mcp_path is None or not mcp_path.is_file():
-        return False
-    agent = agent.strip() or "cursor"
-    if agent == "codex":
-        text = mcp_path.read_text(encoding="utf-8")
-        text, changed = _strip_codex_mcp_server_sections(text, CYT_MCP_FRONTEND_SERVER_KEYS)
-        if not changed:
-            return False
-        _atomic_write_text(mcp_path, text)
-        print(f"Removed cyt-mcp frontend from {mcp_path}", file=sys.stderr)
+def _project_cyt_mcp_removal_skipped(mcp_path: Path | None, user_mcp: Path) -> bool:
+    if mcp_path is None:
         return True
+    try:
+        if mcp_path.resolve() == user_mcp.resolve():
+            logger.debug(
+                "Skipping cyt-mcp removal: workspace MCP path equals user global MCP (%s)",
+                mcp_path,
+            )
+            return True
+    except OSError:
+        pass
+    return not mcp_path.is_file()
+
+
+def _remove_codex_project_cyt_mcp(mcp_path: Path) -> bool:
+    text = mcp_path.read_text(encoding="utf-8")
+    text, changed = _strip_codex_mcp_server_sections(text, CYT_MCP_FRONTEND_SERVER_KEYS)
+    if not changed:
+        return False
+    _atomic_write_text(mcp_path, text)
+    print(f"Removed cyt-mcp frontend from {mcp_path}", file=sys.stderr)
+    return True
+
+
+def _remove_json_project_cyt_mcp(mcp_path: Path) -> bool:
     try:
         raw = json.loads(mcp_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -883,6 +903,21 @@ def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool
     _atomic_write_text(mcp_path, json.dumps(raw, indent=2) + "\n")
     print(f"Removed {', '.join(removed)} from {mcp_path}", file=sys.stderr)
     return True
+
+
+def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
+    """Remove cyt-mcp frontend entries from project agent MCP config."""
+    if not scope.has_workspace:
+        return False
+    mcp_path = scope.workspace_agent_mcp_path(agent)
+    user_mcp = scope.user_agent_mcp_path(agent)
+    if _project_cyt_mcp_removal_skipped(mcp_path, user_mcp):
+        return False
+    assert mcp_path is not None
+    agent = agent.strip() or "cursor"
+    if agent == "codex":
+        return _remove_codex_project_cyt_mcp(mcp_path)
+    return _remove_json_project_cyt_mcp(mcp_path)
 
 
 def setup_cyt_mcp_user_for_agent(

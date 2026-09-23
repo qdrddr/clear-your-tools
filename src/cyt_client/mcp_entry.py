@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 
 from cyt_client.compat import is_windows
 from cyt_client.hook_executable import (
+    is_uv_hook_command,
     is_uv_run_dev_hook_command,
     repo_root_from_uv_run_hook_command,
     resolve_hook_executable,
@@ -58,14 +59,7 @@ def cyt_mcp_http_mcp_url(
     return f"http://{host}:{port}{path}"
 
 
-def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
-    """Return True when an agent MCP server entry is the cyt-mcp frontend (not a backend)."""
-    if str(name).strip() in CYT_MCP_FRONTEND_SERVER_KEYS:
-        return True
-    if not isinstance(spec, dict):
-        return False
-    spec_dict: dict[str, Any] = cast(dict[str, Any], spec)
-    command = spec_dict.get("command")
+def _cyt_mcp_frontend_from_command(command: object, args: object) -> bool:
     if isinstance(command, str):
         normalized_command = command.strip().casefold()
         if normalized_command == INSTALLED_CYT_MCP_COMMAND or normalized_command.endswith(
@@ -76,17 +70,30 @@ def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
             return True
         if normalized_command.endswith("cyt-mcp-dev.cmd"):
             return True
-    args = spec_dict.get("args")
-    if command == "uv" and isinstance(args, list):
+    if is_uv_hook_command(command) and isinstance(args, list):
         joined = " ".join(str(arg) for arg in args)
         if CYT_MCP_SCRIPT_REL in joined or "cyt_mcp/cli.py" in joined:
             return True
-    url = spec_dict.get("url")
-    if isinstance(url, str):
-        normalized = url.strip().rstrip("/")
-        if normalized == cyt_mcp_http_mcp_url().rstrip("/"):
-            return True
     return False
+
+
+def _cyt_mcp_frontend_from_url(url: object) -> bool:
+    if not isinstance(url, str):
+        return False
+    normalized = url.strip().rstrip("/")
+    return normalized == cyt_mcp_http_mcp_url().rstrip("/")
+
+
+def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
+    """Return True when an agent MCP server entry is the cyt-mcp frontend (not a backend)."""
+    if str(name).strip() in CYT_MCP_FRONTEND_SERVER_KEYS:
+        return True
+    if not isinstance(spec, dict):
+        return False
+    spec_dict: dict[str, Any] = cast(dict[str, Any], spec)
+    if _cyt_mcp_frontend_from_command(spec_dict.get("command"), spec_dict.get("args")):
+        return True
+    return _cyt_mcp_frontend_from_url(spec_dict.get("url"))
 
 
 def backend_mcp_servers(servers: dict[str, Any]) -> dict[str, Any]:
@@ -363,6 +370,31 @@ def _dev_repo_from_uv_args(args: list[Any]) -> tuple[Path, str] | None:
     return None
 
 
+def _dev_invocation_from_wrapper_command(command: str) -> tuple[Path, str] | None:
+    from cyt_client.hook_invocation import is_cyt_mcp_dev_wrapper_command
+
+    if not is_cyt_mcp_dev_wrapper_command(command):
+        return None
+    inner = _inner_command_from_windows_wrapper(command)
+    if inner is None:
+        return None
+    repo = repo_root_from_uv_run_hook_command(_strip_env_prefix(inner))
+    if repo is not None and (repo / CYT_MCP_SCRIPT_REL).is_file():
+        return repo, CYT_MCP_SCRIPT_REL
+    return None
+
+
+def _dev_invocation_from_uv_spec(spec: dict[str, Any]) -> tuple[Path, str] | None:
+    command = spec.get("command")
+    args = spec.get("args")
+    if not is_uv_hook_command(command) or not isinstance(args, list):
+        return None
+    joined = " ".join(str(arg) for arg in args)
+    if CYT_MCP_SCRIPT_REL not in joined and "cyt_mcp/cli.py" not in joined:
+        return None
+    return _dev_repo_from_uv_args(args)
+
+
 def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
     if not mcp_path.is_file():
         return None
@@ -379,21 +411,11 @@ def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
     if spec is None:
         return None
     command = spec.get("command")
-    args = spec.get("args")
-    from cyt_client.hook_invocation import is_cyt_mcp_dev_wrapper_command
-
-    if isinstance(command, str) and is_cyt_mcp_dev_wrapper_command(command):
-        inner = _inner_command_from_windows_wrapper(command)
-        if inner is not None:
-            repo = repo_root_from_uv_run_hook_command(_strip_env_prefix(inner))
-            if repo is not None and (repo / CYT_MCP_SCRIPT_REL).is_file():
-                return repo, CYT_MCP_SCRIPT_REL
-    if command != "uv" or not isinstance(args, list):
-        return None
-    joined = " ".join(str(arg) for arg in args)
-    if CYT_MCP_SCRIPT_REL not in joined and "cyt_mcp/cli.py" not in joined:
-        return None
-    return _dev_repo_from_uv_args(args)
+    if isinstance(command, str):
+        wrapper_invocation = _dev_invocation_from_wrapper_command(command)
+        if wrapper_invocation is not None:
+            return wrapper_invocation
+    return _dev_invocation_from_uv_spec(spec)
 
 
 def mcp_entries_equivalent(existing: object, desired: dict[str, Any]) -> bool:

@@ -258,9 +258,7 @@ def _load_project_origin_servers(
         deny_entries=effective_deny,
     )
     excluded = user_server_names or frozenset()
-    filtered = {
-        name: spec for name, spec in workspace_servers.items() if name not in excluded
-    }
+    filtered = {name: spec for name, spec in workspace_servers.items() if name not in excluded}
     if excluded and len(filtered) < len(workspace_servers):
         dropped = sorted(set(workspace_servers) - set(filtered))
         logger.info(

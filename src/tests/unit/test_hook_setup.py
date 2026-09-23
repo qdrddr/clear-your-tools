@@ -10,11 +10,11 @@ from unittest.mock import patch
 
 import pytest
 
+from cyt.agents._types import AgentName
 from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
-    prefix_agent_hook_command,
     cyt_client_cli_script_relpath,
     cyt_client_command,
     cyt_daemon_restart_command,
@@ -22,6 +22,8 @@ from cyt.hook.cli_invocation import (
     detect_hook_cli_invocation,
     invoked_via_proxy_cli_script,
     is_dev_cyt_hook_command,
+    prefix_agent_hook_command,
+    prefix_command_env,
     proxy_cli_script_path,
     proxy_cli_script_relpath,
     repo_root_from_proxy_cli_script,
@@ -31,15 +33,6 @@ from cyt_client.mcp_entry import (
     CYT_MCP_USER_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
 )
-
-
-@pytest.fixture(autouse=True)
-def _bare_hook_executables_for_setup_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep legacy bare command expectations stable when cyt/uv are on PATH."""
-    monkeypatch.setattr(
-        "cyt_client.hook_executable.resolve_hook_executable",
-        lambda name: name,
-    )
 
 
 def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,6 +48,40 @@ def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     )
     monkeypatch.setattr(hook_setup, "save_user_config", lambda *args, **kwargs: False)
+
+
+def _expected_client_hook_command(
+    *,
+    agent: AgentName | None = None,
+    set_launch_agent: bool = False,
+    use_cursor_wrappers: bool = False,
+) -> str:
+    entry = hook_setup.cyt_client_entry(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        use_cursor_wrappers=use_cursor_wrappers,
+    )
+    return str(entry["command"])
+
+
+def _expected_daemon_hook_command(
+    *,
+    agent: AgentName | None = None,
+    set_launch_agent: bool = False,
+    use_cursor_wrappers: bool = False,
+) -> str:
+    entry = hook_setup.cyt_daemon_start_entry(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        use_cursor_wrappers=use_cursor_wrappers,
+    )
+    return str(entry["command"])
+
+
+def _hook_setup_consumer_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "consumer-workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
 
 
 def _prevent_hallucinations_blocked_prompt(text: str) -> None:
@@ -136,11 +163,12 @@ def _prepare_hook_setup_consumer_workspace(
 def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
     command = hook_setup.format_hook_stdin_test_command()
 
+    client_cmd = cyt_client_command()
     if sys.platform == "win32":
         assert command.startswith("@'")
-        assert "'@ | " in command
+        assert f"'@ | {client_cmd}" in command
     else:
-        assert "cat <<'EOF' | cyt-client" in command
+        assert f"cat <<'EOF' | {client_cmd}" in command
     assert "019ebcaf" not in command
     assert "username" not in command
     assert "sess-00000000-0000-4000-8000-000000000001" in command
@@ -171,11 +199,12 @@ def test_format_hook_stdin_test_command_verify_only_cursor_uses_user_prompt_subm
 
 def test_format_hook_stdin_test_command_includes_debug_flag() -> None:
     command = hook_setup.format_hook_stdin_test_command(debug=True)
+    client_cmd = prefix_command_env({"CYT_HOOK_DEBUG": "1"}, cyt_client_command())
 
     if sys.platform == "win32":
         assert "CYT_HOOK_DEBUG=1" in command
     else:
-        assert "CYT_HOOK_DEBUG=1 cyt-client" in command
+        assert client_cmd in command
 
 
 def test_build_hook_skills_config_overlay_returns_none_when_already_configured() -> None:
@@ -247,8 +276,12 @@ def test_build_hook_skills_config_overlay_disables_skills() -> None:
 
 
 def test_cyt_hook_entry_omits_launch_agent_by_default() -> None:
-    assert hook_setup.cyt_client_entry(agent="claude")["command"] == "cyt-client"
-    assert hook_setup.cyt_client_entry(agent="codex")["command"] == "cyt-client"
+    assert hook_setup.cyt_client_entry(agent="claude")["command"] == _expected_client_hook_command(
+        agent="claude",
+    )
+    assert hook_setup.cyt_client_entry(agent="codex")["command"] == _expected_client_hook_command(
+        agent="codex",
+    )
 
 
 def test_cyt_hook_entry_sets_launch_agent_when_requested() -> None:
@@ -260,23 +293,31 @@ def test_cyt_hook_entry_sets_launch_agent_when_requested() -> None:
         assert "cyt-client" in claude_entry["command"]
         assert "CYT_LAUNCH_AGENT=codex" in codex_entry["command"]
     else:
-        assert claude_entry["command"] == "CYT_LAUNCH_AGENT=claude cyt-client"
-        assert codex_entry["command"] == "CYT_LAUNCH_AGENT=codex cyt-client"
+        assert claude_entry["command"] == _expected_client_hook_command(
+            agent="claude",
+            set_launch_agent=True,
+        )
+        assert codex_entry["command"] == _expected_client_hook_command(
+            agent="codex",
+            set_launch_agent=True,
+        )
     assert claude_entry["timeout"] == hook_setup.USER_PROMPT_TIMEOUT_SECONDS
     assert codex_entry["timeout"] == hook_setup.USER_PROMPT_TIMEOUT_SECONDS
 
 
 def test_cyt_daemon_start_entry() -> None:
-    assert (
-        hook_setup.cyt_daemon_start_entry(agent="claude")["command"]
-        == "cyt hook daemon start --unattended"
+    assert hook_setup.cyt_daemon_start_entry(agent="claude")["command"] == (
+        _expected_daemon_hook_command(agent="claude")
     )
     entry = hook_setup.cyt_daemon_start_entry(agent="claude", set_launch_agent=True)
     if sys.platform == "win32":
         assert "CYT_LAUNCH_AGENT=claude" in entry["command"]
         assert "cyt hook daemon start --unattended" in entry["command"]
     else:
-        assert entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
+        assert entry["command"] == _expected_daemon_hook_command(
+            agent="claude",
+            set_launch_agent=True,
+        )
     assert entry["timeout"] == hook_setup.SESSION_START_TIMEOUT_SECONDS
 
 
@@ -394,8 +435,10 @@ def test_build_hook_spawn_command_dev_mode_uses_uv_and_repo_cli() -> None:
 
 def test_installed_daemon_restart_command() -> None:
     invocation = HookCliInvocation(mode="installed", repo_root=None)
+    command = cyt_daemon_restart_command(invocation=invocation)
 
-    assert cyt_daemon_restart_command(invocation=invocation) == "cyt hook daemon restart"
+    assert command.endswith("hook daemon restart")
+    assert Path(command.split()[0]).name == "cyt"
 
 
 def test_cyt_client_entry_uses_dev_command_when_invoked_via_script() -> None:
@@ -547,7 +590,10 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
         patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}),
         patch("cyt.hook.daemon.daemon_start") as daemon_start,
     ):
-        hook_setup.run_hook_setup(agents=["cursor"])
+        hook_setup.run_hook_setup(
+            agents=["cursor"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     daemon_start.assert_called_once_with(config_path=None, unattended=True)
 
@@ -616,7 +662,7 @@ def test_merge_cyt_hook_upgrades_env_prefixed_legacy_stdin_command() -> None:
 
     assert changed is True
     commands = [hook["command"] for hook in merged["UserPromptSubmit"][0]["hooks"]]
-    assert commands == ["cyt-client"]
+    assert commands == [entry["command"]]
 
 
 def test_upsert_cyt_hook_replaces_duplicate_debug_variants() -> None:
@@ -650,25 +696,25 @@ def test_upsert_cyt_hook_replaces_duplicate_debug_variants() -> None:
     hooks = merged["UserPromptSubmit"][0]["hooks"]
     assert len(hooks) == 2
     commands = [hook["command"] for hook in hooks]
-    assert "cyt-client" in commands
+    assert entry["command"] in commands
     assert "/usr/local/bin/other-hook" in commands
 
 
 def test_upsert_cyt_hook_is_noop_when_settings_match() -> None:
+    entry = hook_setup.cyt_client_entry()
     existing = {
         "UserPromptSubmit": [
             {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "cyt-client",
+                        "command": entry["command"],
                         "timeout": 30,
                     },
                 ],
             },
         ],
     }
-    entry = hook_setup.cyt_client_entry()
     merged, changed = hook_setup.upsert_cyt_hook(existing, entry)
 
     assert changed is False
@@ -680,7 +726,7 @@ def test_merge_cyt_hook_adds_user_prompt_submit_entry() -> None:
     merged, changed = hook_setup.merge_cyt_hook({}, entry)
 
     assert changed is True
-    assert merged["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
+    assert merged["UserPromptSubmit"][0]["hooks"][0]["command"] == entry["command"]
 
 
 def test_merge_cyt_hook_upgrades_legacy_stdin_command() -> None:
@@ -697,7 +743,7 @@ def test_merge_cyt_hook_upgrades_legacy_stdin_command() -> None:
     merged, changed = hook_setup.merge_cyt_hook(existing, entry)
 
     assert changed is True
-    assert merged["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
+    assert merged["UserPromptSubmit"][0]["hooks"][0]["command"] == entry["command"]
 
 
 def test_merge_cyt_hook_skips_legacy_cyt_skills_command() -> None:
@@ -723,7 +769,7 @@ def test_merge_hooks_into_file_writes_claude_settings(tmp_path: Path) -> None:
     assert changed is True
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["env"]["FOO"] == "bar"
-    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
+    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == entry["command"]
 
 
 def test_merge_hooks_into_file_is_idempotent(tmp_path: Path) -> None:
@@ -948,14 +994,17 @@ def test_run_hook_setup_updates_duplicate_hooks(
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
-        hook_setup.run_hook_setup(agents=["claude", "codex"])
+        hook_setup.run_hook_setup(
+            agents=["claude", "codex"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     hooks = claude_data["hooks"]["UserPromptSubmit"][0]["hooks"]
     assert len(hooks) == 1
-    assert hooks[0]["command"] == "cyt-client"
+    assert hooks[0]["command"] == _expected_client_hook_command(agent="claude")
     assert claude_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "cyt hook daemon start --unattended"
+        _expected_daemon_hook_command(agent="claude")
     )
 
 
@@ -991,17 +1040,24 @@ def test_run_hook_setup_merges_existing_agent_configs(
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
-        hook_setup.run_hook_setup(agents=["claude", "codex"])
+        hook_setup.run_hook_setup(
+            agents=["claude", "codex"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
-    assert claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
-    assert codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
+    assert claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == (
+        _expected_client_hook_command(agent="claude")
+    )
+    assert codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == (
+        _expected_client_hook_command(agent="codex")
+    )
     assert claude_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "cyt hook daemon start --unattended"
+        _expected_daemon_hook_command(agent="claude")
     )
     assert codex_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "cyt hook daemon start --unattended"
+        _expected_daemon_hook_command(agent="codex")
     )
 
 
@@ -1037,7 +1093,10 @@ def test_run_hook_setup_skips_declined_agent_install(
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
-        hook_setup.run_hook_setup(agents=["claude", "codex"])
+        hook_setup.run_hook_setup(
+            agents=["claude", "codex"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
@@ -1061,7 +1120,10 @@ def test_run_hook_setup_skips_missing_agent_configs(
 
     with pytest.raises(SystemExit, match="No agent config files found"):
         with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
-            hook_setup.run_hook_setup(agents=["claude", "codex"])
+            hook_setup.run_hook_setup(
+                agents=["claude", "codex"],
+                workspace=_hook_setup_consumer_workspace(tmp_path),
+            )
 
     captured = capsys.readouterr()
     assert "Skipping Claude" in captured.out
@@ -1365,10 +1427,13 @@ def test_hook_wizard_without_stdin(
         config_path: Path | None = None,
         agents: list[str] | None = None,
         prevent_hallucinations: bool = False,
+        workspace: Path | None = None,
+        **_kwargs: object,
     ) -> None:
         called["run"] = True
         called["agents"] = agents
         assert config_path is None
+        assert workspace is None
 
     monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_setup", fake_run_hook_setup)
 
@@ -1388,9 +1453,12 @@ def test_hook_cursor_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
         config_path: Path | None = None,
         agents: list[str] | None = None,
         prevent_hallucinations: bool = False,
+        workspace: Path | None = None,
+        **_kwargs: object,
     ) -> None:
         called["agents"] = agents
         assert config_path is None
+        assert workspace is None
 
     monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_setup", fake_run_hook_setup)
 
@@ -1444,8 +1512,14 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(
         assert entries["before_submit"]["command"].endswith("cyt-client.cmd")
         assert entries["session_start"][0]["command"].endswith("cyt-hook-daemon-start.cmd")
     else:
-        assert entries["before_submit"]["command"] == "cyt-client"
-        assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"
+        assert entries["before_submit"]["command"] == _expected_client_hook_command(
+            agent="cursor",
+            use_cursor_wrappers=True,
+        )
+        assert entries["session_start"][0]["command"] == _expected_daemon_hook_command(
+            agent="cursor",
+            use_cursor_wrappers=True,
+        )
 
 
 def test_upsert_cursor_hooks_installs_read_intercept_hooks_when_enabled(
@@ -1579,7 +1653,10 @@ def test_run_hook_setup_installs_cursor_hooks(
         patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}),
         patch("cyt.hook.daemon.daemon_start") as daemon_start,
     ):
-        hook_setup.run_hook_setup(agents=["cursor"])
+        hook_setup.run_hook_setup(
+            agents=["cursor"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     daemon_start.assert_called_once_with(config_path=None, unattended=True)
 
@@ -1592,9 +1669,18 @@ def test_run_hook_setup_installs_cursor_hooks(
         assert daemon_cmd == str(hooks_dir / "cyt-hook-daemon-start.cmd")
         assert session_client_cmd == client_cmd
     else:
-        assert client_cmd == "cyt-client"
-        assert daemon_cmd == "cyt hook daemon start --unattended"
-        assert session_client_cmd == "cyt-client"
+        assert client_cmd == _expected_client_hook_command(
+            agent="cursor",
+            use_cursor_wrappers=True,
+        )
+        assert daemon_cmd == _expected_daemon_hook_command(
+            agent="cursor",
+            use_cursor_wrappers=True,
+        )
+        assert session_client_cmd == _expected_client_hook_command(
+            agent="cursor",
+            use_cursor_wrappers=True,
+        )
     assert data["hooks"]["sessionEnd"][0]["command"] == session_client_cmd
 
     output = capsys.readouterr().out
@@ -1631,7 +1717,10 @@ def test_run_hook_setup_skips_cursor_daemon_start_when_declined(
         patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}),
         patch("cyt.hook.daemon.daemon_start") as daemon_start,
     ):
-        hook_setup.run_hook_setup(agents=["cursor"])
+        hook_setup.run_hook_setup(
+            agents=["cursor"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     daemon_start.assert_not_called()
     output = capsys.readouterr().out
@@ -1737,6 +1826,7 @@ def test_run_hook_setup_prevent_hallucinations_prompts_for_existing_hooks(
             config_path=config_path,
             agents=["cursor"],
             prevent_hallucinations=True,
+            workspace=_hook_setup_consumer_workspace(tmp_path),
         )
 
     output = capsys.readouterr().out
@@ -1811,6 +1901,7 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
             config_path=config_path,
             agents=["claude"],
             prevent_hallucinations=True,
+            workspace=_hook_setup_consumer_workspace(tmp_path),
         )
 
     output = capsys.readouterr().out
@@ -2102,8 +2193,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     assert "--- Migrate (cursor) user-global MCP config ---" in output.out
     assert "--- Migrate (cursor) workspace MCP config ---" in output.out
     assert any(
-        "Migrate user-global MCP backends and install cyt-mcp-usr?" in text
-        for text in yes_no_calls
+        "Migrate user-global MCP backends and install cyt-mcp-usr?" in text for text in yes_no_calls
     )
     assert any(
         "Migrate project MCP backends and install cyt-mcp-ws?" in text for text in yes_no_calls
@@ -2192,6 +2282,7 @@ def test_run_hook_setup_migrates_workspace_mcp_when_cyt_checkout_is_workspace(
             config_path=config_path,
             agents=["cursor"],
             prevent_hallucinations=True,
+            workspace=cyt_repo,
         )
 
     output = capsys.readouterr()
@@ -2288,7 +2379,11 @@ def test_run_hook_setup_skips_daemon_start_for_claude_proxy_inject_via(
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
 
     with patch("cyt.hook.daemon.daemon_start") as daemon_start:
-        hook_setup.run_hook_setup(config_path=config_path, agents=["claude"])
+        hook_setup.run_hook_setup(
+            config_path=config_path,
+            agents=["claude"],
+            workspace=_hook_setup_consumer_workspace(tmp_path),
+        )
 
     daemon_start.assert_not_called()
     output = capsys.readouterr().out

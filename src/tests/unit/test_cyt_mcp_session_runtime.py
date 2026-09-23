@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastmcp.tools.base import Tool
+
+from cyt_mcp.catalog_build import build_catalog_from_tools
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.catalog_build import build_catalog_from_tools
 from cyt_mcp.session_runtime import (
     WorkspaceSessionRuntime,
     root_uri_to_path,
     tool_belongs_to_runtime,
 )
 from cyt_mcp.tool_identity import tool_name_allowed_for_servers
-from fastmcp.tools.base import Tool
 
 
 def test_root_uri_to_path_windows_file_url() -> None:

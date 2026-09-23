@@ -167,7 +167,6 @@ def test_cyt_mcp_catalog_bm25_tier_prune_matches_golden(
         pruned_tools=actual,
         config=config,
     )
-    _write_golden_output(scenario.id, output_payload)
 
     regenerate = os.environ.get(REGENERATE_ENV, "").strip().lower() in {
         "1",

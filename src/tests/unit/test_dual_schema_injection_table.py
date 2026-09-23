@@ -140,7 +140,7 @@ def test_injection_table_prune_drop_absent_from_pipeline(
     config = live_tier_config(pack)
     manager = TierManager(pack.workspace, str(pack.db_path))
     try:
-        with patch("cyt.pruners.tools_filter.get_tier_manager", return_value=manager):
+        with patch("cyt.tiers.manager.get_tier_manager_for_config", return_value=manager):
             result = filter_tools_for_query(
                 pack.tools,
                 case.prune_query,

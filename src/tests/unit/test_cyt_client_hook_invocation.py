@@ -12,6 +12,7 @@ from cyt_client.hook_invocation import (
     CURSOR_POST_TOOL_EXAMPLES_MATCHER,
     CURSOR_POST_TOOL_MATCHER,
     cursor_pairing_hooks,
+    cyt_client_hook_command,
     is_cyt_hook_command,
     resolve_pairing_dev_context,
 )
@@ -72,7 +73,12 @@ def test_cursor_pairing_hooks_dev_mode(
         set_launch_agent=False,
     )
     client_cmd = hooks["preToolUse"][0]["command"]
-    expected = build_uv_run_dev_command(repo, "src/cyt_client/cli.py")
+    expected = cyt_client_hook_command(
+        "cursor",
+        use_dev=True,
+        dev_repo_root=repo,
+        set_launch_agent=False,
+    )
     assert client_cmd == expected
     assert hooks["postToolUse"][0]["command"] == client_cmd
     assert "get-tool-definitions" in hooks["postToolUse"][0]["matcher"]
@@ -316,7 +322,9 @@ def test_repair_pairing_home_cwd_does_not_strip_user_cyt_mcp(
     cursor_dir.mkdir()
     user_mcp = cursor_dir / "mcp.json"
     user_mcp.write_text(
-        json.dumps({"mcpServers": {"cyt-mcp": {"command": "cyt-mcp", "args": ["--agent", "cursor"]}}}),
+        json.dumps(
+            {"mcpServers": {"cyt-mcp": {"command": "cyt-mcp", "args": ["--agent", "cursor"]}}},
+        ),
         encoding="utf-8",
     )
 

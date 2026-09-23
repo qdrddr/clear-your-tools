@@ -5,12 +5,9 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 INTERRUPTED_EXIT_CODE = 130
 QUIET_STOP_EXIT_CODE = 1
-
-_T = TypeVar("_T")
 
 
 def parse_quiet_cli_flags(argv: list[str]) -> tuple[bool, Path | None]:
@@ -32,7 +29,7 @@ def parse_quiet_cli_flags(argv: list[str]) -> tuple[bool, Path | None]:
     return verbose, config_path
 
 
-def run_main(main_fn: Callable[..., _T], /, *args: object, **kwargs: object) -> _T:
+def run_main[T](main_fn: Callable[..., T], /, *args: object, **kwargs: object) -> T:
     """Run *main_fn* and exit silently on ``KeyboardInterrupt``."""
     try:
         return main_fn(*args, **kwargs)

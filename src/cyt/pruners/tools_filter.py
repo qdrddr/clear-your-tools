@@ -50,7 +50,7 @@ from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.pruners.token_stats import format_tool_token_line
 from cyt.tiers.adapters.tools import merge_t4_tools, stamp_tool_injection_tiers
 from cyt.tiers.config import tiers_active
-from cyt.tiers.manager import NoOpTierManager, TierManager, get_tier_manager
+from cyt.tiers.manager import NoOpTierManager, TierManager
 from cyt.tiers.models import ToolsTierApplyResult
 from cyt.tiers.shadow import schedule_tool_shadow_evaluation
 from cyt.tools.budget import tools_inject_allowed

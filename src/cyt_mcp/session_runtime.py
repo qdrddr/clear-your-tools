@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlparse
 from fastmcp import FastMCP
 from mcp.server.session import ServerSession
 
-from cyt_mcp.backends import ensure_backend_servers_mounted
+from cyt_mcp.backends import ensure_backend_servers_mounted, mounted_backend_server_names
 from cyt_mcp.catalog_build import hydrate_runtime_cache, refresh_catalog_cache
 from cyt_mcp.config import AggregatorConfig, load_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
@@ -69,6 +69,14 @@ def _canonical_workspace(path: Path) -> Path | None:
     return git_root or resolved
 
 
+def _resolve_fallback_workspace(fallback: Path) -> Path | None:
+    try:
+        resolved = fallback.expanduser().resolve()
+    except OSError:
+        return None
+    return resolved if resolved.is_dir() else None
+
+
 async def resolve_session_workspace_root(
     session: ServerSession,
     *,
@@ -85,17 +93,12 @@ async def resolve_session_workspace_root(
         if canonical is not None:
             return canonical
     if fallback is not None:
-        try:
-            resolved = fallback.expanduser().resolve()
-            if resolved.is_dir():
-                return resolved
-        except OSError:
-            pass
+        return await asyncio.to_thread(_resolve_fallback_workspace, fallback)
     return None
 
 
 def tool_belongs_to_runtime(tool_name: str, runtime: WorkspaceSessionRuntime) -> bool:
-    return tool_name_allowed_for_servers(tool_name, runtime.config.mcp_servers.keys())
+    return tool_name_allowed_for_servers(tool_name, list(runtime.config.mcp_servers.keys()))
 
 
 class MultiWorkspaceCoordinator:
@@ -118,6 +121,7 @@ class MultiWorkspaceCoordinator:
         self._runtimes: dict[str, WorkspaceSessionRuntime] = {}
         self._session_bindings: dict[str, str] = {}
         self._mounted_servers: set[str] = set()
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._offerings_cache = OfferingsCache()
         bootstrap_key = self._runtime_key(bootstrap.workspace_root)
         if bootstrap_key is not None:
@@ -148,16 +152,14 @@ class MultiWorkspaceCoordinator:
     def ensure_backends_mounted(self, mcp_servers: dict[str, Any]) -> list[str]:
         """Mount backend MCP proxies on first tools/call or catalog refresh."""
         degraded = ensure_backend_servers_mounted(self._server, mcp_servers)
-        self._mounted_servers = getattr(self._server, "_cyt_mcp_mounted_servers", set())
+        self._mounted_servers = mounted_backend_server_names(self._server)
         return degraded
 
     def _bootstrap_covers(self, workspace_root: Path) -> bool:
         bootstrap_key = self._runtime_key(self._bootstrap.workspace_root)
         session_key = self._runtime_key(workspace_root)
         return (
-            bootstrap_key is not None
-            and session_key is not None
-            and bootstrap_key == session_key
+            bootstrap_key is not None and session_key is not None and bootstrap_key == session_key
         )
 
     def runtime_for_session_key(self, session_key: str) -> WorkspaceSessionRuntime:
@@ -189,6 +191,81 @@ class MultiWorkspaceCoordinator:
         self._session_bindings[session_key] = binding_key
         return runtime
 
+    def _create_workspace_runtime(
+        self,
+        workspace_root: Path,
+        key: str,
+    ) -> WorkspaceSessionRuntime:
+        config = load_aggregator_config(
+            agent=self._agent,
+            aggregator_path=self._aggregator_path,
+            workspace_folder=workspace_root,
+        )
+        self.ensure_backends_mounted(config.mcp_servers)
+        cache = RuntimeToolCache()
+        config_holder = ConfigHolder(config)
+        hydrate_runtime_cache(cache, config)
+        runtime = WorkspaceSessionRuntime(
+            workspace_root=workspace_root,
+            config=config,
+            cache=cache,
+            config_holder=config_holder,
+        )
+        self._register_push_context(runtime)
+        with self._lock:
+            self._runtimes[key] = runtime
+        if not cache.snapshot():
+            self._schedule_runtime_background_refresh(cache, config, key)
+        return runtime
+
+    def _schedule_runtime_background_refresh(
+        self,
+        cache: RuntimeToolCache,
+        config: AggregatorConfig,
+        key: str,
+    ) -> None:
+        async def _background_runtime_refresh() -> None:
+            try:
+                await refresh_catalog_cache(self._server, cache, config)
+                from cyt_mcp.catalog_build import (
+                    disk_catalog_slug_for_config,
+                    offerings_runtime_key,
+                )
+
+                offerings_key = offerings_runtime_key(config)
+                if offerings_key is not None:
+
+                    async def _refresh_offerings() -> None:
+                        await self._offerings_cache.refresh_from_server(
+                            self._server,
+                            runtime_key=offerings_key,
+                            mcp_servers=config.mcp_servers,
+                            ensure_mounted=self.ensure_backends_mounted,
+                            disk_slug=disk_catalog_slug_for_config(config),
+                        )
+
+                    self._offerings_cache.schedule_refresh_once(
+                        runtime_key=offerings_key,
+                        delay_s=0.0,
+                        coro_factory=_refresh_offerings,
+                    )
+                from cyt_mcp.hook_daemon_push import _instance_key, _push_contexts
+                from cyt_mcp.tool_list_notify import notify_all_sessions_list_changed
+
+                ctx_key = _instance_key(config)
+                ctx = _push_contexts.get(ctx_key)
+                if ctx is not None and ctx.list_changed_middleware is not None:
+                    await notify_all_sessions_list_changed(ctx.list_changed_middleware)
+            except Exception as exc:
+                logger.warning("cyt-mcp workspace runtime refresh failed: %s", exc)
+
+        task = asyncio.create_task(
+            _background_runtime_refresh(),
+            name=f"cyt-mcp-runtime-refresh-{key}",
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
     async def ensure_runtime(self, workspace_root: Path) -> WorkspaceSessionRuntime:
         if self._bootstrap_covers(workspace_root):
             return self._bootstrap
@@ -202,69 +279,15 @@ class MultiWorkspaceCoordinator:
             existing = self._runtimes.get(key)
             if existing is not None:
                 return existing
-            config = load_aggregator_config(
-                agent=self._agent,
-                aggregator_path=self._aggregator_path,
-                workspace_folder=workspace_root,
-            )
-            self.ensure_backends_mounted(config.mcp_servers)
-            cache = RuntimeToolCache()
-            config_holder = ConfigHolder(config)
-            hydrate_runtime_cache(cache, config)
-            runtime = WorkspaceSessionRuntime(
-                workspace_root=workspace_root,
-                config=config,
-                cache=cache,
-                config_holder=config_holder,
-            )
-            self._register_push_context(runtime)
-            with self._lock:
-                self._runtimes[key] = runtime
-            if not cache.snapshot():
-
-                async def _background_runtime_refresh() -> None:
-                    try:
-                        await refresh_catalog_cache(self._server, cache, config)
-                        from cyt_mcp.catalog_build import (
-                            disk_catalog_slug_for_config,
-                            offerings_runtime_key,
-                        )
-
-                        offerings_key = offerings_runtime_key(config)
-                        if offerings_key is not None:
-
-                            async def _refresh_offerings() -> None:
-                                await self._offerings_cache.refresh_from_server(
-                                    self._server,
-                                    runtime_key=offerings_key,
-                                    mcp_servers=config.mcp_servers,
-                                    ensure_mounted=self.ensure_backends_mounted,
-                                    disk_slug=disk_catalog_slug_for_config(config),
-                                )
-
-                            self._offerings_cache.schedule_refresh_once(
-                                runtime_key=offerings_key,
-                                delay_s=0.0,
-                                coro_factory=_refresh_offerings,
-                            )
-                        from cyt_mcp.tool_list_notify import notify_all_sessions_list_changed
-                        from cyt_mcp.hook_daemon_push import _push_contexts, _instance_key
-
-                        ctx_key = _instance_key(config)
-                        ctx = _push_contexts.get(ctx_key)
-                        if ctx is not None and ctx.list_changed_middleware is not None:
-                            await notify_all_sessions_list_changed(ctx.list_changed_middleware)
-                    except Exception as exc:
-                        logger.warning("cyt-mcp workspace runtime refresh failed: %s", exc)
-
-                asyncio.create_task(
-                    _background_runtime_refresh(),
-                    name=f"cyt-mcp-runtime-refresh-{key}",
-                )
-            return runtime
+            return self._create_workspace_runtime(workspace_root, key)
 
     def _register_push_context(self, runtime: WorkspaceSessionRuntime) -> None:
-        from cyt_mcp.hook_daemon_push import PushContext, _instance_key, _push_contexts, register_push_context
+        from cyt_mcp.hook_daemon_push import (
+            PushContext,
+            _instance_key,
+            _push_contexts,
+            register_push_context,
+        )
 
         key = _instance_key(runtime.config_holder.config)
         existing = _push_contexts.get(key)

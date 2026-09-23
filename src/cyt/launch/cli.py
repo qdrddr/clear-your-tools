@@ -500,7 +500,8 @@ def _run_cursor_launch_session(
         runtime.config = config
 
     _warm_launch_tool_catalogs(config, agent="cursor")
-    os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
+    hook_cwd = str(Path.cwd())
+    os.environ["CYT_HOOK_CWD"] = hook_cwd
 
     os.environ.update(launch_agent_env("cursor"))
     _ensure_hook_server(runtime=runtime, agent="cursor")
@@ -543,7 +544,7 @@ def _run_launch_session(
 
     config = _apply_interactive_launch_config(runtime, agent=agent)
     _warm_launch_tool_catalogs(config, agent=agent)
-    os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
+    os.environ["CYT_HOOK_CWD"] = str(Path.cwd())
 
     inject_via_hook = not launch_needs_proxy(config, agent)
     _validate_launch_proxy_flags(

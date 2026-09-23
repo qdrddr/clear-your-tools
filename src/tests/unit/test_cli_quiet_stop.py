@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,11 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
-os.environ.setdefault("CYT_NO_AUTO_BOOTSTRAP", "1")
-
+import cyt.hook.daemon as hook_daemon_mod
+import tests.support.bootstrap_env  # noqa: F401
 from cyt.cli.exit import QUIET_STOP_EXIT_CODE, parse_quiet_cli_flags, run_quiet_stop
 from cyt.cli.router import main as router_main
-import cyt.hook.daemon as hook_daemon_mod
 
 REPO = Path(__file__).resolve().parents[3]
 PROXY_SHIM = REPO / "src" / "cyt" / "proxy" / "cli.py"

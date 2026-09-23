@@ -116,7 +116,10 @@ def test_resolve_tier_project_uses_cursor_label_when_cwd_is_cyt_repo(
 
     monkeypatch.chdir(cyt_repo)
     monkeypatch.setenv("CURSOR_WORKSPACE_LABEL", "tra")
-    monkeypatch.setattr("cyt.hook.workspace_resolution.cyt_package_git_root", lambda: cyt_repo.resolve())
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
     monkeypatch.setattr(
         "cyt.config.load_config",
         lambda *args, **kwargs: {"tools": {"tiers": {"database": {"path": str(db_path)}}}},
@@ -138,7 +141,10 @@ def test_resolve_tier_project_prefers_terminal_env_over_shell_workspace(
     monkeypatch.chdir(cyt_repo)
     monkeypatch.setenv("CYT_SHELL_WORKSPACE", str(tra_repo))
     monkeypatch.setenv("CYT_WORKSPACE", str(tra_repo))
-    monkeypatch.setattr("cyt.hook.workspace_resolution.cyt_package_git_root", lambda: cyt_repo.resolve())
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
 
     assert resolve_tier_project() == tra_repo.resolve()
 
@@ -155,7 +161,10 @@ def test_resolve_tier_project_prefers_cyt_workspace_env_over_cyt_repo_cwd(
 
     monkeypatch.chdir(cyt_repo)
     monkeypatch.setenv("CYT_WORKSPACE", str(tra_repo))
-    monkeypatch.setattr("cyt.hook.workspace_resolution.cyt_package_git_root", lambda: cyt_repo.resolve())
+    monkeypatch.setattr(
+        "cyt.hook.workspace_resolution.cyt_package_git_root",
+        lambda: cyt_repo.resolve(),
+    )
 
     assert resolve_tier_project() == tra_repo.resolve()
 

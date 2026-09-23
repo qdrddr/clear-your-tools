@@ -8,9 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from cyt_client.hook_executable import resolve_hook_executable
-from cyt_client.hook_invocation import cyt_mcp_dev_wrapper_path
-
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
@@ -18,7 +15,8 @@ from cyt.hook.cli_invocation import (
     cyt_mcp_mcp_server_entry,
 )
 from cyt.tools import cyt_mcp_setup
-from cyt_client.hook_executable import repo_root_from_uv_run_hook_command
+from cyt_client.hook_executable import repo_root_from_uv_run_hook_command, resolve_hook_executable
+from cyt_client.hook_invocation import cyt_mcp_dev_wrapper_path
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
     CYT_MCP_USER_SERVER_KEY,

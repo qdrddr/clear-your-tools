@@ -168,12 +168,16 @@ def then_disk_names(gherkin_context: GherkinContext) -> None:
 
 @then("a cold hydrate should load tools into memory")
 def then_cold_hydrate(gherkin_context: GherkinContext) -> None:
-    from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache, load_cyt_mcp_catalog_from_disk
+    from cyt.cyt_mcp.catalog import (
+        _catalog_lock,
+        _catalog_states,
+        get_cyt_mcp_catalog,
+        load_cyt_mcp_catalog_from_disk,
+    )
 
-    clear_cyt_mcp_catalog_cache()
+    with _catalog_lock:
+        _catalog_states.clear()
     assert load_cyt_mcp_catalog_from_disk(gherkin_context.payload["config"]) is True
-    from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog
-
     tools = get_cyt_mcp_catalog(gherkin_context.payload["config"], blocking=False)
     assert tools is not None
     assert tools[0]["name"] == "filesystem_read_file"

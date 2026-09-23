@@ -156,46 +156,28 @@ def _maybe_warn_ambiguous_cyt_repo_resolution(
     )
 
 
-def run_tiers_status(args: argparse.Namespace) -> int:
-    config = load_config()
+def _resolve_tiers_status_project(args: argparse.Namespace) -> tuple[Path | None, str | None]:
     try:
         project_root = resolve_tier_project(workspace=args.workspace)
     except Exception as exc:
         from cyt.hook.workspace_resolution import WorkspaceResolutionConflictError
 
         if isinstance(exc, WorkspaceResolutionConflictError):
-            return _status_error(str(exc), json_output=bool(args.json))
+            return None, str(exc)
         raise
     if project_root is None:
-        return _status_error(
-            "no project resolved (need a workspace with git root or workspace markers)",
-            json_output=bool(args.json),
-        )
-    _maybe_warn_ambiguous_cyt_repo_resolution(
-        project_root=project_root,
-        explicit_workspace=getattr(args, "workspace", None),
-        json_output=bool(args.json),
-    )
-    try:
-        status_agent = resolve_tier_status_agent(
-            config,
-            workspace_root=project_root,
-            explicit=getattr(args, "agent", None),
-        )
-    except ValueError as exc:
-        return _status_error(str(exc), json_output=bool(args.json))
+        return None, ("no project resolved (need a workspace with git root or workspace markers)")
+    return project_root, None
 
-    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
 
-    config, _workspace = resolve_hook_request_config(
-        {"workspace_root": str(project_root)},
-        status_agent,
-        base_config=config,
-    )
-    config = set_hook_workspace_in_config(config, project_root)
-
+def _validate_tiers_status_filters(
+    args: argparse.Namespace,
+    *,
+    project_root: Path,
+    config: dict,
+    status_agent: str,
+) -> tuple[StatusFilters | None, Path | None, str | None]:
     from cyt.tiers.status_detail import validate_status_path_filter
-    from cyt.tiers.status_overview import build_status_overview
     from cyt.tiers.status_view import resolve_status_path_filter
 
     path_root, path_display, path_error = resolve_status_path_filter(
@@ -203,7 +185,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
         project_root,
     )
     if path_error:
-        return _status_error(path_error, json_output=bool(args.json))
+        return None, None, path_error
 
     filters = StatusFilters.from_args(
         args,
@@ -218,15 +200,22 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             agent=status_agent,
         )
         if path_scope_error:
-            return _status_error(path_scope_error, json_output=bool(args.json))
+            return None, None, path_scope_error
 
     if getattr(args, "tier", None) and filters.tier is None:
-        return _status_error(
-            f"invalid --tier value: {args.tier!r} (expected T0-T4, t0-t4, or 0-4)",
-            json_output=bool(args.json),
-        )
+        return None, None, (f"invalid --tier value: {args.tier!r} (expected T0-T4, t0-t4, or 0-4)")
+    return filters, path_root, None
 
+
+def _build_tiers_status_payload(
+    *,
+    config: dict,
+    project_root: Path,
+    status_agent: str,
+    path_root: Path | None,
+) -> dict:
     from cyt.tiers.maintenance import maybe_run_tier_maintenance_on_stats_query
+    from cyt.tiers.status_overview import build_status_overview
 
     maybe_run_tier_maintenance_on_stats_query(config)
 
@@ -257,6 +246,55 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             manager=manager,
             wake_cycle_id=int(status.get("wake_cycle_id") or 0),
         )
+    return status_payload
+
+
+def run_tiers_status(args: argparse.Namespace) -> int:
+    config = load_config()
+    project_root, project_error = _resolve_tiers_status_project(args)
+    if project_error is not None:
+        return _status_error(project_error, json_output=bool(args.json))
+    assert project_root is not None
+
+    _maybe_warn_ambiguous_cyt_repo_resolution(
+        project_root=project_root,
+        explicit_workspace=getattr(args, "workspace", None),
+        json_output=bool(args.json),
+    )
+    try:
+        status_agent = resolve_tier_status_agent(
+            config,
+            workspace_root=project_root,
+            explicit=getattr(args, "agent", None),
+        )
+    except ValueError as exc:
+        return _status_error(str(exc), json_output=bool(args.json))
+
+    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+
+    config, _workspace = resolve_hook_request_config(
+        {"workspace_root": str(project_root)},
+        status_agent,
+        base_config=config,
+    )
+    config = set_hook_workspace_in_config(config, project_root)
+
+    filters, path_root, filter_error = _validate_tiers_status_filters(
+        args,
+        project_root=project_root,
+        config=config,
+        status_agent=status_agent,
+    )
+    if filter_error is not None:
+        return _status_error(filter_error, json_output=bool(args.json))
+    assert filters is not None
+
+    status_payload = _build_tiers_status_payload(
+        config=config,
+        project_root=project_root,
+        status_agent=status_agent,
+        path_root=path_root,
+    )
 
     payload = apply_status_view(status_payload, filters)
     if args.json:
@@ -297,8 +335,7 @@ def run_tiers_projects(args: argparse.Namespace) -> int:
     print(f"projects: {len(projects)}")
     for row in projects:
         print(
-            f"  [{row['project_id']}] {row['root_path']}  "
-            f"last_seen_ms={row['last_seen_ms']}",
+            f"  [{row['project_id']}] {row['root_path']}  last_seen_ms={row['last_seen_ms']}",
         )
     return 0
 

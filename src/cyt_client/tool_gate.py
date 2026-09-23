@@ -138,27 +138,40 @@ def _normalize_mcp_double_underscore_name(name: str) -> str | None:
     return None
 
 
+def _strip_cyt_mcp_user_prefix(name: str) -> str:
+    for prefix in ("user-cyt-mcp-", "user_cyt_mcp_"):
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return name
+
+
+def _normalize_mcp_underscore_tool_name(name: str, *, agent: str | None) -> str | None:
+    if not name.startswith("mcp__"):
+        return None
+    normalized = _normalize_mcp_double_underscore_name(name)
+    if normalized is not None:
+        for server_name in _CYT_MCP_SERVER_NAMES:
+            prefix = f"{server_name}_"
+            if normalized.startswith(prefix) and normalized.endswith("_get-tool-definitions"):
+                return _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL
+        return normalized
+    if agent == "codex" and name.count("__") >= 2:
+        _, server, tool = name.split("__", 2)
+        if server and tool:
+            return f"{server}_{tool}"
+    return None
+
+
 def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
     name = str(raw_name or "").strip()
     if not name:
         return ""
-    for prefix in ("user-cyt-mcp-", "user_cyt_mcp_"):
-        if name.startswith(prefix):
-            return name[len(prefix) :]
+    name = _strip_cyt_mcp_user_prefix(name)
     if name.upper().startswith("MCP:"):
         name = name[4:].strip()
-    if name.startswith("mcp__"):
-        normalized = _normalize_mcp_double_underscore_name(name)
-        if normalized is not None:
-            for server_name in _CYT_MCP_SERVER_NAMES:
-                prefix = f"{server_name}_"
-                if normalized.startswith(prefix) and normalized.endswith("_get-tool-definitions"):
-                    return _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL
-            return normalized
-    if agent == "codex" and name.count("__") >= 2 and name.startswith("mcp__"):
-        _, server, tool = name.split("__", 2)
-        if server and tool:
-            return f"{server}_{tool}"
+    underscore_name = _normalize_mcp_underscore_tool_name(name, agent=agent)
+    if underscore_name is not None:
+        return underscore_name
     if name == "get-tool-definitions":
         return _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL
     return name

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastmcp import FastMCP
-
-from pathlib import Path
 
 from cyt_mcp.config import frontend_server_name_for_scope
 from cyt_mcp.config_holder import ConfigHolder

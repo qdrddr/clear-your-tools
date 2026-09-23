@@ -12,10 +12,10 @@ from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
-    prefix_agent_hook_command,
     cyt_client_cli_script_relpath,
     cyt_daemon_start_command,
     cyt_mcp_cli_script_relpath,
+    prefix_agent_hook_command,
     repo_root_from_proxy_cli_script,
 )
 from cyt.tools import cyt_mcp_setup
@@ -109,7 +109,9 @@ def then_mcp_entry_uses_uv(gherkin_context: GherkinContext) -> None:
         aggregator_config=aggregator_config,
     )
     assert entry == expected
-    assert entry["command"] == "uv"
+    from cyt_client.hook_executable import is_uv_hook_command
+
+    assert is_uv_hook_command(entry["command"])
     assert entry["args"][0:3] == ["run", "--directory", str(repo_root)]
     assert entry["args"][3] == cyt_mcp_cli_script_relpath()
 

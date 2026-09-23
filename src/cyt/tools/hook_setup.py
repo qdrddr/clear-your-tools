@@ -164,6 +164,123 @@ def _tools_from_overlay_value(sources: tuple[str, ...], *, fallback: str) -> lis
     return [fallback]
 
 
+def _prompt_cyt_mcp_hook_overlay(
+    *,
+    agent: str | None,
+    install_scope: CytInstallScope | None,
+) -> dict[str, Any] | None:
+    from cyt.hook.cli_invocation import detect_hook_cli_invocation
+    from cyt.tools.cyt_mcp_setup import (
+        cyt_mcp_hook_settings_overlay,
+        has_migratable_mcp_backends,
+        prompt_cyt_mcp_transport,
+        setup_cyt_mcp_for_agent,
+        write_agent_cyt_mcp_entry,
+    )
+
+    launch_agent = (
+        (agent or "").strip() or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
+    )
+    invocation = detect_hook_cli_invocation()
+    scope = install_scope or CytInstallScope.from_cwd()
+    if not invocation.is_dev and not has_migratable_mcp_backends(launch_agent, scope):
+        print(
+            "No MCP backend servers found; skipping cyt-mcp injection.",
+            file=sys.stderr,
+        )
+        return None
+
+    transport = prompt_cyt_mcp_transport()
+    cyt_mcp_overlay = cyt_mcp_hook_settings_overlay(
+        transport=transport,
+        agent=launch_agent,
+    )
+    if invocation.is_dev and invocation.repo_root is not None:
+        print(
+            f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
+            file=sys.stderr,
+        )
+        write_agent_cyt_mcp_entry(
+            launch_agent,
+            invocation=invocation,
+            transport=transport,
+        )
+    print(f"\n--- Migrate ({launch_agent}) user-global MCP config ---")
+    migrate_user = _prompt_yes_no(
+        "Migrate user-global MCP backends and install cyt-mcp-usr?",
+        default_yes=True,
+    )
+    migrate_workspace = False
+    if scope.has_workspace:
+        print(f"\n--- Migrate ({launch_agent}) workspace MCP config ---")
+        migrate_workspace = _prompt_yes_no(
+            "Migrate project MCP backends and install cyt-mcp-ws?",
+            default_yes=True,
+        )
+    if migrate_user or migrate_workspace:
+        setup_cyt_mcp_for_agent(
+            launch_agent,
+            invocation=invocation,
+            transport=transport,
+            verify_only=False,
+            scope=scope,
+            configure_user=migrate_user,
+            configure_workspace=migrate_workspace,
+            migrate_user_backends=migrate_user,
+            migrate_workspace_backends=migrate_workspace,
+            require_user_backends=False,
+            require_workspace_backends=False,
+        )
+    elif not (invocation.is_dev and invocation.repo_root is not None):
+        write_agent_cyt_mcp_entry(
+            launch_agent,
+            invocation=invocation,
+            transport=transport,
+        )
+    return cyt_mcp_overlay
+
+
+def _prompt_hook_inject_tools_config(
+    existing: dict[str, Any],
+    *,
+    from_default: str,
+    executor_default: str,
+    definitions_default: str,
+    cloudflare_default: str,
+    agent: str | None,
+    install_scope: CytInstallScope | None,
+) -> dict[str, Any]:
+    print(
+        "Configure tool catalog sources "
+        "(comma-separated: cyt_mcp, mcpc, cloudflare, executor, definitions).",
+    )
+    raw_sources = _prompt(
+        "Tool catalog sources",
+        ",".join(tools_hook_sources(existing) or [from_default]),
+    )
+    selected = _parse_selected_hook_sources(raw_sources, from_default)
+    cyt_mcp_overlay: dict[str, Any] | None = None
+    if "cyt_mcp" in selected:
+        cyt_mcp_overlay = _prompt_cyt_mcp_hook_overlay(
+            agent=agent,
+            install_scope=install_scope,
+        )
+    tools_from = selected
+    executor_default, definitions_default, cloudflare_default = _prompt_hook_source_paths(
+        selected,
+        executor_default=executor_default,
+        definitions_default=definitions_default,
+        cloudflare_default=cloudflare_default,
+    )
+    return build_tools_hook_config_overlay(
+        tools_from=tools_from,
+        executor_url=executor_default,
+        mcp_definitions_file=definitions_default,
+        cloudflare_url=cloudflare_default,
+        cyt_mcp=cyt_mcp_overlay,
+    )
+
+
 def prompt_tools_hook_config(
     existing: dict[str, Any],
     *,
@@ -207,97 +324,14 @@ def prompt_tools_hook_config(
     cloudflare_default = str(hook.get("cloudflare_url") or tools_hook_cloudflare_url(load_config()))
 
     if active_inject == "hook":
-        print(
-            "Configure tool catalog sources "
-            "(comma-separated: cyt_mcp, mcpc, cloudflare, executor, definitions).",
-        )
-        raw_sources = _prompt(
-            "Tool catalog sources",
-            ",".join(tools_hook_sources(existing) or [from_default]),
-        )
-        selected = _parse_selected_hook_sources(raw_sources, from_default)
-        cyt_mcp_overlay: dict[str, Any] | None = None
-        if "cyt_mcp" in selected:
-            from cyt.hook.cli_invocation import detect_hook_cli_invocation
-            from cyt.tools.cyt_mcp_setup import (
-                cyt_mcp_hook_settings_overlay,
-                has_migratable_mcp_backends,
-                prompt_cyt_mcp_transport,
-                setup_cyt_mcp_for_agent,
-                write_agent_cyt_mcp_entry,
-            )
-
-            launch_agent = (
-                (agent or "").strip() or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
-            )
-            invocation = detect_hook_cli_invocation()
-            scope = install_scope or CytInstallScope.from_cwd()
-            if not invocation.is_dev and not has_migratable_mcp_backends(launch_agent, scope):
-                print(
-                    "No MCP backend servers found; skipping cyt-mcp injection.",
-                    file=sys.stderr,
-                )
-            else:
-                transport = prompt_cyt_mcp_transport()
-                cyt_mcp_overlay = cyt_mcp_hook_settings_overlay(
-                    transport=transport,
-                    agent=launch_agent,
-                )
-                if invocation.is_dev and invocation.repo_root is not None:
-                    print(
-                        f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
-                        file=sys.stderr,
-                    )
-                    write_agent_cyt_mcp_entry(
-                        launch_agent,
-                        invocation=invocation,
-                        transport=transport,
-                    )
-                print(f"\n--- Migrate ({launch_agent}) user-global MCP config ---")
-                migrate_user = _prompt_yes_no(
-                    "Migrate user-global MCP backends and install cyt-mcp-usr?",
-                    default_yes=True,
-                )
-                migrate_workspace = False
-                if scope.has_workspace:
-                    print(f"\n--- Migrate ({launch_agent}) workspace MCP config ---")
-                    migrate_workspace = _prompt_yes_no(
-                        "Migrate project MCP backends and install cyt-mcp-ws?",
-                        default_yes=True,
-                    )
-                if migrate_user or migrate_workspace:
-                    setup_cyt_mcp_for_agent(
-                        launch_agent,
-                        invocation=invocation,
-                        transport=transport,
-                        verify_only=False,
-                        scope=scope,
-                        configure_user=migrate_user,
-                        configure_workspace=migrate_workspace,
-                        migrate_user_backends=migrate_user,
-                        migrate_workspace_backends=migrate_workspace,
-                        require_user_backends=False,
-                        require_workspace_backends=False,
-                    )
-                elif not (invocation.is_dev and invocation.repo_root is not None):
-                    write_agent_cyt_mcp_entry(
-                        launch_agent,
-                        invocation=invocation,
-                        transport=transport,
-                    )
-        tools_from = selected
-        executor_default, definitions_default, cloudflare_default = _prompt_hook_source_paths(
-            selected,
+        return _prompt_hook_inject_tools_config(
+            existing,
+            from_default=from_default,
             executor_default=executor_default,
             definitions_default=definitions_default,
             cloudflare_default=cloudflare_default,
-        )
-        return build_tools_hook_config_overlay(
-            tools_from=tools_from,
-            executor_url=executor_default,
-            mcp_definitions_file=definitions_default,
-            cloudflare_url=cloudflare_default,
-            cyt_mcp=cyt_mcp_overlay,
+            agent=agent,
+            install_scope=install_scope,
         )
 
     tools_from = _tools_from_overlay_value(existing_sources, fallback=from_default)

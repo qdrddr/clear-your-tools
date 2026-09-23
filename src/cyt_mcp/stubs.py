@@ -13,12 +13,12 @@ from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
 from cyt_mcp.session_context import get_current_session_runtime, is_session_scoping_active
-from cyt_mcp.tool_identity import tool_name_allowed_for_servers
 from cyt_mcp.stub_catalog import (
     RetainSpec,
     retain_includes_required_names,
     retain_includes_tool_field,
 )
+from cyt_mcp.tool_identity import tool_name_allowed_for_servers
 
 _MINIMAL_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
@@ -115,18 +115,27 @@ class StubListTransform(Transform):
             return config_holder.mcp_deny
         return self._deny_entries
 
-    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        active_cache, config_holder = self._active_runtime()
-        server_keys: list[str] = []
-        if is_session_scoping_active() and config_holder is not None:
-            server_keys = sorted(config_holder.config.mcp_servers.keys(), key=len, reverse=True)
+    def _build_tool_stubs(
+        self,
+        tools: Sequence[Tool],
+        *,
+        active_cache: RuntimeToolCache,
+        server_keys: list[str],
+        deny_entries: tuple[str, ...] | list[str],
+        apply_server_filter: bool,
+    ) -> list[Tool]:
         stubs: list[Tool] = []
-        deny_entries = self._current_deny_entries()
-        input_count = len(tools)
         for tool in tools:
             mcp_tool = tool.to_mcp_tool()
             name = str(mcp_tool.name)
-            if server_keys and not tool_name_allowed_for_servers(name, server_keys):
+            if (
+                apply_server_filter
+                and server_keys
+                and not tool_name_allowed_for_servers(
+                    name,
+                    server_keys,
+                )
+            ):
                 continue
             if deny_entries and name != MCP_WIRE_SEARCH_TOOL_NAME:
                 from cyt.permissions.match import is_catalog_tool_denied
@@ -140,26 +149,32 @@ class StubListTransform(Transform):
                 continue
             stub = _stub_from_tool(tool, retain=self._retain)
             stubs.append(stub.model_copy(update={"output_schema": None}))
-        if not stubs and input_count > 0 and is_session_scoping_active():
-            # Mis-scoped filter (e.g. shared process, wrong CYT_WORKSPACE) — prefer
-            # showing tools over returning an empty list to Cursor.
-            stubs = []
-            deny_entries = self._current_deny_entries()
-            for tool in tools:
-                mcp_tool = tool.to_mcp_tool()
-                name = str(mcp_tool.name)
-                if deny_entries and name != MCP_WIRE_SEARCH_TOOL_NAME:
-                    from cyt.permissions.match import is_catalog_tool_denied
+        return stubs
 
-                    if is_catalog_tool_denied(name, deny_entries):
-                        continue
-                if name == MCP_WIRE_SEARCH_TOOL_NAME:
-                    refreshed = active_cache.search_tool()
-                    search_stub = (refreshed or tool).model_copy(update={"output_schema": None})
-                    stubs.append(search_stub)
-                    continue
-                stub = _stub_from_tool(tool, retain=self._retain)
-                stubs.append(stub.model_copy(update={"output_schema": None}))
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        active_cache, config_holder = self._active_runtime()
+        server_keys: list[str] = []
+        if is_session_scoping_active() and config_holder is not None:
+            server_keys = sorted(config_holder.config.mcp_servers.keys(), key=len, reverse=True)
+        deny_entries = self._current_deny_entries()
+        input_count = len(tools)
+        stubs = self._build_tool_stubs(
+            tools,
+            active_cache=active_cache,
+            server_keys=server_keys,
+            deny_entries=deny_entries,
+            apply_server_filter=True,
+        )
+        if not stubs and input_count > 0 and is_session_scoping_active():
+            # Out-of-scope filter (e.g. shared process, wrong CYT_WORKSPACE) — prefer
+            # showing tools over returning an empty list to Cursor.
+            stubs = self._build_tool_stubs(
+                tools,
+                active_cache=active_cache,
+                server_keys=server_keys,
+                deny_entries=self._current_deny_entries(),
+                apply_server_filter=False,
+            )
         return stubs
 
 

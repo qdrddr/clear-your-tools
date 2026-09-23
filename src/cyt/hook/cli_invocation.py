@@ -53,10 +53,10 @@ __all__ = [
     "INSTALLED_CYT_DAEMON_START_COMMAND_BASE",
     "INSTALLED_CYT_MCP_COMMAND",
     "HookCliInvocation",
+    "agent_hook_command_env",
     "build_installed_cyt_client_command",
     "build_installed_cyt_daemon_restart_command",
     "build_installed_cyt_daemon_start_command",
-    "agent_hook_command_env",
     "build_uv_run_dev_command",
     "cursor_hooks_dir",
     "cyt_cli_script_path",
@@ -69,9 +69,9 @@ __all__ = [
     "cyt_mcp_mcp_server_entry",
     "detect_cyt_mcp_cli_invocation",
     "detect_hook_cli_invocation",
-    "prefix_agent_hook_command",
     "invoked_via_cyt_cli_script",
     "is_uv_run_dev_hook_command",
+    "prefix_agent_hook_command",
     "proxy_cli_script_path",
     "repo_root_from_cyt_cli_script",
     "repo_root_from_proxy_cli_script",
@@ -237,14 +237,14 @@ def prefix_command_env(env: dict[str, str], command: str) -> str:
             return command
         parts: list[str] = []
         for key, value in env.items():
-            if any(char in value for char in (' ', '"', "&", "|", "<", ">", "^")):
+            if any(char in value for char in (" ", '"', "&", "|", "<", ">", "^")):
                 escaped = value.replace('"', '""')
                 parts.append(f'set "{key}={escaped}"')
             else:
                 parts.append(f"set {key}={value}")
         if command.lower().endswith(".cmd"):
             tail = f'call "{command}"'
-        elif any(char in command for char in (' ', "&", "|", "<", ">")):
+        elif any(char in command for char in (" ", "&", "|", "<", ">")):
             tail = f'"{command}"'
         else:
             tail = command
@@ -287,8 +287,7 @@ def _windows_wrapper_env_lines(env: dict[str, str]) -> list[str]:
         if value == _WORKSPACE_FOLDER_TEMPLATE and key == CYT_WORKSPACE_ENV:
             for agent_var in _AGENT_WORKSPACE_ENV_VARS:
                 lines.append(
-                    f'if not defined {key} if defined {agent_var} '
-                    f'set "{key}=!{agent_var}!"',
+                    f'if not defined {key} if defined {agent_var} set "{key}=!{agent_var}!"',
                 )
             continue
         escaped = value.replace("%", "%%")
