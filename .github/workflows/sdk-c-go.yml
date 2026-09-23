@@ -89,6 +89,11 @@ jobs:
         shell: bash
         run: bash sdk/c/scripts/build-c-lib.sh --target ${{ matrix.target }}
 
+      - name: Verify Mach-O LINKEDIT alignment (macOS 27+)
+        if: contains(matrix.target, 'apple-darwin')
+        shell: bash
+        run: bash scripts/ci/verify-mach-o-linkedit.sh "target/${{ matrix.target }}/release/libcyt_indexer.dylib"
+
       - name: Rust FFI tests
         shell: bash
         run: |

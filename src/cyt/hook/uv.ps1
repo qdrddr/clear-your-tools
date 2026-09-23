@@ -297,5 +297,3 @@ if ($terminalWorkspace -and -not ($terminalWorkspace -match '^\$\{.+}$')) {
 
 
 Invoke-CytViaUv -CytArgs $Args
-
-

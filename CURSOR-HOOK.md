@@ -65,7 +65,7 @@ cyt hook cursor
 The wizard migrates backend MCP servers into two layers:
 
 | Layer | Backend defs | MCP frontend key | Agent MCP file |
-|-------|----------------|------------------|----------------|
+| --- | --- | --- | --- |
 | User-global | `~/.config/cyt/mcp/<agent>.json` | `cyt-mcp-usr` | `~/.cursor/mcp.json` |
 | Project | `.agents/cyt/config/mcp/<agent>.json` | `cyt-mcp-ws` | `.cursor/mcp.json` |
 

@@ -141,6 +141,30 @@ jobs:
         with:
           package-dir: sdk/python
 
+      - name: Verify Mach-O LINKEDIT alignment (macOS 27+)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(wheelhouse/*.whl)
+          if ((${#wheels[@]} == 0)); then
+            echo "::error::no wheels found in wheelhouse/"
+            exit 1
+          fi
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "${tmp_dir}"' EXIT
+          for wheel in "${wheels[@]}"; do
+            rm -rf "${tmp_dir:?}"/*
+            unzip -q "${wheel}" -d "${tmp_dir}"
+            mapfile -t natives < <(find "${tmp_dir}" -path '*/cyt_indexer/_native*.so' -type f)
+            if ((${#natives[@]} == 0)); then
+              echo "::error::no cyt_indexer native extension in ${wheel}"
+              exit 1
+            fi
+            bash scripts/ci/verify-mach-o-linkedit.sh "${natives[@]}"
+          done
+
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:

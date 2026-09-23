@@ -169,6 +169,11 @@ jobs:
           ls -la "${archive}"
           ls -la "${pkg_dir}/"
 
+      - name: Verify Mach-O LINKEDIT alignment (macOS 27+)
+        if: contains(matrix.target, 'apple-darwin')
+        shell: bash
+        run: bash scripts/ci/verify-mach-o-linkedit.sh "artifacts/cyt-indexer-ffi-${{ matrix.target }}/libcyt_indexer.dylib"
+
       - name: Upload triplet archive
         uses: actions/upload-artifact@v7
         with:

@@ -1,4 +1,4 @@
-# Dev checkout convenience wrapper — canonical script ships in src/cyt/hook/.
+# Dev checkout convenience wrapper - canonical script ships in src/cyt/hook/.
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Args

@@ -213,6 +213,19 @@ jobs:
           cp "${files[@]}" "artifacts/bindings-${{ matrix.target }}/"
           ls -la "artifacts/bindings-${{ matrix.target }}/"
 
+      - name: Verify Mach-O LINKEDIT alignment (macOS 27+)
+        if: contains(matrix.target, 'apple-darwin')
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(artifacts/bindings-${{ matrix.target }}/cyt-indexer-sdk.*.node)
+          if ((${#files[@]} == 0)); then
+            echo "::error::no .node binding found for ${{ matrix.target }}"
+            exit 1
+          fi
+          bash scripts/ci/verify-mach-o-linkedit.sh "${files[@]}"
+
       - name: Upload native binding
         uses: actions/upload-artifact@v7
         with:
