@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
+import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
@@ -38,6 +40,16 @@ _WINDOWS_WRAPPER_NAMES = (
     WINDOWS_CLIENT_DEV_WRAPPER,
     WINDOWS_DAEMON_START_WRAPPER,
     WINDOWS_DAEMON_START_DEV_WRAPPER,
+)
+UNIX_CLIENT_WRAPPER = "cyt-client.sh"
+UNIX_CLIENT_DEV_WRAPPER = "cyt-client-dev.sh"
+UNIX_DAEMON_START_WRAPPER = "cyt-hook-daemon-start.sh"
+UNIX_DAEMON_START_DEV_WRAPPER = "cyt-hook-daemon-start-dev.sh"
+_UNIX_WRAPPER_NAMES = (
+    UNIX_CLIENT_WRAPPER,
+    UNIX_CLIENT_DEV_WRAPPER,
+    UNIX_DAEMON_START_WRAPPER,
+    UNIX_DAEMON_START_DEV_WRAPPER,
 )
 
 __all__ = [
@@ -75,7 +87,10 @@ __all__ = [
     "proxy_cli_script_path",
     "repo_root_from_cyt_cli_script",
     "repo_root_from_proxy_cli_script",
+    "install_hook_shell_wrappers",
+    "is_hook_shell_wrapper_command",
     "resolve_hook_executable",
+    "use_hook_shell_wrappers",
     "use_windows_hook_wrappers",
 ]
 
@@ -90,10 +105,15 @@ class HookCliInvocation:
         return self.mode == "dev"
 
 
-def use_windows_hook_wrappers(*, invocation: HookCliInvocation | None = None) -> bool:
-    """Use ``.cmd`` wrappers on Windows so hooks resolve absolute executable paths."""
+def use_hook_shell_wrappers(*, invocation: HookCliInvocation | None = None) -> bool:
+    """Use shell wrapper scripts so Cursor hooks work under fish and resolve workspace env."""
     _ = invocation
-    return is_windows()
+    return True
+
+
+def use_windows_hook_wrappers(*, invocation: HookCliInvocation | None = None) -> bool:
+    """Backward-compatible alias for :func:`use_hook_shell_wrappers`."""
+    return use_hook_shell_wrappers(invocation=invocation)
 
 
 def cursor_hooks_dir() -> Path:
@@ -249,6 +269,8 @@ def prefix_command_env(env: dict[str, str], command: str) -> str:
         else:
             tail = command
         return "cmd /c " + " && ".join([*parts, tail])
+    if is_hook_shell_wrapper_command(command):
+        return command
     prefix = " ".join(f"{key}={value}" for key, value in env.items())
     return f"{prefix} {command}"
 
@@ -307,6 +329,100 @@ def _write_windows_wrapper(
         lines.extend(_windows_wrapper_env_lines(env))
     lines.append(inner_command)
     path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+
+
+def _unix_wrapper_env_lines(env: dict[str, str]) -> list[str]:
+    """Emit bash export lines for Unix hook wrapper scripts."""
+    from cyt.hook.workspace_resolution import CYT_WORKSPACE_ENV
+
+    lines: list[str] = []
+    for key, value in env.items():
+        if value == _WORKSPACE_FOLDER_TEMPLATE and key == CYT_WORKSPACE_ENV:
+            continue
+        lines.append(f"export {key}={shlex.quote(value)}")
+    return lines
+
+
+def _write_unix_wrapper(
+    path: Path,
+    inner_command: str,
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
+    """Write a bash wrapper so Cursor hooks avoid fish-incompatible inline env prefixes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    agent_vars = " ".join(_AGENT_WORKSPACE_ENV_VARS)
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "# CYT Cursor hook wrapper (fish-safe; workspace resolved inside bash)",
+        "_resolve_cyt_workspace() {",
+        '  if [[ -n "${CYT_WORKSPACE:-}" && "${CYT_WORKSPACE}" != \'${workspaceFolder}\' ]]; then',
+        "    return 0",
+        "  fi",
+        "  local var",
+        f"  for var in {agent_vars}; do",
+        '    if [[ -n "${!var:-}" ]]; then',
+        '      export CYT_WORKSPACE="${!var}"',
+        "      return 0",
+        "    fi",
+        "  done",
+        "}",
+        "_resolve_cyt_workspace",
+    ]
+    if env:
+        lines.extend(_unix_wrapper_env_lines(env))
+    lines.append(inner_command)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def install_unix_hook_wrappers(
+    *,
+    invocation: HookCliInvocation | None = None,
+    hook_env: dict[str, str] | None = None,
+) -> dict[str, Path]:
+    """Write Cursor hook wrapper ``.sh`` scripts and return name → path mapping."""
+    invocation = invocation or detect_hook_cli_invocation()
+    hooks_dir = cursor_hooks_dir()
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    client_inner = _inline_cyt_client_command(invocation=invocation)
+    daemon_inner = _inline_cyt_daemon_start_command(invocation=invocation)
+    wrapper_env = dict(hook_env or agent_hook_command_env())
+
+    client_name = UNIX_CLIENT_DEV_WRAPPER if invocation.is_dev else UNIX_CLIENT_WRAPPER
+    daemon_name = (
+        UNIX_DAEMON_START_DEV_WRAPPER if invocation.is_dev else UNIX_DAEMON_START_WRAPPER
+    )
+
+    client_path = hooks_dir / client_name
+    daemon_path = hooks_dir / daemon_name
+    _write_unix_wrapper(client_path, client_inner, env=wrapper_env)
+    _write_unix_wrapper(daemon_path, daemon_inner, env=wrapper_env)
+
+    for stale_name in _UNIX_WRAPPER_NAMES:
+        if stale_name in {client_name, daemon_name}:
+            continue
+        stale_path = hooks_dir / stale_name
+        if stale_path.is_file():
+            stale_path.unlink()
+
+    return {
+        "client": client_path,
+        "daemon_start": daemon_path,
+    }
+
+
+def install_hook_shell_wrappers(
+    *,
+    invocation: HookCliInvocation | None = None,
+    hook_env: dict[str, str] | None = None,
+) -> dict[str, Path]:
+    """Write platform-specific Cursor hook wrapper scripts."""
+    if is_windows():
+        return install_windows_hook_wrappers(invocation=invocation, hook_env=hook_env)
+    return install_unix_hook_wrappers(invocation=invocation, hook_env=hook_env)
 
 
 def install_windows_hook_wrappers(
@@ -370,6 +486,18 @@ def is_windows_hook_wrapper_command(command: str) -> bool:
     return name in {wrapper.casefold() for wrapper in _WINDOWS_WRAPPER_NAMES}
 
 
+def is_unix_hook_wrapper_command(command: str) -> bool:
+    normalized = command.strip().strip('"').casefold()
+    if not normalized.endswith(".sh"):
+        return False
+    name = Path(normalized).name
+    return name in {wrapper.casefold() for wrapper in _UNIX_WRAPPER_NAMES}
+
+
+def is_hook_shell_wrapper_command(command: str) -> bool:
+    return is_windows_hook_wrapper_command(command) or is_unix_hook_wrapper_command(command)
+
+
 def cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
     return _inline_cyt_client_command(invocation=invocation)
 
@@ -385,8 +513,8 @@ def cursor_hook_client_command(
 ) -> str:
     """Return the command string written into Cursor ``hooks.json``."""
     invocation = invocation or detect_hook_cli_invocation()
-    if use_windows_hook_wrappers(invocation=invocation):
-        wrappers = install_windows_hook_wrappers(
+    if use_hook_shell_wrappers(invocation=invocation):
+        wrappers = install_hook_shell_wrappers(
             invocation=invocation,
             hook_env=hook_env,
         )
@@ -401,8 +529,8 @@ def cursor_hook_daemon_start_command(
 ) -> str:
     """Return the daemon start command written into Cursor ``hooks.json``."""
     invocation = invocation or detect_hook_cli_invocation()
-    if use_windows_hook_wrappers(invocation=invocation):
-        wrappers = install_windows_hook_wrappers(
+    if use_hook_shell_wrappers(invocation=invocation):
+        wrappers = install_hook_shell_wrappers(
             invocation=invocation,
             hook_env=hook_env,
         )
@@ -502,8 +630,12 @@ def cyt_mcp_mcp_server_entry(
 
 def is_dev_cyt_hook_command(command: str) -> bool:
     normalized = command.strip().strip('"')
-    if is_windows_hook_wrapper_command(normalized):
-        return normalized.casefold().endswith(WINDOWS_CLIENT_DEV_WRAPPER.casefold()) or (
-            WINDOWS_DAEMON_START_DEV_WRAPPER.casefold() in normalized.casefold()
+    if is_hook_shell_wrapper_command(normalized):
+        lowered = normalized.casefold()
+        return lowered.endswith(WINDOWS_CLIENT_DEV_WRAPPER.casefold()) or lowered.endswith(
+            UNIX_CLIENT_DEV_WRAPPER.casefold(),
+        ) or (
+            WINDOWS_DAEMON_START_DEV_WRAPPER.casefold() in lowered
+            or UNIX_DAEMON_START_DEV_WRAPPER.casefold() in lowered
         )
     return is_uv_run_dev_hook_command(normalized)

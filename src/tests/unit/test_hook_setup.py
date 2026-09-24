@@ -617,25 +617,17 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
         assert "CURSOR_PROJECT_DIR" in wrapper_text
         assert str(repo_root) in wrapper_text or "/tmp/clear-your-tools" in wrapper_text
     else:
-        assert client_cmd == prefix_agent_hook_command(
-            build_uv_run_dev_command(repo_root, client_rel),
-        )
-        assert daemon_cmd == prefix_agent_hook_command(
-            build_uv_run_dev_command(
-                repo_root,
-                proxy_rel,
-                "hook",
-                "daemon",
-                "start",
-                "--unattended",
-            ),
-        )
-        assert data["hooks"]["sessionStart"][1]["command"] == prefix_agent_hook_command(
-            build_uv_run_dev_command(repo_root, client_rel),
-        )
-        assert data["hooks"]["sessionEnd"][0]["command"] == prefix_agent_hook_command(
-            build_uv_run_dev_command(repo_root, client_rel),
-        )
+        assert client_cmd.endswith("cyt-client-dev.sh")
+        assert daemon_cmd.endswith("cyt-hook-daemon-start-dev.sh")
+        assert data["hooks"]["sessionStart"][1]["command"].endswith("cyt-client-dev.sh")
+        assert data["hooks"]["sessionEnd"][0]["command"].endswith("cyt-client-dev.sh")
+        assert "CYT_WORKSPACE=${workspaceFolder}" not in client_cmd
+        client_wrapper = Path(client_cmd)
+        assert client_wrapper.is_file()
+        wrapper_text = client_wrapper.read_text(encoding="utf-8")
+        assert " run --directory " in wrapper_text
+        assert "CURSOR_PROJECT_DIR" in wrapper_text
+        assert client_wrapper.stat().st_mode & 0o111
 
     output = capsys.readouterr().out
     start_command = cyt_daemon_start_command(invocation=invocation)
@@ -2532,7 +2524,7 @@ def test_save_tools_hook_wizard_config_skips_tool_sources_when_disabled(
     assert saved["tools"]["enabled"] is False
 
 
-def test_install_windows_hook_wrappers_writes_cmd_files(
+def test_install_hook_shell_wrappers_writes_platform_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2540,25 +2532,35 @@ def test_install_windows_hook_wrappers_writes_cmd_files(
 
     hooks_dir = tmp_path / "cursor" / "hooks"
     monkeypatch.setattr(hook_cli, "cursor_hooks_dir", lambda: hooks_dir)
-    monkeypatch.setattr(hook_cli, "use_windows_hook_wrappers", lambda *, invocation=None: True)
-    repo_root = Path(r"C:\Users\me\git\clear-your-tools")
+    repo_root = (
+        Path(r"C:\Users\me\git\clear-your-tools")
+        if sys.platform == "win32"
+        else Path("/Users/me/git/clear-your-tools")
+    )
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
 
-    wrappers = hook_cli.install_windows_hook_wrappers(invocation=invocation)
+    wrappers = hook_cli.install_hook_shell_wrappers(invocation=invocation)
 
     assert wrappers["client"].is_file()
     assert wrappers["daemon_start"].is_file()
     client_text = wrappers["client"].read_text(encoding="utf-8")
     daemon_text = wrappers["daemon_start"].read_text(encoding="utf-8")
     assert " run --directory " in client_text
-    assert r"C:\Users\me\git\clear-your-tools" in client_text
+    assert str(repo_root) in client_text
     if sys.platform == "win32":
         assert "'" not in client_text
         assert "'" not in daemon_text
         assert '--directory "' in client_text
         assert '--directory "' in daemon_text
-    assert hook_cli.is_windows_hook_wrapper_command(str(wrappers["client"]))
+        assert hook_cli.is_windows_hook_wrapper_command(str(wrappers["client"]))
+    else:
+        assert client_text.startswith("#!/usr/bin/env bash")
+        assert "CURSOR_PROJECT_DIR" in client_text
+        assert hook_cli.is_unix_hook_wrapper_command(str(wrappers["client"]))
+        assert wrappers["client"].stat().st_mode & 0o111
+    assert hook_cli.is_hook_shell_wrapper_command(str(wrappers["client"]))
     assert hook_cli.is_dev_cyt_hook_command(str(wrappers["client"]))
+    _ = daemon_text
 
 
 def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
@@ -2623,11 +2625,15 @@ def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
         assert " run --directory " in wrapper_text
         assert "CYT_WORKSPACE" in wrapper_text
     else:
-        prefixed_client = prefix_agent_hook_command(inline_client)
-        prefixed_daemon = prefix_agent_hook_command(inline_daemon)
-        assert prefixed_client in session_commands
-        assert prefixed_daemon in session_commands
-        assert before_submit_command == prefixed_client
+        assert before_submit_command.endswith("cyt-client-dev.sh")
+        assert "CYT_WORKSPACE=${workspaceFolder}" not in before_submit_command
+        assert any(str(command).endswith("cyt-hook-daemon-start-dev.sh") for command in session_commands)
+        assert any(str(command).endswith("cyt-client-dev.sh") for command in session_commands)
+        client_wrapper = Path(before_submit_command)
+        assert client_wrapper.is_file()
+        wrapper_text = client_wrapper.read_text(encoding="utf-8")
+        assert " run --directory " in wrapper_text
+        assert "CURSOR_PROJECT_DIR" in wrapper_text
     _ = changed
 
 
@@ -2646,5 +2652,6 @@ def test_prefix_command_env_windows_skips_wrapper_and_avoids_nested_quotes() -> 
     assert 'set "CYT_LAUNCH_AGENT' not in inline_command
 
 
-def test_is_cyt_hook_command_recognizes_windows_wrapper() -> None:
+def test_is_cyt_hook_command_recognizes_shell_wrapper() -> None:
     assert hook_setup._is_cyt_hook_command(r"C:\Users\me\.cursor\hooks\cyt-client-dev.cmd")
+    assert hook_setup._is_cyt_hook_command("/Users/me/.cursor/hooks/cyt-client-dev.sh")

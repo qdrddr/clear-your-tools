@@ -77,6 +77,34 @@ def _payload_layers(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return layers
 
 
+_WORKSPACE_ENV_KEYS = (
+    "CYT_WORKSPACE",
+    "CURSOR_PROJECT_DIR",
+    "CURSOR_WORKSPACE_FOLDER",
+    "CYT_SHELL_WORKSPACE",
+)
+
+
+def _is_unexpanded_template(value: str) -> bool:
+    text = value.strip()
+    return text.startswith("${") and text.endswith("}")
+
+
+def _workspace_path_from_env() -> str | None:
+    for key in _WORKSPACE_ENV_KEYS:
+        raw = os.environ.get(key, "").strip()
+        if raw and not _is_unexpanded_template(raw):
+            return normalize_workspace_path_string(raw)
+    return None
+
+
+def _workspace_path_from_cwd() -> str | None:
+    cwd = Path.cwd()
+    if is_valid_workspace_root(cwd):
+        return str(cwd.resolve())
+    return None
+
+
 def workspace_path_string(payload: dict[str, Any]) -> str | None:
     """Return the raw workspace path string from a hook payload, if present."""
     for layer in _payload_layers(payload):
@@ -89,7 +117,9 @@ def workspace_path_string(payload: dict[str, Any]) -> str | None:
             for root in roots:
                 if isinstance(root, str) and root.strip():
                     return normalize_workspace_path_string(root)
-    return None
+    if env_path := _workspace_path_from_env():
+        return env_path
+    return _workspace_path_from_cwd()
 
 
 def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
@@ -185,6 +215,28 @@ def rules_injection_needs_format_refresh(body: str) -> bool:
         if has_tools and not has_scope:
             return True
     return False
+
+
+def should_preserve_rules_injection_on_lifecycle(
+    payload: dict[str, Any],
+    workspace: Path,
+) -> bool:
+    """Return True when lifecycle sync must keep substantive on-disk rules injection.
+
+    sessionEnd always clears to placeholder. sessionStart clears stale substantive
+    content from a prior session, but preserves injection when beforeSubmitPrompt
+    already synced rules for the current conversation (sessionStart hook lag).
+    """
+    if not is_substantive_rules_injection(read_cursor_rules_injection(workspace)):
+        return False
+
+    from cyt_client.cursor import is_session_end_event, is_session_start_event
+
+    if is_session_end_event(payload):
+        return False
+    if is_session_start_event(payload):
+        return _session_log_has_injection_items(payload)
+    return True
 
 
 def _session_log_has_injection_items(payload: dict[str, Any]) -> bool:

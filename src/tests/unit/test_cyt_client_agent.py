@@ -79,6 +79,8 @@ def test_session_start_still_routes_cursor_cli() -> None:
 
     assert is_cursor_hook_payload({"hook_event_name": "sessionStart"})
     assert is_session_start_event({"hook_event_name": "sessionStart"})
+    assert is_cursor_hook_payload({"hook_event_name": "SessionStart"})
+    assert is_session_start_event({"hook_event_name": "SessionStart"})
 
 
 def test_workspace_roots_alone_does_not_infer_cursor(monkeypatch: pytest.MonkeyPatch) -> None:

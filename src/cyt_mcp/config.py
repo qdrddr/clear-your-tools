@@ -115,7 +115,10 @@ def load_mcp_config_yaml(path: Path | None = None) -> dict[str, Any]:
     maybe_repair_stale_mcp_config_file(resolved)
     if not resolved.is_file():
         return {}
-    raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    try:
+        raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return {}
     return raw if isinstance(raw, dict) else {}
 
 

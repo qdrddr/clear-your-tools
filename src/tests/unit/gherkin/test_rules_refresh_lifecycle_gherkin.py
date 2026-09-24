@@ -230,13 +230,30 @@ def given_bm25_prompt(gherkin_context: GherkinContext) -> None:
 
 @given("substantive rules synced before sessionStart")
 def given_substantive_rules_before_session_start(gherkin_context: GherkinContext) -> None:
+    from cyt_client.sessions import append_session_log, session_log_path
+
     workspace: Path = gherkin_context.payload["workspace"]
     substantive = (
         "<agent-tools>\nPruned MCP tool definitions below\n"
         "<cyt-mcp>\n<tool name='fff_grep'>{'input_schema':{}}\n</tool>\n</cyt-mcp>\n</agent-tools>"
     )
     sync_cursor_rules_file(workspace, substantive)
+    payload = {
+        "hook_event_name": "sessionStart",
+        "conversation_id": _SESSION_ID,
+        "workspace_roots": [str(workspace)],
+        "cyt_agent": "cursor",
+    }
+    path = session_log_path(payload)
+    assert path is not None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    append_session_log(
+        path,
+        [build_tool_log_entry(_demo_tool(), catalog="cyt_mcp", full=True)],
+        agent="cursor",
+    )
     gherkin_context.payload["substantive_rules"] = substantive
+    gherkin_context.payload["session_start_payload"] = payload
 
 
 @when("the client resolves rules refresh for beforeSubmitPrompt")
@@ -314,8 +331,16 @@ def when_five_submit_cycles(gherkin_context: GherkinContext) -> None:
 def when_session_start_sync(gherkin_context: GherkinContext) -> None:
     from cyt_client.cli import _sync_cursor_rules_for_lifecycle
 
-    workspace: Path = gherkin_context.payload["workspace"]
-    _sync_cursor_rules_for_lifecycle(_base_payload(workspace))
+    payload = gherkin_context.payload.get("session_start_payload")
+    if payload is None:
+        workspace: Path = gherkin_context.payload["workspace"]
+        payload = {
+            "hook_event_name": "sessionStart",
+            "conversation_id": _SESSION_ID,
+            "workspace_roots": [str(workspace)],
+            "cyt_agent": "cursor",
+        }
+    _sync_cursor_rules_for_lifecycle(payload)
 
 
 @then("cyt_force_rules_refresh should be true")

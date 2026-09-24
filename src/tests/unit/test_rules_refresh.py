@@ -293,9 +293,14 @@ def test_read_prior_rules_injection_for_hook_legacy_format(tmp_path: Path) -> No
     assert force_refresh is True
 
 
-def test_session_start_does_not_wipe_substantive_rules(tmp_path: Path) -> None:
+def test_session_start_resets_stale_substantive_rules(tmp_path: Path) -> None:
     from cyt_client.cli import _sync_cursor_rules_for_lifecycle
-    from cyt_client.rules_file import build_rules_mdc, read_cursor_rules_injection
+    from cyt_client.rules_file import (
+        build_rules_mdc,
+        build_rules_mdc_placeholder,
+        is_rules_placeholder_body,
+        read_cursor_rules_injection,
+    )
 
     workspace = Path(tmp_path)
     substantive = (
@@ -305,7 +310,45 @@ def test_session_start_does_not_wipe_substantive_rules(tmp_path: Path) -> None:
     rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
     rules_path.parent.mkdir(parents=True)
     rules_path.write_text(build_rules_mdc(substantive), encoding="utf-8")
-    payload = {"workspace_roots": [str(workspace)], "cyt_agent": "cursor"}
+    payload = {
+        "hook_event_name": "sessionStart",
+        "workspace_roots": [str(workspace)],
+        "cyt_agent": "cursor",
+    }
+    _sync_cursor_rules_for_lifecycle(payload)
+    assert is_rules_placeholder_body(read_cursor_rules_injection(workspace))
+    assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+
+
+def test_session_start_preserves_substantive_rules_when_session_log_has_injection(
+    tmp_path: Path,
+) -> None:
+    from cyt_client.cli import _sync_cursor_rules_for_lifecycle
+    from cyt_client.rules_file import build_rules_mdc, read_cursor_rules_injection
+    from cyt_client.sessions import append_session_log, session_log_path
+
+    workspace = Path(tmp_path)
+    substantive = (
+        "<agent-tools>\nPruned MCP tool definitions below\n"
+        "<cyt-mcp>\n<tool name='demo'>{'input_schema':{}}\n</tool>\n</cyt-mcp>\n</agent-tools>"
+    )
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text(build_rules_mdc(substantive), encoding="utf-8")
+    payload = {
+        "hook_event_name": "sessionStart",
+        "conversation_id": "race-session",
+        "workspace_roots": [str(workspace)],
+        "cyt_agent": "cursor",
+    }
+    path = session_log_path(payload)
+    assert path is not None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    append_session_log(
+        path,
+        [{"kind": "tool", "key": "tool:demo", "name": "demo"}],
+        agent="cursor",
+    )
     _sync_cursor_rules_for_lifecycle(payload)
     assert read_cursor_rules_injection(workspace) == substantive
 

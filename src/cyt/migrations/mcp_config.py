@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import logging
+import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +28,24 @@ DEFAULT_MCP_AGENT_CONFIG_REFS: dict[str, str] = {
 }
 
 
+def _backup_corrupt_yaml(path: Path, exc: yaml.YAMLError) -> Path:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    backup = path.with_name(f"{path.name}.corrupt.{stamp}")
+    shutil.copy2(path, backup)
+    logger.warning("Backed up invalid MCP config %s -> %s: %s", path, backup, exc)
+    return backup
+
+
 def _load_yaml_dict(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as f:
-        loaded = yaml.safe_load(f)
+    try:
+        with path.open(encoding="utf-8") as f:
+            loaded = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        if path.is_file():
+            _backup_corrupt_yaml(path, exc)
+            path.unlink()
+            logger.warning("Removed invalid MCP config so it can be regenerated: %s", path)
+        return {}
     return loaded if isinstance(loaded, dict) else {}
 
 
@@ -250,6 +267,8 @@ def migrate_mcp_config_file(path: Path, *, dry_run: bool = False) -> dict[str, A
         return None
 
     raw = _load_yaml_dict(resolved)
+    if not raw:
+        return None
     upgraded = upgrade_mcp_config_dict(raw)
     if upgraded == raw and resolved.name == MCP_CONFIG_NAME:
         return upgraded

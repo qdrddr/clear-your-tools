@@ -45,6 +45,7 @@ from cyt_client.rules_file import (
     read_prior_rules_injection_for_hook,
     reset_cursor_rules_file_to_placeholder,
     set_rules_file_rel_path,
+    should_preserve_rules_injection_on_lifecycle,
     sync_cursor_rules_file,
     workspace_path_string,
     workspace_root_from_payload,
@@ -266,11 +267,9 @@ def _sync_cursor_rules_for_lifecycle(payload: dict) -> None:
         return
     if _verify_only_for_agent(payload):
         delete_cursor_rules_file(workspace, force=True)
+    elif should_preserve_rules_injection_on_lifecycle(payload, workspace):
+        return
     else:
-        # beforeSubmitPrompt can finish before sessionStart in a new session; do not
-        # wipe substantive injection that was just synced for the first prompt.
-        if is_substantive_rules_injection(read_cursor_rules_injection(workspace)):
-            return
         reset_cursor_rules_file_to_placeholder(workspace)
 
 
@@ -400,16 +399,21 @@ def _verify_only_for_agent(payload: dict) -> bool:
 
 
 def _handle_session_start(payload: dict, *, cursor_output: bool) -> None:
-    repair_pairing(payload, verbose=_verbose, session_start=True)
+    _sync_cursor_rules_for_lifecycle(payload)
+    try:
+        repair_pairing(payload, verbose=_verbose, session_start=True)
+    except Exception:
+        _verbose_exception("sessionStart pairing repair failed")
     if cursor_output:
-        _sync_cursor_rules_for_lifecycle(payload)
         _emit_cursor_continue()
 
 
 def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
-    repair_pairing(payload, verbose=_verbose, session_start=False)
-    if cursor_output:
-        _sync_cursor_rules_for_lifecycle(payload)
+    _sync_cursor_rules_for_lifecycle(payload)
+    try:
+        repair_pairing(payload, verbose=_verbose, session_start=False)
+    except Exception:
+        _verbose_exception("sessionEnd pairing repair failed")
 
     sessions_dir = sessions_dir_for_payload(payload)
     current_session_id = session_id_from_payload(payload)

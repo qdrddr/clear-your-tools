@@ -1115,6 +1115,88 @@ def test_cli_session_start_resets_rules_file_to_placeholder_without_http(
         assert json.loads(capsys.readouterr().out) == {"continue": True}
 
 
+def test_cli_inferred_session_start_payload_resets_rules_file(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.rules_file import build_rules_mdc_placeholder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("test stale content1", encoding="utf-8")
+        payload = json.dumps(
+            {
+                "session_id": "composer-1",
+                "composer_mode": "agent",
+                "is_background_agent": False,
+            },
+        ).encode()
+        monkeypatch.chdir(workspace)
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        post.assert_not_called()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_cli_session_start_pascal_case_resets_rules_file(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.rules_file import build_rules_mdc_placeholder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("manual stale body", encoding="utf-8")
+        payload = json.dumps({"hook_event_name": "SessionStart"}).encode()
+        monkeypatch.setenv("CYT_WORKSPACE", str(workspace))
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        post.assert_not_called()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_cli_session_start_resets_rules_file_using_cyt_workspace_env(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.rules_file import build_rules_mdc, build_rules_mdc_placeholder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        substantive = "<agent-tools><cyt-mcp><tool name='demo'></tool></cyt-mcp></agent-tools>"
+        rules_path.write_text(build_rules_mdc(substantive), encoding="utf-8")
+        payload = json.dumps({"hook_event_name": "sessionStart"}).encode()
+        monkeypatch.setenv("CYT_WORKSPACE", str(workspace))
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        post.assert_not_called()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
 def test_reset_cursor_rules_file_to_placeholder_creates_file_when_absent() -> None:
     from cyt_client.rules_file import (
         build_rules_mdc_placeholder,

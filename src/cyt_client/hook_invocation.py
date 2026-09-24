@@ -57,10 +57,15 @@ _WINDOWS_HOOK_WRAPPER_NAMES = (
 )
 
 
-def use_windows_hook_wrappers(*, use_dev: bool) -> bool:
-    """Use ``.cmd`` wrappers on Windows so hooks resolve absolute executable paths."""
+def use_hook_shell_wrappers(*, use_dev: bool) -> bool:
+    """Use shell wrapper scripts so Cursor hooks work under fish and resolve workspace env."""
     _ = use_dev
-    return is_windows()
+    return True
+
+
+def use_windows_hook_wrappers(*, use_dev: bool) -> bool:
+    """Backward-compatible alias for :func:`use_hook_shell_wrappers`."""
+    return use_hook_shell_wrappers(use_dev=use_dev)
 
 
 def cursor_hooks_dir() -> Path:
@@ -102,6 +107,13 @@ _AGENT_WORKSPACE_ENV_VARS: tuple[str, ...] = (
 def prefix_command_env(env: dict[str, str], command: str) -> str:
     if not env:
         return command
+    try:
+        from cyt.hook.cli_invocation import is_hook_shell_wrapper_command
+
+        if is_hook_shell_wrapper_command(command):
+            return command
+    except ImportError:
+        pass
     if is_windows():
         if is_windows_hook_wrapper_command(command):
             return command
@@ -234,16 +246,26 @@ def _inline_cyt_daemon_start_command(*, use_dev: bool, dev_repo_root: Path | Non
     return build_installed_cyt_daemon_start_command(unattended=True)
 
 
+def _hook_cli_invocation(*, use_dev: bool, dev_repo_root: Path | None) -> Any:
+    from cyt.hook.cli_invocation import HookCliInvocation
+
+    return HookCliInvocation(
+        mode="dev" if use_dev else "installed",
+        repo_root=dev_repo_root if use_dev else None,
+    )
+
+
 def _cursor_hook_client_command(
     *,
     use_dev: bool,
     dev_repo_root: Path | None,
     hook_env: dict[str, str] | None = None,
 ) -> str:
-    if use_windows_hook_wrappers(use_dev=use_dev):
-        wrappers = install_windows_hook_wrappers(
-            use_dev=use_dev,
-            dev_repo_root=dev_repo_root,
+    if use_hook_shell_wrappers(use_dev=use_dev):
+        from cyt.hook.cli_invocation import install_hook_shell_wrappers
+
+        wrappers = install_hook_shell_wrappers(
+            invocation=_hook_cli_invocation(use_dev=use_dev, dev_repo_root=dev_repo_root),
             hook_env=hook_env,
         )
         return str(wrappers["client"])
@@ -256,10 +278,11 @@ def _cursor_hook_daemon_start_command(
     dev_repo_root: Path | None,
     hook_env: dict[str, str] | None = None,
 ) -> str:
-    if use_windows_hook_wrappers(use_dev=use_dev):
-        wrappers = install_windows_hook_wrappers(
-            use_dev=use_dev,
-            dev_repo_root=dev_repo_root,
+    if use_hook_shell_wrappers(use_dev=use_dev):
+        from cyt.hook.cli_invocation import install_hook_shell_wrappers
+
+        wrappers = install_hook_shell_wrappers(
+            invocation=_hook_cli_invocation(use_dev=use_dev, dev_repo_root=dev_repo_root),
             hook_env=hook_env,
         )
         return str(wrappers["daemon_start"])
@@ -308,8 +331,14 @@ def is_cyt_hook_command(command: object) -> bool:
     if not isinstance(command, str):
         return False
     normalized = _strip_env_prefix(command.strip())
-    if is_windows_hook_wrapper_command(normalized):
-        return True
+    try:
+        from cyt.hook.cli_invocation import is_hook_shell_wrapper_command
+
+        if is_hook_shell_wrapper_command(normalized):
+            return True
+    except ImportError:
+        if is_windows_hook_wrapper_command(normalized):
+            return True
     if normalized == INSTALLED_CYT_CLIENT_COMMAND or normalized.endswith(
         f" {INSTALLED_CYT_CLIENT_COMMAND}",
     ):
@@ -387,8 +416,15 @@ def _agent_hook_command_env(*, agent: str, set_launch_agent: bool) -> dict[str, 
 
 def _prefix_agent_hook_command(command: str, *, agent: str, set_launch_agent: bool) -> str:
     env = _agent_hook_command_env(agent=agent, set_launch_agent=set_launch_agent)
-    if is_windows() and is_windows_hook_wrapper_command(command):
-        return command
+    if use_hook_shell_wrappers(use_dev=False):
+        try:
+            from cyt.hook.cli_invocation import is_hook_shell_wrapper_command
+
+            if is_hook_shell_wrapper_command(command):
+                return command
+        except ImportError:
+            if is_windows() and is_windows_hook_wrapper_command(command):
+                return command
     return prefix_command_env(env, command)
 
 
@@ -403,7 +439,7 @@ def cyt_client_hook_command(
     command = _cursor_hook_client_command(
         use_dev=use_dev,
         dev_repo_root=dev_repo_root,
-        hook_env=hook_env if is_windows() else None,
+        hook_env=hook_env,
     )
     return _prefix_agent_hook_command(
         command,
@@ -423,7 +459,7 @@ def cyt_daemon_start_hook_command(
     command = _cursor_hook_daemon_start_command(
         use_dev=use_dev,
         dev_repo_root=dev_repo_root,
-        hook_env=hook_env if is_windows() else None,
+        hook_env=hook_env,
     )
     return _prefix_agent_hook_command(
         command,

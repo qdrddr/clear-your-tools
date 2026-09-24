@@ -41,7 +41,7 @@ from cyt.hook.cli_invocation import (
     cyt_daemon_start_command,
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
-    is_windows_hook_wrapper_command,
+    is_hook_shell_wrapper_command,
     prefix_agent_hook_command,
     prefix_command_env,
     remove_windows_hook_wrappers,
@@ -779,19 +779,22 @@ def _finalize_hook_command(
         if use_cursor_wrappers:
             command = cursor_hook_daemon_start_command(
                 invocation=invocation,
-                hook_env=hook_env if is_windows() else None,
+                hook_env=hook_env,
             )
         else:
             command = cyt_daemon_start_command(invocation=invocation)
     elif use_cursor_wrappers:
         command = cursor_hook_client_command(
             invocation=invocation,
-            hook_env=hook_env if is_windows() else None,
+            hook_env=hook_env,
         )
     else:
         command = cyt_client_command(invocation=invocation)
-    if use_cursor_wrappers and is_windows():
-        return command
+    if use_cursor_wrappers:
+        from cyt.hook.cli_invocation import use_hook_shell_wrappers
+
+        if use_hook_shell_wrappers(invocation=invocation):
+            return command
     return prefix_agent_hook_command(
         command,
         agent=agent if set_launch_agent else None,
@@ -885,7 +888,7 @@ def _is_cyt_hook_command(command: object) -> bool:
     if not isinstance(command, str):
         return False
     normalized = command.strip()
-    if is_windows_hook_wrapper_command(normalized):
+    if is_hook_shell_wrapper_command(normalized):
         return True
     if _command_invokes_cyt_client(normalized):
         return True

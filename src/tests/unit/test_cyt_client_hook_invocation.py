@@ -61,7 +61,7 @@ def test_cursor_pairing_hooks_dev_mode(
         lambda: hooks_dir,
     )
     monkeypatch.setattr(
-        "cyt_client.hook_invocation.use_windows_hook_wrappers",
+        "cyt_client.hook_invocation.use_hook_shell_wrappers",
         lambda *, use_dev: False,
     )
 
