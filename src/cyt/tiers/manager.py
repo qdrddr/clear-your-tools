@@ -178,7 +178,22 @@ class NoOpTierManager:
     def record_skill_used(self, entity_id: str, *, config: dict[str, Any]) -> None:
         return
 
-    def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
+    def apply_shadow_tool_hits(
+        self,
+        hits: list[tuple[str, float]],
+        config: dict[str, Any],
+        *,
+        tools_by_id: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        del hits, config, tools_by_id
+        return
+
+    def apply_shadow_skill_hits(
+        self,
+        hits: list[tuple[str, float]],
+        config: dict[str, Any],
+    ) -> None:
+        del hits, config
         return
 
     def purge_inactive_tool_sources(self, config: dict[str, Any]) -> None:
@@ -852,7 +867,11 @@ class TierManager:
             logger.debug("tool shadow transitions: %d", len(transitions))
         self._finish_record(config)
 
-    def apply_shadow_skill_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
+    def apply_shadow_skill_hits(
+        self,
+        hits: list[tuple[str, float]],
+        config: dict[str, Any],
+    ) -> None:
         from cyt.tiers.shadow import record_shadow_hits
 
         if not tiers_active(config, kind="skill"):

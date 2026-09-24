@@ -598,8 +598,6 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
     daemon_start.assert_called_once_with(config_path=None, unattended=True)
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
-    client_rel = cyt_client_cli_script_relpath()
-    proxy_rel = proxy_cli_script_relpath()
     client_cmd = data["hooks"]["beforeSubmitPrompt"][0]["command"]
     daemon_cmd = data["hooks"]["sessionStart"][0]["command"]
     if sys.platform == "win32":
@@ -2627,7 +2625,9 @@ def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
     else:
         assert before_submit_command.endswith("cyt-client-dev.sh")
         assert "CYT_WORKSPACE=${workspaceFolder}" not in before_submit_command
-        assert any(str(command).endswith("cyt-hook-daemon-start-dev.sh") for command in session_commands)
+        assert any(
+            str(command).endswith("cyt-hook-daemon-start-dev.sh") for command in session_commands
+        )
         assert any(str(command).endswith("cyt-client-dev.sh") for command in session_commands)
         client_wrapper = Path(before_submit_command)
         assert client_wrapper.is_file()

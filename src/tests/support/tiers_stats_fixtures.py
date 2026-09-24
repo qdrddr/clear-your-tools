@@ -109,8 +109,6 @@ def _seed_entity_states(
     states: dict[str, dict[str, Any]],
 ) -> None:
     for entity_id, row in states.items():
-        if not isinstance(row, dict):
-            continue
         store.upsert_entity_state(
             project,
             EntityTierState(
@@ -281,7 +279,7 @@ def patch_load_config(
     monkeypatch: pytest.MonkeyPatch,
     config: dict[str, Any],
 ) -> None:
-    def _load_config(*args, **kwargs):
+    def _load_config(*args: object, **kwargs: object) -> dict[str, Any]:
         return config
 
     monkeypatch.setattr("cyt.config.load_config", _load_config)

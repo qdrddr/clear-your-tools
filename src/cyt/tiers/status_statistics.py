@@ -301,9 +301,7 @@ def append_kind_tier_statistics_table(
         widths = [5, 5, 4, 6]
         header = ["Tier", "Count", "Temp", "Tokens"]
     lines.append(format_table_row(header, widths))
-    rows_by_tier = {
-        str(row.get("tier") or ""): row for row in rows if isinstance(row, dict)
-    }
+    rows_by_tier = {str(row.get("tier") or ""): row for row in rows if isinstance(row, dict)}
     for tier in _TIER_DISPLAY_ORDER:
         row = rows_by_tier.get(tier)
         if row is None:

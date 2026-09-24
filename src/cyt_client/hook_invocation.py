@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path, PureWindowsPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.hook.cli_invocation import HookCliInvocation
 
 from cyt_client.compat import is_windows
 from cyt_client.hook_executable import (
@@ -246,7 +249,7 @@ def _inline_cyt_daemon_start_command(*, use_dev: bool, dev_repo_root: Path | Non
     return build_installed_cyt_daemon_start_command(unattended=True)
 
 
-def _hook_cli_invocation(*, use_dev: bool, dev_repo_root: Path | None) -> Any:
+def _hook_cli_invocation(*, use_dev: bool, dev_repo_root: Path | None) -> HookCliInvocation:
     from cyt.hook.cli_invocation import HookCliInvocation
 
     return HookCliInvocation(

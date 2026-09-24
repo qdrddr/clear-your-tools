@@ -29,7 +29,6 @@ from cyt.tiers.status_view import (
     resolve_status_path_filter,
 )
 from cyt.tiers.store import TierStore
-
 from tests.unit.test_tier_cli import _patch_load_config_from_yaml
 
 

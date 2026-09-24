@@ -64,7 +64,9 @@ def then_commands_use_wrappers(gherkin_context: GherkinContext) -> None:
     ]
     for command in commands:
         assert str(command).endswith(wrapper_suffix()) or str(command).endswith(
-            "cyt-hook-daemon-start-dev.cmd" if sys.platform == "win32" else "cyt-hook-daemon-start-dev.sh",
+            "cyt-hook-daemon-start-dev.cmd"
+            if sys.platform == "win32"
+            else "cyt-hook-daemon-start-dev.sh",
         )
 
 

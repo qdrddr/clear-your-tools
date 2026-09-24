@@ -1,14 +1,56 @@
 {
   "pruned_tools": [
     {
+      "name": "code-review-graph_get_knowledge_gaps_tool",
+      "description": "Identify structural weaknesses in the codebase graph.\n\nFinds isolated nodes (disconnected), thin communities (< 3 members),\nuntested hotspots (high-degree nodes without test coverage), and\nsingle-file communities.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Repository root path. Auto-detected if omitted."
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "get_knowledge_gaps_tool"
+    },
+    {
       "name": "codebase-memory_index_repository",
       "description": "Index a repository into the knowledge graph. Special mode 'cross-repo-intelligence': skip extraction, only match Routes/Channels across projects to create CROSS_HTTP_CALLS/CROSS_ASYNC_CALLS/CROSS_CHANNEL edges. Requires target_projects param. Ensure target projects have fresh indexes first.",
       "cyt_catalog_source": "cyt_mcp",
       "input_schema": {
         "properties": {
+          "mode": {
+            "default": "full",
+            "description": "All modes run type-aware LSP call/usage resolution (per-file + cross-file). full: all files + similarity/semantic edges. moderate: filtered files + similarity/semantic. fast: filtered files, no similarity/semantic. cross-repo-intelligence: match Routes/Channels across projects.",
+            "enum": [
+              "cross-repo-intelligence",
+              "full",
+              "moderate"
+            ],
+            "type": "string"
+          },
           "repo_path": {
             "description": "Path to the repository",
             "type": "string"
+          },
+          "target_projects": {
+            "description": "Projects to search for cross-repo links (cross-repo-intelligence mode). Use [\"*\"] for all indexed projects. Run list_projects to see available projects.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -28,6 +70,16 @@
           "function_name": {
             "type": "string"
           },
+          "mode": {
+            "default": "calls",
+            "description": "calls: follow CALLS edges. data_flow: follow CALLS+DATA_FLOWS with arg expressions. cross_service: follow HTTP_CALLS+ASYNC_CALLS+DATA_FLOWS through Routes, plus CROSS_* cross-repo edges (CROSS_HTTP_CALLS/ASYNC_CALLS/CHANNEL/GRPC_CALLS/GRAPHQL_CALLS/TRPC_CALLS) to hop into other services.",
+            "enum": [
+              "cross_service",
+              "calls",
+              "data_flow"
+            ],
+            "type": "string"
+          },
           "project": {
             "type": "string"
           }
@@ -40,6 +92,68 @@
       },
       "server_key": "codebase-memory",
       "tool_name": "trace_path"
+    },
+    {
+      "name": "gitnexus_route_map",
+      "description": "Show API route mappings: which components/hooks fetch which API endpoints, and which handler files serve them.\n\nWHEN TO USE: Understanding API consumption patterns, finding orphaned routes. For pre-change analysis, prefer `api_impact` which combines this data with mismatch detection and risk assessment.\nAFTER THIS: Use impact() on specific route handlers to see full blast radius.\n\nReturns: route nodes with their handlers, middleware wrapper chains (e.g., withAuth, withRateLimit), and consumers. Each route object includes its \"method\" (the HTTP verb, \"*\" for method-agnostic routes, or null for method-less routes).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository name or path. Omit if only one repo is indexed.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "server_key": "gitnexus",
+      "tool_name": "route_map"
+    },
+    {
+      "name": "jcodemunch_get_cross_repo_map",
+      "description": "Return which indexed repos depend on which other indexed repos at the package level. Shows the full cross-repository dependency map based on package names extracted from manifest files (pyproject.toml, package.json, go.mod, Cargo.toml, etc.). Use to visualize how your indexed repos are interconnected. Pass repo to filter to a single repo's perspective.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Optional repo ID to filter. If omitted, returns the full cross-repo map.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_cross_repo_map"
+    },
+    {
+      "name": "jcodemunch_get_dependency_graph",
+      "description": "Get the file-level dependency graph for a given file. Traverses import relationships up to 3 hops. Use to understand what a file depends on ('imports'), what depends on it ('importers'), or both. Prerequisite for blast radius analysis. Set cross_repo=true to include cross-repository edges.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "cross_repo": {
+            "default": false,
+            "description": "When true, include cross-repo edges (imports that resolve to packages in other indexed repos). Default: false.",
+            "type": "boolean"
+          },
+          "file": {
+            "description": "File path within the repo (e.g. 'src/server.py')",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "file"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_dependency_graph"
     },
     {
       "name": "jcodemunch_get_project_intel",
@@ -64,19 +178,19 @@
   "query": "index repository into knowledge graph cross repo intelligence HTTP routes",
   "status": "applied",
   "tools_in": 189,
-  "tools_out": 3,
+  "tools_out": 7,
   "score_tool": 0.4,
   "score_tool_enum": 0.1,
   "prune_enums": true,
   "tokens_in": 55361,
-  "tokens_out": 443,
-  "tokens_saved": 54918,
+  "tokens_out": 1396,
+  "tokens_saved": 53965,
   "tokenizer": "tiktoken_compact_json",
-  "optional_properties_in": 6,
-  "optional_properties_out": 0,
+  "optional_properties_in": 594,
+  "optional_properties_out": 7,
   "decomposed": {
-    "bm25": 31,
-    "build_index": 223
+    "bm25": 13,
+    "build_index": 956
   },
   "must_include_tools": [
     "codebase-memory_index_repository"

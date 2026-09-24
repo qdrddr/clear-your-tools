@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -26,13 +27,13 @@ from tests.support.tier_behavior_fixtures import (
     skill_entity_ids_by_doc_id,
     write_cyt_mcp_disk_catalog_for_pack,
 )
+from tests.support.tier_seed_helpers import seed_entity_tier
 from tests.support.tier_transitions_fixtures import (
     load_fast_wake_prompts,
     load_mcp_server_tools,
     materialize_transitions_pack,
     tier_transitions_config,
 )
-from tests.support.tier_seed_helpers import seed_entity_tier
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +44,7 @@ def clear_tier_managers() -> Iterator[None]:
 
 
 @pytest.fixture
-def fixture_pack(tmp_path) -> TierBehaviorFixturePack:
+def fixture_pack(tmp_path: Path) -> TierBehaviorFixturePack:
     return materialize_fixture_pack(tmp_path)
 
 
@@ -64,9 +65,8 @@ def disk_catalog_pack(
 def _sync_shadow_submit(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
     submitted: list[bool] = []
 
-    def _submit(fn: object) -> None:
+    def _submit(fn: Callable[[], None]) -> None:
         submitted.append(True)
-        assert callable(fn)
         fn()
 
     monkeypatch.setattr("cyt.tiers.shadow._executor.submit", _submit)
@@ -173,7 +173,7 @@ def _mcp_server_tool_dicts() -> list[dict[str, Any]]:
 
 @pytest.mark.integration
 def test_filter_tools_for_query_wakes_mcp_server_description_when_all_tools_dormant(
-    tmp_path,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pack = materialize_transitions_pack(tmp_path)

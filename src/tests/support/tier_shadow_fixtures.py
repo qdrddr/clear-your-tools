@@ -124,7 +124,9 @@ def load_record_shadow_scenarios(path: Path = SCENARIOS_PATH) -> tuple[RecordSha
                 hits=hits,
                 expect_wake=row.get("expect_wake") if "expect_wake" in row else None,
                 mcp_server_batch=bool(row.get("mcp_server_batch", False)),
-                primary_entity_id=str(row["primary_entity_id"]) if row.get("primary_entity_id") else None,
+                primary_entity_id=str(row["primary_entity_id"])
+                if row.get("primary_entity_id")
+                else None,
                 hit_score=float(row.get("hit_score", 0.0)),
                 mcp_server=str(row["mcp_server"]) if row.get("mcp_server") else None,
                 expect_tools_dormant=bool(row.get("expect_tools_dormant", False)),
@@ -132,4 +134,3 @@ def load_record_shadow_scenarios(path: Path = SCENARIOS_PATH) -> tuple[RecordSha
             ),
         )
     return tuple(scenarios)
-

@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from cyt.tiers.adapters.tools import stamp_tool_catalog_source
-from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, EpochState, Tier, TierProject
+from cyt.tiers.manager import TierManager
+from cyt.tiers.models import (
+    EffectiveStats,
+    EntityKind,
+    EntityTierState,
+    EpochState,
+    Tier,
+    TierProject,
+)
 from cyt.tiers.store import TierStore
 from tests.support.tier_seed_helpers import parse_tier
 
@@ -350,7 +358,10 @@ def load_gherkin_scenarios(path: Path = SCENARIOS_PATH) -> tuple[GherkinTransiti
     return tuple(_gherkin_scenario(row) for row in rows if isinstance(row, dict))
 
 
-def gherkin_scenario_by_id(scenario_id: str, path: Path = SCENARIOS_PATH) -> GherkinTransitionScenario:
+def gherkin_scenario_by_id(
+    scenario_id: str,
+    path: Path = SCENARIOS_PATH,
+) -> GherkinTransitionScenario:
     for scenario in load_gherkin_scenarios(path):
         if scenario.id == scenario_id:
             return scenario
@@ -385,7 +396,11 @@ def tier_transitions_config(
     return config
 
 
-def materialize_transitions_pack(tmp_path: Path, *, path: Path = SCENARIOS_PATH) -> TierTransitionsFixturePack:
+def materialize_transitions_pack(
+    tmp_path: Path,
+    *,
+    path: Path = SCENARIOS_PATH,
+) -> TierTransitionsFixturePack:
     workspace = tmp_path / "repo"
     workspace.mkdir()
     (workspace / ".git").mkdir()
@@ -502,7 +517,7 @@ def skill_metadata_for_pack(pack: TierTransitionsFixturePack) -> dict[str, Any]:
     }
 
 
-def expire_epoch_on_manager(manager: Any, *, now_ms: int) -> None:
+def expire_epoch_on_manager(manager: TierManager, *, now_ms: int) -> None:
     ttl_ms = 5 * 60 * 1000
     manager._epoch.epoch_start_ms = now_ms - ttl_ms - 1
     manager._epoch.last_request_ms = now_ms - ttl_ms - 1
@@ -527,13 +542,16 @@ def latest_epoch_log_reasons(pack: TierTransitionsFixturePack) -> list[str]:
 
 
 def manager_state(
-    manager: Any,
+    manager: TierManager,
     *,
     kind: str,
     entity_id: str,
 ) -> EntityTierState | None:
     entity_kind = EntityKind.TOOL if kind == "tool" else EntityKind.SKILL
-    return manager._states.get((entity_kind, entity_id))
+    state = manager._states.get((entity_kind, entity_id))
+    if isinstance(state, EntityTierState):
+        return state
+    return None
 
 
 __all__ = [

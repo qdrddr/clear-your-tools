@@ -81,14 +81,14 @@ __all__ = [
     "cyt_mcp_mcp_server_entry",
     "detect_cyt_mcp_cli_invocation",
     "detect_hook_cli_invocation",
+    "install_hook_shell_wrappers",
     "invoked_via_cyt_cli_script",
+    "is_hook_shell_wrapper_command",
     "is_uv_run_dev_hook_command",
     "prefix_agent_hook_command",
     "proxy_cli_script_path",
     "repo_root_from_cyt_cli_script",
     "repo_root_from_proxy_cli_script",
-    "install_hook_shell_wrappers",
-    "is_hook_shell_wrapper_command",
     "resolve_hook_executable",
     "use_hook_shell_wrappers",
     "use_windows_hook_wrappers",
@@ -392,9 +392,7 @@ def install_unix_hook_wrappers(
     wrapper_env = dict(hook_env or agent_hook_command_env())
 
     client_name = UNIX_CLIENT_DEV_WRAPPER if invocation.is_dev else UNIX_CLIENT_WRAPPER
-    daemon_name = (
-        UNIX_DAEMON_START_DEV_WRAPPER if invocation.is_dev else UNIX_DAEMON_START_WRAPPER
-    )
+    daemon_name = UNIX_DAEMON_START_DEV_WRAPPER if invocation.is_dev else UNIX_DAEMON_START_WRAPPER
 
     client_path = hooks_dir / client_name
     daemon_path = hooks_dir / daemon_name
@@ -632,8 +630,11 @@ def is_dev_cyt_hook_command(command: str) -> bool:
     normalized = command.strip().strip('"')
     if is_hook_shell_wrapper_command(normalized):
         lowered = normalized.casefold()
-        return lowered.endswith(WINDOWS_CLIENT_DEV_WRAPPER.casefold()) or lowered.endswith(
-            UNIX_CLIENT_DEV_WRAPPER.casefold(),
+        return lowered.endswith(
+            (
+                WINDOWS_CLIENT_DEV_WRAPPER.casefold(),
+                UNIX_CLIENT_DEV_WRAPPER.casefold(),
+            ),
         ) or (
             WINDOWS_DAEMON_START_DEV_WRAPPER.casefold() in lowered
             or UNIX_DAEMON_START_DEV_WRAPPER.casefold() in lowered

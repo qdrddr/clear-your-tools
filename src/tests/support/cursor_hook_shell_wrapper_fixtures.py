@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
@@ -55,15 +57,20 @@ def legacy_fish_breaking_client_command(*, repo_root: Path | None = None) -> str
 def load_legacy_fish_breaking_hooks(*, repo_root: Path | None = None) -> dict[str, Any]:
     """Load the legacy hooks.json fixture with repo-specific uv commands."""
     root = repo_root or dev_repo_root()
-    text = LEGACY_FISH_BREAKING_HOOKS.read_text(encoding="utf-8").replace("__REPO_ROOT__", str(root))
-    return json.loads(text)
+    text = LEGACY_FISH_BREAKING_HOOKS.read_text(encoding="utf-8").replace(
+        "__REPO_ROOT__",
+        str(root),
+    )
+    loaded: Any = json.loads(text)
+    assert isinstance(loaded, dict)
+    return loaded
 
 
 def install_dev_hook_wrappers(
     hooks_dir: Path,
     *,
     repo_root: Path | None = None,
-    monkeypatch: Any | None = None,
+    monkeypatch: pytest.MonkeyPatch | None = None,
 ) -> dict[str, Path]:
     from cyt.hook import cli_invocation as hook_cli
 
@@ -78,7 +85,7 @@ def cursor_dev_client_wrapper_command(
     hooks_dir: Path,
     *,
     repo_root: Path | None = None,
-    monkeypatch: Any | None = None,
+    monkeypatch: pytest.MonkeyPatch | None = None,
 ) -> str:
     from cyt.hook import cli_invocation as hook_cli
 

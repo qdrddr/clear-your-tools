@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from cyt.tiers.manager import TierManager, _managers
-from cyt.tiers.models import EpochState, Tier
+from cyt.tiers.models import EpochState
 from tests.support.tier_transitions_fixtures import (
     ManagerIntegrationScenario,
     TierTransitionsFixturePack,
@@ -62,7 +62,9 @@ def _reload_manager(pack: TierTransitionsFixturePack) -> TierManager:
 @pytest.mark.parametrize(
     "scenario",
     [s for s in load_manager_integration_scenarios() if s.path == "slow"],
-    ids=[scenario.id for scenario in load_manager_integration_scenarios() if scenario.path == "slow"],
+    ids=[
+        scenario.id for scenario in load_manager_integration_scenarios() if scenario.path == "slow"
+    ],
 )
 def test_manager_slow_epoch_transitions_persist(
     fixture_pack: TierTransitionsFixturePack,
@@ -101,7 +103,9 @@ def test_manager_fast_hot_then_epoch_crystallizes_persisted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scenario = next(
-        s for s in load_manager_integration_scenarios() if s.id == "fast_hot_tool_use_then_epoch_crystallize"
+        s
+        for s in load_manager_integration_scenarios()
+        if s.id == "fast_hot_tool_use_then_epoch_crystallize"
     )
     _seed_scenario(fixture_pack, scenario)
     config = tier_transitions_config(fixture_pack)

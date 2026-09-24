@@ -345,7 +345,11 @@ def test_enrich_hook_payload_adds_cyt_cwd_from_workspace_roots() -> None:
     assert enriched["cyt_hook_payload"]["workspace_roots"] == ["/tmp/project", "/tmp/other"]
 
 
-def test_enrich_hook_payload_skips_cyt_when_no_workspace_path() -> None:
+def test_enrich_hook_payload_skips_cyt_when_no_workspace_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("cyt_client.rules_file._workspace_path_from_env", lambda: None)
+    monkeypatch.setattr("cyt_client.rules_file._workspace_path_from_cwd", lambda: None)
     raw = json.dumps(
         {
             "hook_event_name": "UserPromptSubmit",

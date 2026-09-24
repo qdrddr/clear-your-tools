@@ -15,7 +15,6 @@ from tests.support.hook_shell_mcp_recovery_fixtures import (
     CORRUPT_STUB_FRAGMENT,
     assert_valid_mcp_config_yaml,
     corrupt_mcp_config_text,
-    valid_workspace_mcp_config_text,
     write_corrupt_workspace_mcp_config,
     write_valid_workspace_mcp_config,
 )

@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "hook_shell_mcp_recovery"
-CORRUPT_MCP_CONFIG_FIXTURE = FIXTURES_DIR / "corrupt_mcp-config.yaml"
+CORRUPT_MCP_CONFIG_FIXTURE = FIXTURES_DIR / "corrupt_mcp-config.yaml.fixture"
 VALID_WORKSPACE_MCP_CONFIG_FIXTURE = FIXTURES_DIR / "valid_workspace_mcp-config.yaml"
 CORRUPT_STUB_FRAGMENT = (
     "(no property descriptions; OpenAI Responses API expects description on wire)."

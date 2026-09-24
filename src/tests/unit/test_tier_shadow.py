@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from cyt.tiers.adapters.tools import mcp_server_entity_id
 from cyt.tiers.config import tier_section_config
 from cyt.tiers.manager import TierManager, _managers
-from cyt.tiers.adapters.tools import mcp_server_entity_id
 from cyt.tiers.models import EntityKind, EntityTierState, Tier
 from cyt.tiers.shadow import (
     _lexical_shadow_hits,
@@ -17,6 +17,8 @@ from cyt.tiers.shadow import (
     record_shadow_hits,
 )
 from tests.support.tier_shadow_fixtures import (
+    LexicalHitScenario,
+    RecordShadowScenario,
     load_lexical_hit_scenarios,
     load_mcp_server_tools,
     load_record_shadow_scenarios,
@@ -41,7 +43,7 @@ def clear_tier_managers() -> Iterator[None]:
     load_lexical_hit_scenarios(),
     ids=[scenario.id for scenario in load_lexical_hit_scenarios()],
 )
-def test_lexical_shadow_hits_from_fixture(scenario) -> None:
+def test_lexical_shadow_hits_from_fixture(scenario: LexicalHitScenario) -> None:
     if scenario.tool is not None:
         hits = _lexical_shadow_hits(
             scenario.query,
@@ -69,7 +71,7 @@ def test_lexical_shadow_hits_from_fixture(scenario) -> None:
     load_record_shadow_scenarios(),
     ids=[scenario.id for scenario in load_record_shadow_scenarios()],
 )
-def test_record_shadow_hits_from_fixture(scenario, tmp_path: Path) -> None:
+def test_record_shadow_hits_from_fixture(scenario: RecordShadowScenario, tmp_path: Path) -> None:
     pack = materialize_transitions_pack(tmp_path)
     config = tier_transitions_config(pack, kind=scenario.kind)
     cfg = tier_section_config(config, kind=scenario.kind)

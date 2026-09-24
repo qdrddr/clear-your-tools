@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
@@ -11,6 +13,7 @@ from cyt.tiers.manager import TierManager, _managers
 from cyt.tiers.models import EpochState, Tier, ToolsTierApplyResult
 from cyt.tiers.shadow import schedule_skill_shadow_evaluation, schedule_tool_shadow_evaluation
 from tests.support.tier_transitions_fixtures import (
+    GherkinTransitionScenario,
     TierTransitionsFixturePack,
     entity_state_from_scenario,
     expire_epoch_on_manager,
@@ -33,7 +36,7 @@ scenarios(str(FEATURES))
 pytestmark = pytest.mark.gherkin
 
 
-def _active_scenario(gherkin_context: GherkinContext):
+def _active_scenario(gherkin_context: GherkinContext) -> GherkinTransitionScenario:
     scenario_id = gherkin_context.payload.get("scenario_id")
     assert isinstance(scenario_id, str)
     return gherkin_scenario_by_id(scenario_id)
@@ -51,7 +54,10 @@ def _manager(gherkin_context: GherkinContext) -> TierManager:
     return manager
 
 
-def _config_for_scenario(pack: TierTransitionsFixturePack, scenario) -> dict:
+def _config_for_scenario(
+    pack: TierTransitionsFixturePack,
+    scenario: GherkinTransitionScenario,
+) -> dict[str, Any]:
     overrides = scenario.config_overrides or {}
     config = tier_transitions_config(pack, kind=scenario.kind, overrides=overrides)
     if overrides:
@@ -88,7 +94,9 @@ def _setup_pack(
             stats=scenario.stats,
         )
         # Fast/hot paths must start inside a live epoch so use does not crystallize immediately.
-        epoch_age_ms = 60_000 if scenario.path.startswith("fast") and scenario.path != "fast_wake" else 400_000
+        epoch_age_ms = (
+            60_000 if scenario.path.startswith("fast") and scenario.path != "fast_wake" else 400_000
+        )
         seed_entity_state(
             pack,
             state,
@@ -278,9 +286,8 @@ def when_background_prompt_tools(
 
     submitted: list[bool] = []
 
-    def _sync_submit(fn: object) -> None:
+    def _sync_submit(fn: Callable[[], None]) -> None:
         submitted.append(True)
-        assert callable(fn)
         fn()
 
     monkeypatch.setattr("cyt.tiers.shadow._executor.submit", lambda fn: _sync_submit(fn))
@@ -298,7 +305,7 @@ def when_background_prompt_tools(
         t4_direct=[],
         excluded_t0=dormant_ids,
         policy_overrides={},
-        tier_by_tool={entity_id: Tier.DORMANT for entity_id in dormant_ids},
+        tier_by_tool=dict.fromkeys(dormant_ids, Tier.DORMANT),
     )
     schedule_tool_shadow_evaluation(
         config=config,
@@ -327,9 +334,8 @@ def when_background_prompt_skills(
 
     submitted: list[bool] = []
 
-    def _sync_submit(fn: object) -> None:
+    def _sync_submit(fn: Callable[[], None]) -> None:
         submitted.append(True)
-        assert callable(fn)
         fn()
 
     monkeypatch.setattr("cyt.tiers.shadow._executor.submit", lambda fn: _sync_submit(fn))
@@ -393,7 +399,12 @@ def when_optional_property_tool_use(
     scenario = _active_scenario(gherkin_context)
     config = _config_for_scenario(pack, scenario)
     monkeypatch.setattr("time.time", lambda: pack.fixed_now_ms / 1000)
-    manager.record_tool_attempt(tool_dict_for_pack(pack), config=config, success=True, optional_used=True)
+    manager.record_tool_attempt(
+        tool_dict_for_pack(pack),
+        config=config,
+        success=True,
+        optional_used=True,
+    )
     manager.flush_pending()
     gherkin_context.payload["entity_id"] = scenario.entity_id
     gherkin_context.payload["kind"] = "tool"
@@ -627,7 +638,7 @@ def then_mcp_server_description_wake_lease(gherkin_context: GherkinContext) -> N
 
 
 @pytest.fixture(autouse=True)
-def _close_manager(gherkin_context: GherkinContext) -> None:
+def _close_manager(gherkin_context: GherkinContext) -> Iterator[None]:
     yield
     manager = gherkin_context.payload.get("manager")
     if isinstance(manager, TierManager):

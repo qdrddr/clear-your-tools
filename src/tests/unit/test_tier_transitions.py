@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from cyt.tiers.config import tier_section_config
+from cyt.tiers.config import TierSectionConfig, tier_section_config
 from cyt.tiers.evaluator import evaluate_slow_clock
 from cyt.tiers.manager import TierManager, _managers
-from cyt.tiers.models import EpochState, Tier
+from cyt.tiers.models import EntityTierState, EpochState, Tier
 from cyt.tiers.wake import (
     evaluate_fast_wake,
     fast_promote_on_optional_use,
@@ -47,7 +47,7 @@ def fixture_pack(tmp_path: Path) -> TierTransitionsFixturePack:
 def _slow_cfg(
     pack: TierTransitionsFixturePack,
     scenario: SlowClockScenario,
-) -> object:
+) -> TierSectionConfig:
     config = tier_transitions_config(pack, kind=scenario.kind)
     section = dict(config.get("skills" if scenario.kind == "skill" else "tools") or {})
     tiers = dict(section.get("tiers") or {})
@@ -57,7 +57,7 @@ def _slow_cfg(
     return tier_section_config(config, kind=scenario.kind)
 
 
-def _state_for_slow_scenario(scenario: SlowClockScenario) -> object:
+def _state_for_slow_scenario(scenario: SlowClockScenario) -> EntityTierState:
     return entity_state_from_scenario(
         kind=scenario.kind,
         entity_id=scenario.entity_id,
@@ -78,7 +78,11 @@ def test_slow_clock_transitions_from_fixture(
 ) -> None:
     state = _state_for_slow_scenario(scenario)
     key = (scenario.kind, scenario.entity_id)
-    transitions = evaluate_slow_clock({key: state}, cfg=_slow_cfg(fixture_pack, scenario), epoch=EpochState())
+    transitions = evaluate_slow_clock(
+        {key: state},
+        cfg=_slow_cfg(fixture_pack, scenario),
+        epoch=EpochState(),
+    )
     assert any(t.reason == scenario.expected_reason for t in transitions)
     assert state.stable_tier == scenario.expected_stable_tier
 
@@ -114,7 +118,11 @@ def test_fast_hot_tool_temp_jump_from_fixture(
 
 @pytest.mark.parametrize(
     "scenario",
-    [s for s in load_fast_hot_scenarios() if s.kind == "skill" and s.expected_reason == "fast_wake"],
+    [
+        s
+        for s in load_fast_hot_scenarios()
+        if s.kind == "skill" and s.expected_reason == "fast_wake"
+    ],
     ids=[
         scenario.id
         for scenario in load_fast_hot_scenarios()
@@ -144,7 +152,11 @@ def test_fast_wake_skill_jump_from_fixture(
 
 @pytest.mark.parametrize(
     "scenario",
-    [s for s in load_fast_hot_scenarios() if s.kind == "skill" and s.expected_reason == "skill_used"],
+    [
+        s
+        for s in load_fast_hot_scenarios()
+        if s.kind == "skill" and s.expected_reason == "skill_used"
+    ],
     ids=[
         scenario.id
         for scenario in load_fast_hot_scenarios()
@@ -248,7 +260,7 @@ def test_temp_expiry_transitions_from_fixture(
     scenario: TempExpiryScenario,
 ) -> None:
     from cyt.tiers.evaluator import expire_temporary_promotions
-    from cyt.tiers.models import EntityTierState, EffectiveStats
+    from cyt.tiers.models import EffectiveStats, EntityTierState
 
     stats = EffectiveStats()
     for key, value in scenario.stats.items():

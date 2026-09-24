@@ -41,7 +41,6 @@ from cyt_client.rules_file import (
     hook_stdout_bytes_for_agent,
     is_substantive_rules_injection,
     is_valid_workspace_root,
-    read_cursor_rules_injection,
     read_prior_rules_injection_for_hook,
     reset_cursor_rules_file_to_placeholder,
     set_rules_file_rel_path,

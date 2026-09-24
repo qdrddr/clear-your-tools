@@ -16,6 +16,7 @@ from cyt.tiers.config import skills_tier_prompt_eval_active, tier_section_config
 from cyt.tiers.evaluator import evaluate_slow_clock
 from cyt.tiers.manager import _managers, get_tier_manager
 from cyt.tiers.models import EffectiveStats, EntityTierState, EpochState, Tier
+from tests.support.tiers_stats_fixtures import patch_load_config
 
 
 def _skills_enabled_config(db_path: Path) -> dict[str, Any]:
@@ -114,11 +115,8 @@ def test_tiers_stats_omits_skills_when_injection_disabled(
     (tmp_path / ".git").mkdir()
     db_path = tmp_path / "tier_state.db"
     config = _skills_disabled_config(db_path)
-    def _load_config(*args, **kwargs):
-        return config
 
-    monkeypatch.setattr("cyt.config.load_config", _load_config)
-    monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
+    patch_load_config(monkeypatch, config)
     monkeypatch.setattr(
         "cyt.tools.master_catalog.get_master_tool_catalog",
         lambda config, blocking=False: [],
@@ -150,11 +148,8 @@ def test_tiers_stats_kind_skills_errors_when_disabled(
     (tmp_path / ".git").mkdir()
     db_path = tmp_path / "tier_state.db"
     config = _skills_disabled_config(db_path)
-    def _load_config(*args, **kwargs):
-        return config
 
-    monkeypatch.setattr("cyt.config.load_config", _load_config)
-    monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
+    patch_load_config(monkeypatch, config)
     _managers.clear()
     code = tiers_main(["stats", "--workspace", str(tmp_path), "--kind", "skills"])
     assert code == 2
@@ -171,10 +166,7 @@ def test_build_status_overview_omits_skill_fields_when_disabled(
     db_path = tmp_path / "tier_state.db"
     config = _skills_disabled_config(db_path)
 
-    def _load_config(*args, **kwargs):
-        return config
-
-    monkeypatch.setattr("cyt.config.load_config", _load_config)
+    patch_load_config(monkeypatch, config)
     monkeypatch.setattr(
         "cyt.tools.master_catalog.get_master_tool_catalog",
         lambda config, blocking=False: [],

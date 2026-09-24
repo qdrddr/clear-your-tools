@@ -318,9 +318,7 @@ def expire_temporary_promotions(
         if state.effective_tier != state.stable_tier:
             old = state.effective_tier
             crystallize = (
-                state.kind in ("tool", "skill")
-                and old > state.stable_tier
-                and state.stats.used > 0
+                state.kind in ("tool", "skill") and old > state.stable_tier and state.stats.used > 0
             )
             if crystallize:
                 old_stable = state.stable_tier

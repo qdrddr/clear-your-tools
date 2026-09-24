@@ -545,7 +545,11 @@ def test_slow_clock_demotes_t2_with_candidates_but_no_injection() -> None:
         effective_tier=Tier.ACTIVE,
         stats=EffectiveStats(candidates=4.0),
     )
-    transitions = evaluate_slow_clock({("tool", "tool:bm25_only"): state}, cfg=cfg, epoch=EpochState())
+    transitions = evaluate_slow_clock(
+        {("tool", "tool:bm25_only"): state},
+        cfg=cfg,
+        epoch=EpochState(),
+    )
     assert any(t.reason == "slow_demote_t2_t1_unused" for t in transitions)
     assert state.stable_tier == Tier.COLD
 

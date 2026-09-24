@@ -30,6 +30,7 @@ tools:
     database:
       path: {db_path}
 skills:
+  enabled: true
   tiers:
     mode: shadow
 """,

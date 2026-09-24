@@ -39,12 +39,9 @@ def _patch_load_config_from_yaml(
         if isinstance(skills, dict):
             skills["enabled"] = True
     merged = _config_with_bundled_defaults(raw if isinstance(raw, dict) else {})
+    from tests.support.tiers_stats_fixtures import patch_load_config
 
-    def _load_config(*args, **kwargs):
-        return merged
-
-    monkeypatch.setattr("cyt.config.load_config", _load_config)
-    monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
+    patch_load_config(monkeypatch, merged)
     return merged
 
 

@@ -20,7 +20,6 @@ from cyt.hook.cli_invocation import (
 )
 from tests.support.cursor_hook_shell_wrapper_fixtures import (
     FISH_BREAKING_INLINE_PREFIX,
-    assert_fish_rejects_inline_hook_command,
     assert_wrapper_command_is_fish_safe,
     cursor_dev_client_wrapper_command,
     dev_repo_root,
@@ -92,7 +91,9 @@ def test_cursor_hook_entries_avoid_fish_breaking_inline_prefix(
             assert_wrapper_command_is_fish_safe(command)
 
     session_commands = [entry["command"] for entry in entries["session_start"]]
-    assert any(str(command).endswith("cyt-hook-daemon-start-dev.sh") for command in session_commands)
+    assert any(
+        str(command).endswith("cyt-hook-daemon-start-dev.sh") for command in session_commands
+    )
     assert any(str(command).endswith(wrapper_suffix()) for command in session_commands)
 
 
