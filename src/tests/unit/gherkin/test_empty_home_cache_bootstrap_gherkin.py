@@ -12,6 +12,7 @@ from pytest_bdd import given, scenarios, then, when
 from cyt.tools.inject_cli import run_inject_preview
 from cyt.tools.master_catalog import get_master_tool_catalog
 from tests.support.cyt_mcp_catalog_resilience_fixtures import reset_catalog_state
+from tests.support.cyt_mcp_catalog_resilience_fixtures import register_ws_catalog
 from tests.support.empty_home_cache_bootstrap_fixtures import (
     EmptyHomeFixturePack,
     clear_in_memory_hook_catalog_caches,
@@ -96,6 +97,18 @@ def when_daemon_warm_runs(gherkin_context: GherkinContext) -> None:
     simulate_daemon_warm(pack)
     config = scoped_hook_config(pack)
     gherkin_context.payload["master_catalog"] = get_master_tool_catalog(config, blocking=True)
+
+
+@when("a workspace cyt-mcp catalog is registered with the hook daemon")
+def when_catalog_registered(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pack: EmptyHomeFixturePack = gherkin_context.payload["pack"]
+    config = scoped_hook_config(pack)
+    monkeypatch.setattr("cyt.config.load_config", lambda *args, **kwargs: config)
+    register_ws_catalog(pack.workspace, pack.tools)
+    gherkin_context.payload["master_catalog"] = get_master_tool_catalog(config, blocking=False)
 
 
 @then("inject preview should fail with disk cache miss")

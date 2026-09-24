@@ -150,7 +150,7 @@ def test_daemon_start_unattended_reuses_without_credential_restart(
     cyt_mcp_ready.assert_not_called()
     mcpc_ready.assert_not_called()
     cf_ready.assert_not_called()
-    warm.assert_not_called()
+    warm.assert_called_once()
     assert result.reused is True
     assert result.port == 8834
 

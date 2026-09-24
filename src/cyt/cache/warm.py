@@ -78,19 +78,15 @@ def _bootstrap_mcpc_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
 def _bootstrap_cyt_mcp_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
     from cyt.cyt_mcp.cache_scheduler import start_cyt_mcp_cache_scheduler
     from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog, load_cyt_mcp_catalog_from_disk
-    from cyt.cyt_mcp.readiness import cyt_mcp_hook_catalog_usable
 
-    if not cyt_mcp_hook_catalog_usable(cfg, quick=False):
-        load_cyt_mcp_catalog_from_disk(cfg)
-        tools = get_cyt_mcp_catalog(cfg, blocking=False)
-        if tools:
-            start_cyt_mcp_cache_scheduler(cfg)
-        return tools
     load_cyt_mcp_catalog_from_disk(cfg)
     tools = get_cyt_mcp_catalog(cfg, blocking=False)
-    if not tools:
-        return get_cyt_mcp_catalog(cfg, blocking=True)
-    start_cyt_mcp_cache_scheduler(cfg)
+    if tools:
+        start_cyt_mcp_cache_scheduler(cfg)
+        return tools
+    tools = get_cyt_mcp_catalog(cfg, blocking=True, cold_start=True)
+    if tools:
+        start_cyt_mcp_cache_scheduler(cfg)
     return tools
 
 

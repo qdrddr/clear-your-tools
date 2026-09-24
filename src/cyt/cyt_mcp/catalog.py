@@ -14,6 +14,7 @@ from typing import Any
 from cyt.config import (
     load_config,
     tools_hook_cyt_mcp_agent,
+    tools_hook_cyt_mcp_cache_settings,
     uses_cyt_mcp_tool_catalog,
 )
 from cyt.cyt_mcp.catalog_disk import (
@@ -27,7 +28,8 @@ from cyt.hook.workspace_config import hook_workspace_from_config
 
 logger = logging.getLogger(__name__)
 
-BLOCKING_REGISTRY_WAIT_SECONDS = 0.5
+STEADY_STATE_REGISTRY_WAIT_SECONDS = 0.5
+DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS = 30.0
 BLOCKING_REGISTRY_POLL_SECONDS = 0.05
 
 
@@ -438,14 +440,32 @@ def _fetch_catalog_from_registry(
     return _normalize_tools_list(tools)
 
 
-def _wait_for_registry_catalog(config: dict[str, Any]) -> list[dict[str, Any]]:
-    deadline = time.monotonic() + BLOCKING_REGISTRY_WAIT_SECONDS
+def _registry_wait_seconds(cfg: dict[str, Any], *, cold_start: bool) -> float:
+    if not cold_start:
+        return STEADY_STATE_REGISTRY_WAIT_SECONDS
+    cache_settings = tools_hook_cyt_mcp_cache_settings(cfg)
+    raw = cache_settings.get("registry_wait_seconds", DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS)
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS
+
+
+def _wait_for_registry_catalog(
+    config: dict[str, Any],
+    *,
+    cache_key: _CytMcpCacheKey | None = None,
+    cold_start: bool = False,
+) -> list[dict[str, Any]]:
+    cfg = config
+    wait_seconds = _registry_wait_seconds(cfg, cold_start=cold_start)
+    deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
-        tools = _fetch_catalog_from_registry(config, allow_stale=True)
+        tools = _fetch_catalog_from_registry(cfg, allow_stale=True)
         if tools:
             return tools
         time.sleep(BLOCKING_REGISTRY_POLL_SECONDS)
-    return _fetch_catalog_from_registry(config, allow_stale=True)
+    return _fetch_catalog_from_registry(cfg, allow_stale=True)
 
 
 def _write_catalog_disk(cache_key: _CytMcpCacheKey, tools: list[dict[str, Any]]) -> None:
@@ -510,10 +530,11 @@ def _refresh_from_registry(
     cache_key: _CytMcpCacheKey,
     *,
     blocking: bool,
+    cold_start: bool = False,
 ) -> list[dict[str, Any]]:
     state = _get_state(cache_key)
     if blocking:
-        tools = _wait_for_registry_catalog(cfg)
+        tools = _wait_for_registry_catalog(cfg, cache_key=cache_key, cold_start=cold_start)
     else:
         tools = _fetch_catalog_from_registry(cfg, allow_stale=True)
 
@@ -543,6 +564,7 @@ def _get_cyt_mcp_catalog_impl(
     *,
     blocking: bool,
     force: bool,
+    cold_start: bool = False,
 ) -> list[dict[str, Any]] | None:
     cache_key = _cache_key_for_config(cfg)
     state = _get_state(cache_key)
@@ -556,7 +578,12 @@ def _get_cyt_mcp_catalog_impl(
             has_memory = bool(state.tools)
 
     if force or blocking or not has_memory:
-        tools = _refresh_from_registry(cfg, cache_key, blocking=blocking or not has_memory)
+        tools = _refresh_from_registry(
+            cfg,
+            cache_key,
+            blocking=blocking or not has_memory,
+            cold_start=cold_start,
+        )
         if tools:
             return _filter_tools_by_permissions(cfg, tools)
         if has_memory:
@@ -587,11 +614,17 @@ def get_cyt_mcp_catalog(
     *,
     blocking: bool = False,
     force: bool = False,
+    cold_start: bool = False,
 ) -> list[dict[str, Any]] | None:
     cfg = config or load_config()
     if not _runtime_active(cfg):
         return None
-    return _get_cyt_mcp_catalog_impl(cfg, blocking=blocking, force=force)
+    return _get_cyt_mcp_catalog_impl(
+        cfg,
+        blocking=blocking,
+        force=force,
+        cold_start=cold_start,
+    )
 
 
 def cyt_mcp_catalog_fingerprint(config: dict[str, Any] | None = None) -> str:

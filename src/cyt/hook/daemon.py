@@ -620,7 +620,7 @@ def _resolve_start_reused_port(
             mode=mode,
             verbose=verbose,
             unattended=unattended,
-            schedule_warm=False,
+            schedule_warm=True,
         )
     return reused_port, None
 

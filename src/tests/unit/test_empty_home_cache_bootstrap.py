@@ -3,18 +3,31 @@
 from __future__ import annotations
 
 import argparse
+import threading
+import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from cyt.config import cache_skills_dir
+from cyt.cyt_mcp.catalog import (
+    DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS,
+    STEADY_STATE_REGISTRY_WAIT_SECONDS,
+    _registry_wait_seconds,
+)
 from cyt.hook.catalog_registry import catalog_for_hook, clear_catalog_registry
 from cyt.tools.inject_cli import run_inject_preview
 from cyt.tools.master_catalog import get_master_tool_catalog
-from tests.support.cyt_mcp_catalog_resilience_fixtures import write_registry_disk_snapshot
+from cyt.tools.registry import load_tool_catalog
+from tests.support.cyt_mcp_catalog_resilience_fixtures import (
+    register_ws_catalog,
+    write_registry_disk_snapshot,
+)
 from tests.support.empty_home_cache_bootstrap_fixtures import (
     EmptyHomeFixturePack,
     assert_empty_cyt_cache,
+    clear_in_memory_hook_catalog_caches,
     disk_cache_hit,
     isolated_empty_home_pack,
     registry_has_workspace_registration,
@@ -25,6 +38,19 @@ from tests.support.empty_home_cache_bootstrap_fixtures import (
     simulate_proxy_registry_load,
     skills_enabled_hook_config,
 )
+
+
+def _patch_fast_registry_wait(
+    monkeypatch: pytest.MonkeyPatch,
+    pack: EmptyHomeFixturePack,
+) -> dict:
+    config = scoped_hook_config(pack)
+    hook = config.setdefault("pruning", {}).setdefault("tools", {}).setdefault("hook", {})
+    cyt_mcp = hook.setdefault("cyt_mcp", {})
+    cache = cyt_mcp.setdefault("cache", {})
+    cache["registry_wait_seconds"] = 0.05
+    monkeypatch.setattr("cyt.config.load_config", lambda *args, **kwargs: config)
+    return config
 
 
 def _preview_args(pack: EmptyHomeFixturePack) -> argparse.Namespace:
@@ -101,12 +127,101 @@ def test_inject_preview_succeeds_after_push_and_warm(
 
 def test_warm_caches_alone_does_not_invent_tools(
     isolated_empty_home_pack: EmptyHomeFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pack = isolated_empty_home_pack
+    _patch_fast_registry_wait(monkeypatch, pack)
     simulate_daemon_warm(pack)
 
     catalog = get_master_tool_catalog(scoped_hook_config(pack), blocking=True) or []
     assert catalog == []
+
+
+def test_register_catalog_eager_hydrates_master_without_warm(
+    isolated_empty_home_pack: EmptyHomeFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pack = isolated_empty_home_pack
+    config = scoped_hook_config(pack)
+    monkeypatch.setattr("cyt.config.load_config", lambda *args, **kwargs: config)
+    clear_in_memory_hook_catalog_caches()
+
+    register_ws_catalog(pack.workspace, pack.tools)
+
+    catalog = get_master_tool_catalog(config, blocking=False) or []
+    names = {tool["name"] for tool in catalog}
+    assert len(catalog) >= pack.minimum_master_catalog_tools
+    assert set(pack.expected_tool_names).issubset(names)
+    assert disk_cache_hit(pack)
+
+
+def test_load_tool_catalog_blocks_until_delayed_register(
+    isolated_empty_home_pack: EmptyHomeFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pack = isolated_empty_home_pack
+    config = scoped_hook_config(pack)
+    hook = config.setdefault("pruning", {}).setdefault("tools", {}).setdefault("hook", {})
+    hook.setdefault("cyt_mcp", {}).setdefault("cache", {})["registry_wait_seconds"] = 2.0
+    monkeypatch.setattr("cyt.config.load_config", lambda *args, **kwargs: config)
+    clear_in_memory_hook_catalog_caches()
+
+    result_holder: list[list[dict] | None] = []
+
+    def _load() -> None:
+        result_holder.append(load_tool_catalog(config))
+
+    thread = threading.Thread(target=_load, name="cold-start-load")
+    thread.start()
+    time.sleep(0.25)
+    register_ws_catalog(pack.workspace, pack.tools)
+    thread.join(timeout=5.0)
+
+    assert not thread.is_alive()
+    catalog = result_holder[0] or []
+    names = {tool["name"] for tool in catalog}
+    assert set(pack.expected_tool_names).issubset(names)
+
+
+def test_load_tool_catalog_uses_blocking_when_master_empty() -> None:
+    config = {
+        "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+            "tools": {
+                "enabled": True,
+                "hook": {"tools_from": ["cyt_mcp"], "cyt_mcp": {"agent": "cursor"}},
+            },
+        },
+    }
+    with (
+        patch("cyt.tools.registry.tools_hook_file_missing", return_value=False),
+        patch("cyt.tools.registry.get_master_tool_catalog") as get_master,
+    ):
+        get_master.side_effect = [[], [{"name": "tool-a", "cyt_catalog_source": "cyt_mcp"}]]
+        catalog = load_tool_catalog(config)
+        assert catalog == [{"name": "tool-a", "cyt_catalog_source": "cyt_mcp"}]
+        assert get_master.call_count == 2
+        assert get_master.call_args_list[0].kwargs["blocking"] is False
+        assert get_master.call_args_list[1].kwargs["blocking"] is True
+        assert get_master.call_args_list[1].kwargs["cold_start"] is True
+
+
+def test_registry_wait_seconds_cold_start_vs_steady_state() -> None:
+    cfg: dict = {
+        "pruning": {
+            "tools": {
+                "hook": {
+                    "cyt_mcp": {
+                        "cache": {"registry_wait_seconds": DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS},
+                    },
+                },
+            },
+        },
+    }
+    assert _registry_wait_seconds(cfg, cold_start=True) == DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS
+    assert _registry_wait_seconds(cfg, cold_start=False) == STEADY_STATE_REGISTRY_WAIT_SECONDS
+    cfg["pruning"]["tools"]["hook"]["cyt_mcp"]["cache"]["registry_wait_seconds"] = 12.0
+    assert _registry_wait_seconds(cfg, cold_start=True) == 12.0
 
 
 def test_warm_caches_builds_skills_registry_on_disk(

@@ -132,7 +132,7 @@ def materialize_empty_home_workspace(tmp_path: Path) -> EmptyHomeFixturePack:
     global_config_path.write_text(GLOBAL_HOOK_CONFIG, encoding="utf-8")
 
     catalog_cache_dir = tmp_path / "cyt-mcp-catalog"
-    catalog_cache_dir.mkdir()
+    catalog_cache_dir.mkdir(exist_ok=True)
     registry_snapshot_file = tmp_path / "catalog-registry" / "registrations.json"
     global_mcp_agg = tmp_path / "global-mcp-aggregator.yaml"
     global_mcp_defs = tmp_path / "global-mcp" / "cursor.json"
@@ -161,9 +161,15 @@ def materialize_empty_home_workspace(tmp_path: Path) -> EmptyHomeFixturePack:
     )
 
 
+def _fast_registry_wait_hook_config(config: dict[str, Any]) -> dict[str, Any]:
+    hook = config.setdefault("pruning", {}).setdefault("tools", {}).setdefault("hook", {})
+    hook.setdefault("cyt_mcp", {}).setdefault("cache", {})["registry_wait_seconds"] = 0.05
+    return config
+
+
 def scoped_hook_config(pack: EmptyHomeFixturePack) -> dict[str, Any]:
     config = load_config(pack.global_config_path)
-    return set_hook_workspace_in_config(config, pack.workspace)
+    return _fast_registry_wait_hook_config(set_hook_workspace_in_config(config, pack.workspace))
 
 
 def skills_enabled_hook_config(
@@ -171,25 +177,27 @@ def skills_enabled_hook_config(
     *,
     skills_cache_dir: Path,
 ) -> dict[str, Any]:
-    return set_hook_workspace_in_config(
-        {
-            "cache": {"enabled": True, "skills_dir": str(skills_cache_dir)},
-            "pruning": {
-                "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
-                "tools": {
-                    "enabled": True,
-                    "hook": {
-                        "tools_from": ["cyt_mcp"],
-                        "cyt_mcp": {"agent": "cursor"},
+    return _fast_registry_wait_hook_config(
+        set_hook_workspace_in_config(
+            {
+                "cache": {"enabled": True, "skills_dir": str(skills_cache_dir)},
+                "pruning": {
+                    "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+                    "tools": {
+                        "enabled": True,
+                        "hook": {
+                            "tools_from": ["cyt_mcp"],
+                            "cyt_mcp": {"agent": "cursor"},
+                        },
                     },
                 },
+                "skills": {
+                    "enabled": True,
+                    "directories": [str(pack.workspace / ".agents" / "skills")],
+                },
             },
-            "skills": {
-                "enabled": True,
-                "directories": [str(pack.workspace / ".agents" / "skills")],
-            },
-        },
-        pack.workspace,
+            pack.workspace,
+        ),
     )
 
 

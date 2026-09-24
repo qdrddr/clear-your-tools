@@ -385,6 +385,7 @@ tools:
     cyt_mcp:
       executable: cyt-mcp
       cache:
+        registry_wait_seconds: 30 # cold-start blocking wait for cyt-mcp push to hook registry
         tools_refresh_seconds: 120
         disk_flush_seconds: 900
     mcpc:

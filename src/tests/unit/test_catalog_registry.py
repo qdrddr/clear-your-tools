@@ -52,6 +52,36 @@ def _register_layer(
     assert result.status == RegisterStatus.STORED
 
 
+def test_register_catalog_hydrates_hook_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cyt.hook.workspace_config import set_hook_workspace_in_config
+    from cyt.tools.master_catalog import clear_master_catalog_cache, get_master_tool_catalog
+
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    tools = [{"name": "hydrate_tool", "inputSchema": {}}]
+    config = set_hook_workspace_in_config(
+        {
+            "pruning": {
+                "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+                "tools": {
+                    "enabled": True,
+                    "hook": {
+                        "tools_from": ["cyt_mcp"],
+                        "cyt_mcp": {"agent": "cursor"},
+                    },
+                },
+            },
+        },
+        ws_root,
+    )
+    monkeypatch.setattr("cyt.config.load_config", lambda *args, **kwargs: config)
+    clear_master_catalog_cache()
+    _register_layer(ws_root, tools)
+
+    catalog = get_master_tool_catalog(config, blocking=False) or []
+    assert any(tool.get("name") == "hydrate_tool" for tool in catalog)
+
+
 def test_register_rejects_legacy_global_scope() -> None:
     tools = [{"name": "global_tool", "input_schema": {}}]
     content_hash = raw_catalog_content_hash(tools)

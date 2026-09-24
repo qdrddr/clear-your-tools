@@ -19,3 +19,9 @@ Feature: Empty cyt home cache bootstrap
     And in-memory hook catalog caches were cleared like a fresh CLI process
     When daemon warm caches run for the workspace
     Then master catalog tool count should meet the bootstrap scenario minimum
+
+  Scenario: catalog register eagerly hydrates master without warm
+    Given an empty cyt home cache for the workspace
+    And in-memory hook catalog caches were cleared like a fresh CLI process
+    When a workspace cyt-mcp catalog is registered with the hook daemon
+    Then master catalog tool count should meet the bootstrap scenario minimum

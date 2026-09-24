@@ -238,6 +238,7 @@ def _load_source_tools(
     source: str,
     *,
     blocking: bool,
+    cold_start: bool = False,
 ) -> list[dict[str, Any]]:
     if source == "definitions":
         from cyt.tools.definitions_catalog import get_definitions_catalog
@@ -258,7 +259,7 @@ def _load_source_tools(
     if source == "cyt_mcp":
         from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog
 
-        return get_cyt_mcp_catalog(config, blocking=blocking) or []
+        return get_cyt_mcp_catalog(config, blocking=blocking, cold_start=cold_start) or []
     if source == "cloudflare":
         from cyt.cloudflare.catalog import get_cloudflare_catalog
 
@@ -293,7 +294,12 @@ def _hydrate_master_from_disk_if_empty(config: dict[str, Any], state: _MasterCat
     rebuild_master_catalog(config, blocking=False)
 
 
-def rebuild_master_catalog(config: dict[str, Any] | None = None, *, blocking: bool = False) -> None:
+def rebuild_master_catalog(
+    config: dict[str, Any] | None = None,
+    *,
+    blocking: bool = False,
+    cold_start: bool = False,
+) -> None:
     """Rebuild master snapshot from configured sources."""
     cfg = config or load_config()
     cache_key = _cache_key_for_config(cfg)
@@ -317,7 +323,7 @@ def rebuild_master_catalog(config: dict[str, Any] | None = None, *, blocking: bo
         current_fingerprints = _current_source_fingerprints(cfg)
         ordered_parts: list[tuple[str, list[dict[str, Any]]]] = []
         for source in tools_hook_sources(cfg):
-            tools = _load_source_tools(cfg, source, blocking=blocking)
+            tools = _load_source_tools(cfg, source, blocking=blocking, cold_start=cold_start)
             if tools:
                 ordered_parts.append((source, tools))
             elif not blocking:
@@ -343,6 +349,7 @@ def get_master_tool_catalog(
     config: dict[str, Any] | None = None,
     *,
     blocking: bool = False,
+    cold_start: bool = False,
 ) -> list[dict[str, Any]] | None:
     """SWR read of the concatenated master catalog."""
     cfg = config or load_config()
@@ -363,7 +370,7 @@ def get_master_tool_catalog(
         schedule_master_catalog_refresh(cfg)
 
     if blocking and not snapshot:
-        rebuild_master_catalog(cfg, blocking=True)
+        rebuild_master_catalog(cfg, blocking=True, cold_start=cold_start)
         snapshot = _snapshot_master_tools(state)
         if not snapshot:
             with _catalog_lock:
