@@ -51,6 +51,19 @@ def _manager(gherkin_context: GherkinContext) -> TierManager:
     return manager
 
 
+def _config_for_scenario(pack: TierTransitionsFixturePack, scenario) -> dict:
+    overrides = scenario.config_overrides or {}
+    config = tier_transitions_config(pack, kind=scenario.kind, overrides=overrides)
+    if overrides:
+        # TierManager._run_epoch always evaluates slow-clock rules from the tool section.
+        tools = dict(config.get("tools") or {})
+        tool_tiers = dict(tools.get("tiers") or {})
+        tool_tiers.update(overrides)
+        tools["tiers"] = tool_tiers
+        config["tools"] = tools
+    return config
+
+
 def _setup_pack(
     gherkin_context: GherkinContext,
     tmp_path: Path,
@@ -83,7 +96,7 @@ def _setup_pack(
         )
     manager = TierManager(pack.workspace, str(pack.db_path))
     gherkin_context.payload["manager"] = manager
-    gherkin_context.config = tier_transitions_config(pack, kind=scenario.kind)
+    gherkin_context.config = _config_for_scenario(pack, scenario)
 
 
 def _setup_fast_wake_pack(
@@ -128,7 +141,7 @@ def _setup_fast_wake_pack(
         )
     manager = TierManager(pack.workspace, str(pack.db_path))
     gherkin_context.payload["manager"] = manager
-    gherkin_context.config = tier_transitions_config(pack, kind=scenario.kind)
+    gherkin_context.config = _config_for_scenario(pack, scenario)
 
 
 @given("tier transition fixtures for slow tool demotion")
@@ -217,6 +230,38 @@ def given_fast_wake_mcp_server_batch(
     tmp_path: Path,
 ) -> None:
     _setup_fast_wake_pack(gherkin_context, tmp_path, "fast_wake_mcp_server_batch")
+
+
+@given("tier transition fixtures for slow skill promote t2 t3")
+def given_slow_skill_promote_t2_t3(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    _setup_pack(gherkin_context, tmp_path, "slow_skill_promote_t2_t3")
+
+
+@given("tier transition fixtures for slow tool demote t4 emergency")
+def given_slow_tool_demote_t4_emergency(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    _setup_pack(gherkin_context, tmp_path, "slow_tool_demote_t4_emergency")
+
+
+@given("tier transition fixtures for slow skill demote t4 emergency")
+def given_slow_skill_demote_t4_emergency(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    _setup_pack(gherkin_context, tmp_path, "slow_skill_demote_t4_emergency")
+
+
+@given("tier transition fixtures for fast hot optional property use")
+def given_fast_hot_optional_property_use(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    _setup_pack(gherkin_context, tmp_path, "fast_hot_optional_property_used", seed=True)
 
 
 @when("the tier manager processes the last user prompt in the background for tools")
@@ -312,7 +357,7 @@ def when_expired_epoch_tools(
     pack = _pack(gherkin_context)
     manager = _manager(gherkin_context)
     scenario = _active_scenario(gherkin_context)
-    config = tier_transitions_config(pack, kind="tool")
+    config = _config_for_scenario(pack, scenario)
     monkeypatch.setattr("time.time", lambda: pack.epoch_expired_now_ms / 1000)
     expire_epoch_on_manager(manager, now_ms=pack.epoch_expired_now_ms)
     manager.record_tool_candidates([], config=config)
@@ -329,13 +374,29 @@ def when_expired_epoch_skills(
     pack = _pack(gherkin_context)
     manager = _manager(gherkin_context)
     scenario = _active_scenario(gherkin_context)
-    config = tier_transitions_config(pack, kind="skill")
+    config = _config_for_scenario(pack, scenario)
     monkeypatch.setattr("time.time", lambda: pack.epoch_expired_now_ms / 1000)
     expire_epoch_on_manager(manager, now_ms=pack.epoch_expired_now_ms)
     manager.record_skill_candidates([], config=config)
     manager.flush_pending()
     gherkin_context.payload["entity_id"] = scenario.entity_id
     gherkin_context.payload["kind"] = "skill"
+
+
+@when("the tier manager records optional property use on a tool")
+def when_optional_property_tool_use(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pack = _pack(gherkin_context)
+    manager = _manager(gherkin_context)
+    scenario = _active_scenario(gherkin_context)
+    config = _config_for_scenario(pack, scenario)
+    monkeypatch.setattr("time.time", lambda: pack.fixed_now_ms / 1000)
+    manager.record_tool_attempt(tool_dict_for_pack(pack), config=config, success=True, optional_used=True)
+    manager.flush_pending()
+    gherkin_context.payload["entity_id"] = scenario.entity_id
+    gherkin_context.payload["kind"] = "tool"
 
 
 @when("the tier manager records a successful tool use")
@@ -414,6 +475,16 @@ def then_epoch_log_demote_unused(gherkin_context: GherkinContext) -> None:
 @then("the epoch log should include slow_promote_t1_t2")
 def then_epoch_log_promote_t1_t2(gherkin_context: GherkinContext) -> None:
     assert "slow_promote_t1_t2" in latest_epoch_log_reasons(_pack(gherkin_context))
+
+
+@then("the epoch log should include slow_promote_t2_t3")
+def then_epoch_log_promote_t2_t3(gherkin_context: GherkinContext) -> None:
+    assert "slow_promote_t2_t3" in latest_epoch_log_reasons(_pack(gherkin_context))
+
+
+@then("the epoch log should include emergency_t4_eviction")
+def then_epoch_log_emergency_t4(gherkin_context: GherkinContext) -> None:
+    assert "emergency_t4_eviction" in latest_epoch_log_reasons(_pack(gherkin_context))
 
 
 @then("the tool effective tier should be HOT")
@@ -516,26 +587,43 @@ def then_entity_wake_lease(gherkin_context: GherkinContext) -> None:
     assert state.wake_lease_until_cycle > 0
 
 
-@then("every dormant tool on the MCP server should be COLD")
-def then_all_mcp_server_tools_cold(gherkin_context: GherkinContext) -> None:
+@then("every dormant tool on the MCP server should stay DORMANT")
+def then_all_mcp_server_tools_dormant(gherkin_context: GherkinContext) -> None:
     manager = _manager(gherkin_context)
     entity_ids = gherkin_context.payload.get("mcp_server_entity_ids", [])
     assert entity_ids
     for entity_id in entity_ids:
         state = manager._states.get(("tool", str(entity_id)))
         assert state is not None
-        assert state.stable_tier == Tier.COLD
+        assert state.stable_tier == Tier.DORMANT
+        assert state.effective_tier == Tier.DORMANT
 
 
-@then("every MCP server tool should have a wake lease from fast promotion")
-def then_all_mcp_server_wake_lease(gherkin_context: GherkinContext) -> None:
+@then("the MCP server description should be COLD")
+def then_mcp_server_description_cold(gherkin_context: GherkinContext) -> None:
+    from cyt.tiers.adapters.tools import mcp_server_entity_id
+    from cyt.tiers.models import EntityKind
+
     manager = _manager(gherkin_context)
-    entity_ids = gherkin_context.payload.get("mcp_server_entity_ids", [])
-    assert entity_ids
-    for entity_id in entity_ids:
-        state = manager._states.get(("tool", str(entity_id)))
-        assert state is not None
-        assert state.wake_lease_until_cycle > 0
+    scenario = _active_scenario(gherkin_context)
+    server = scenario.mcp_server or "gitnexus"
+    state = manager._states.get((EntityKind.MCP_SERVER, mcp_server_entity_id(server)))
+    assert state is not None
+    assert state.stable_tier == Tier.COLD
+    assert state.effective_tier == Tier.COLD
+
+
+@then("the MCP server description should have a wake lease from fast promotion")
+def then_mcp_server_description_wake_lease(gherkin_context: GherkinContext) -> None:
+    from cyt.tiers.adapters.tools import mcp_server_entity_id
+    from cyt.tiers.models import EntityKind
+
+    manager = _manager(gherkin_context)
+    scenario = _active_scenario(gherkin_context)
+    server = scenario.mcp_server or "gitnexus"
+    state = manager._states.get((EntityKind.MCP_SERVER, mcp_server_entity_id(server)))
+    assert state is not None
+    assert state.wake_lease_until_cycle > 0
 
 
 @pytest.fixture(autouse=True)

@@ -108,6 +108,22 @@ class FastHotScenario:
     expected_stable_tier: Tier
     expected_reason: str
     expect_temp_promotion: bool
+    use_optional_promotion: bool
+
+
+@dataclass(frozen=True)
+class TempExpiryScenario:
+    id: str
+    kind: str
+    entity_id: str
+    stable_tier: Tier
+    effective_tier: Tier
+    overlap_tier: Tier | None
+    temp_promotion_until_ms: int
+    stats: dict[str, float]
+    now_ms: int
+    expected_stable_tier: Tier
+    expected_reason: str
 
 
 @dataclass(frozen=True)
@@ -140,6 +156,9 @@ class GherkinTransitionScenario:
     expected_after_epoch_stable_tier: Tier | None = None
     user_prompt_key: str | None = None
     mcp_server_batch: bool = False
+    mcp_server: str | None = None
+    expected_mcp_server_stable_tier: Tier | None = None
+    config_overrides: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -228,6 +247,24 @@ def _fast_hot_scenario(row: dict[str, Any]) -> FastHotScenario:
         expected_stable_tier=parse_tier(row.get("expected_stable_tier")),
         expected_reason=str(row.get("expected_reason", "")),
         expect_temp_promotion=bool(row.get("expect_temp_promotion", False)),
+        use_optional_promotion=bool(row.get("use_optional_promotion", False)),
+    )
+
+
+def _temp_expiry_scenario(row: dict[str, Any]) -> TempExpiryScenario:
+    overlap = row.get("overlap_tier")
+    return TempExpiryScenario(
+        id=str(row["id"]),
+        kind=str(row.get("kind", "tool")),
+        entity_id=str(row["entity_id"]),
+        stable_tier=parse_tier(row.get("stable_tier")),
+        effective_tier=parse_tier(row.get("effective_tier", row.get("stable_tier"))),
+        overlap_tier=parse_tier(overlap) if overlap is not None else None,
+        temp_promotion_until_ms=int(row.get("temp_promotion_until_ms", 0)),
+        stats={str(k): float(v) for k, v in dict(row.get("stats") or {}).items()},
+        now_ms=int(row.get("now_ms", 0)),
+        expected_stable_tier=parse_tier(row["expected_stable_tier"]),
+        expected_reason=str(row.get("expected_reason", "")),
     )
 
 
@@ -278,6 +315,11 @@ def _gherkin_scenario(row: dict[str, Any]) -> GherkinTransitionScenario:
         else None,
         user_prompt_key=str(row["user_prompt_key"]) if row.get("user_prompt_key") else None,
         mcp_server_batch=bool(row.get("mcp_server_batch", False)),
+        mcp_server=str(row["mcp_server"]) if row.get("mcp_server") else None,
+        expected_mcp_server_stable_tier=parse_tier(row["expected_mcp_server_stable_tier"])
+        if row.get("expected_mcp_server_stable_tier") is not None
+        else None,
+        config_overrides=dict(row.get("config_overrides") or {}) or None,
     )
 
 
@@ -289,6 +331,11 @@ def load_slow_clock_scenarios(path: Path = SCENARIOS_PATH) -> tuple[SlowClockSce
 def load_fast_hot_scenarios(path: Path = SCENARIOS_PATH) -> tuple[FastHotScenario, ...]:
     rows = _load_payload(path).get("fast_hot", [])
     return tuple(_fast_hot_scenario(row) for row in rows if isinstance(row, dict))
+
+
+def load_temp_expiry_scenarios(path: Path = SCENARIOS_PATH) -> tuple[TempExpiryScenario, ...]:
+    rows = _load_payload(path).get("temp_expiry", [])
+    return tuple(_temp_expiry_scenario(row) for row in rows if isinstance(row, dict))
 
 
 def load_manager_integration_scenarios(

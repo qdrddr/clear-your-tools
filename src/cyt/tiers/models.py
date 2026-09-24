@@ -30,6 +30,7 @@ class Tier(IntEnum):
 class EntityKind:
     TOOL = "tool"
     SKILL = "skill"
+    MCP_SERVER = "mcp_server"
 
 
 @dataclass(frozen=True)

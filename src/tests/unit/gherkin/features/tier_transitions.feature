@@ -66,8 +66,34 @@ Feature: Tier manager slow epoch and fast hot transitions
     Then the skill stable tier should be COLD
     And the entity should have a wake lease from fast promotion
 
-  Scenario: Fast wake promotes all dormant tools on the same MCP server
+  Scenario: Fast wake promotes MCP server description when all tools are dormant
     Given tier transition fixtures for fast wake MCP server batch
     When the tier manager processes the last user prompt in the background for tools
-    Then every dormant tool on the MCP server should be COLD
-    And every MCP server tool should have a wake lease from fast promotion
+    Then every dormant tool on the MCP server should stay DORMANT
+    And the MCP server description should be COLD
+    And the MCP server description should have a wake lease from fast promotion
+
+  Scenario: Slow clock promotes skill from ACTIVE to HOT at epoch boundary
+    Given tier transition fixtures for slow skill promote t2 t3
+    When the tier manager runs an expired epoch for skills
+    Then the skill stable tier should be HOT
+    And the epoch log should include slow_promote_t2_t3
+
+  Scenario: Slow clock emergency demotes unused tool from EXTRA_HOT
+    Given tier transition fixtures for slow tool demote t4 emergency
+    When the tier manager runs an expired epoch for tools
+    Then the tool stable tier should be HOT
+    And the epoch log should include emergency_t4_eviction
+
+  Scenario: Slow clock emergency demotes unused skill from EXTRA_HOT
+    Given tier transition fixtures for slow skill demote t4 emergency
+    When the tier manager runs an expired epoch for skills
+    Then the skill stable tier should be HOT
+    And the epoch log should include emergency_t4_eviction
+
+  Scenario: Fast hot path jumps tool to HOT on optional property use
+    Given tier transition fixtures for fast hot optional property use
+    When the tier manager records optional property use on a tool
+    Then the tool effective tier should be HOT
+    And the tool stable tier should remain COLD
+    And the tool should have a temporary promotion expiry

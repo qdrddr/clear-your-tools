@@ -1,0 +1,70 @@
+{
+  "wake_cycle_id": 3,
+  "lexical_hits": [
+    {
+      "id": "tool_name_exact_in_query",
+      "query": "please run gitnexus_query on the codebase",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "wire_name": "gitnexus_query",
+      "description": "Query gitnexus knowledge graph",
+      "expected_score": 0.85
+    },
+    {
+      "id": "tool_name_token_partial",
+      "query": "use gitnexus for graph search",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "wire_name": "gitnexus_query",
+      "description": "Query gitnexus knowledge graph",
+      "expected_score": 0.55
+    },
+    {
+      "id": "skill_name_exact_in_query",
+      "query": "follow the create-hook skill instructions",
+      "entity_id": "skill:create-hook",
+      "name": "create-hook",
+      "description": "Create Cursor hooks and hook scripts",
+      "expected_score": 0.85
+    },
+    {
+      "id": "no_match_returns_empty",
+      "query": "quantum entanglement lattice gauge theory",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "wire_name": "gitnexus_query",
+      "description": "Query gitnexus knowledge graph",
+      "expected_score": 0.0
+    }
+  ],
+  "record_shadow": [
+    {
+      "id": "direct_hit_wakes_dormant_tool",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "hits": [["cyt_mcp:gitnexus_query", 0.85]],
+      "expect_wake": true
+    },
+    {
+      "id": "direct_hit_wakes_dormant_skill",
+      "kind": "skill",
+      "entity_id": "skill:create-hook",
+      "hits": [["skill:create-hook", 0.85]],
+      "expect_wake": true
+    },
+    {
+      "id": "weak_score_does_not_wake",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "hits": [["cyt_mcp:gitnexus_query", 0.35]],
+      "expect_wake": false
+    },
+    {
+      "id": "mcp_server_batch_wakes_server_description",
+      "kind": "tool",
+      "mcp_server_batch": true,
+      "mcp_server": "gitnexus",
+      "primary_entity_id": "cyt_mcp:gitnexus_query",
+      "hit_score": 0.85,
+      "expect_tools_dormant": true,
+      "expect_server_cold": true
+    }
+  ]
+}

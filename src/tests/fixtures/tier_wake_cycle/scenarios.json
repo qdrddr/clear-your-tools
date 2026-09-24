@@ -158,6 +158,17 @@
       "stats": {"used_without_injection": 1.0},
       "expected_tier": "COLD",
       "expect_transition": false
+    },
+    {
+      "id": "shadow_activity_prevents_sleep",
+      "wake_cycle_id": 10,
+      "wake_lease_until_cycle": 0,
+      "had_selection": false,
+      "had_use": false,
+      "had_shadow": true,
+      "stats": {},
+      "expected_tier": "COLD",
+      "expect_transition": false
     }
   ],
   "request_cycle": [

@@ -11,6 +11,12 @@ from cyt.indexer.policies import PolicyContext
 from cyt.tiers.models import EffectiveStats, Tier, ToolsTierApplyResult
 
 
+def mcp_server_entity_id(server: str) -> str:
+    """Stable tier entity id for an MCP server's optional description."""
+    name = str(server or "").strip()
+    return f"mcp_server:{name}" if name else ""
+
+
 def entity_id_catalog_source(entity_id: str) -> str:
     text = str(entity_id or "").strip()
     if ":" in text:

@@ -8,10 +8,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from cyt.tiers.adapters.tools import tool_entity_id
+from cyt.tiers.adapters.tools import mcp_server_entity_id, tool_entity_id
 from cyt.tiers.config import TierMode, TierSectionConfig, tiers_active
 from cyt.tiers.manager import NoOpTierManager, TierManager
-from cyt.tiers.models import EntityTierState, Tier, ToolsTierApplyResult
+from cyt.tiers.models import EntityKind, EntityTierState, Tier, ToolsTierApplyResult
 from cyt.tiers.wake import evaluate_fast_wake
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,33 @@ def _entity_mcp_server(entity_id: str, tools_by_id: dict[str, dict[str, Any]]) -
     return server or None
 
 
+def _server_tool_entity_ids(
+    server: str,
+    tools_by_id: dict[str, dict[str, Any]],
+) -> list[str]:
+    return [
+        entity_id
+        for entity_id in tools_by_id
+        if _entity_mcp_server(entity_id, tools_by_id) == server
+    ]
+
+
+def _all_server_tools_dormant(
+    states: dict[tuple[str, str], EntityTierState],
+    *,
+    server: str,
+    tools_by_id: dict[str, dict[str, Any]],
+) -> bool:
+    tool_ids = _server_tool_entity_ids(server, tools_by_id)
+    if len(tool_ids) < 2:
+        return False
+    for entity_id in tool_ids:
+        state = states.get((EntityKind.TOOL, entity_id))
+        if state is None or state.effective_tier != Tier.DORMANT:
+            return False
+    return True
+
+
 def _lexical_skill_shadow_hits(
     query: str,
     dormant_ids: list[str],
@@ -193,23 +220,32 @@ def record_shadow_hits(
     from cyt.tiers.models import TierTransition
 
     transitions: list[TierTransition] = []
-    woken: set[str] = set()
+    woken: set[tuple[str, str]] = set()
     hit_set = {entity_id for entity_id, score in hits if score > 0}
+    server_wake_scores: dict[str, float] = {}
 
-    def _wake_entity(entity_id: str, *, query_relevance: float, sibling_activity: float) -> None:
-        if entity_id in woken:
+    def _wake_entity(
+        wake_kind: str,
+        entity_id: str,
+        *,
+        query_relevance: float,
+        sibling_activity: float,
+        count_shadow_hit: bool,
+    ) -> None:
+        wake_key = (wake_kind, entity_id)
+        if wake_key in woken:
             return
-        key = (kind, entity_id)
+        key = (wake_kind, entity_id)
         state = states.get(key)
         if state is None:
             state = EntityTierState(
                 entity_id=entity_id,
-                kind=kind,
+                kind=wake_kind,
                 stable_tier=Tier.DORMANT,
                 effective_tier=Tier.DORMANT,
             )
             states[key] = state
-        if entity_id in hit_set:
+        if count_shadow_hit:
             state.stats.shadow_hits += 1.0
         wake = evaluate_fast_wake(
             state,
@@ -220,7 +256,7 @@ def record_shadow_hits(
         )
         if wake is not None:
             transitions.append(wake)
-            woken.add(entity_id)
+            woken.add(wake_key)
 
     for entity_id in hit_set:
         key = (kind, entity_id)
@@ -235,38 +271,43 @@ def record_shadow_hits(
             states[key] = state
         state.stats.shadow_evaluations += 1.0
         top_score = max((score for eid, score in hits if eid == entity_id), default=0.0)
-        _wake_entity(entity_id, query_relevance=top_score, sibling_activity=0.0)
 
-    server_max_score: dict[str, float] = {}
-    if tools_by_id is not None:
-        for entity_id in hit_set:
-            server = _entity_mcp_server(entity_id, tools_by_id)
-            if not server:
-                continue
-            top_score = max((score for eid, score in hits if eid == entity_id), default=0.0)
-            server_max_score[server] = max(server_max_score.get(server, 0.0), top_score)
+        server = _entity_mcp_server(entity_id, tools_by_id) if tools_by_id is not None else None
+        if (
+            kind == EntityKind.TOOL
+            and server
+            and tools_by_id is not None
+            and _all_server_tools_dormant(states, server=server, tools_by_id=tools_by_id)
+        ):
+            server_wake_scores[server] = max(server_wake_scores.get(server, 0.0), top_score)
+            state.stats.shadow_hits += 1.0
+            continue
 
-    if tools_by_id is not None and server_max_score:
-        for state_key, state in states.items():
-            if state_key[0] != kind or state.effective_tier != Tier.DORMANT:
-                continue
-            entity_id = state_key[1]
-            server = _entity_mcp_server(entity_id, tools_by_id)
-            if not server or server not in server_max_score:
-                continue
-            if entity_id not in hit_set:
-                state.stats.shadow_evaluations += 1.0
-            _wake_entity(
-                entity_id,
-                query_relevance=server_max_score[server],
-                sibling_activity=0.0 if entity_id in hit_set else 1.0,
-            )
-    else:
-        for state_key in states:
-            if state_key[0] != kind:
-                continue
-            eid = state_key[1]
-            if eid not in hit_set and states[state_key].effective_tier == Tier.DORMANT:
-                states[state_key].stats.shadow_evaluations += 1.0
+        _wake_entity(
+            kind,
+            entity_id,
+            query_relevance=top_score,
+            sibling_activity=0.0,
+            count_shadow_hit=True,
+        )
+
+    for server, score in server_wake_scores.items():
+        server_entity = mcp_server_entity_id(server)
+        if not server_entity:
+            continue
+        _wake_entity(
+            EntityKind.MCP_SERVER,
+            server_entity,
+            query_relevance=score,
+            sibling_activity=0.0,
+            count_shadow_hit=False,
+        )
+
+    for state_key in states:
+        if state_key[0] != kind:
+            continue
+        eid = state_key[1]
+        if eid not in hit_set and states[state_key].effective_tier == Tier.DORMANT:
+            states[state_key].stats.shadow_evaluations += 1.0
 
     return transitions

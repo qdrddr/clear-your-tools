@@ -838,8 +838,6 @@ class TierManager:
         if not tracked_hits:
             return
         with self._state_lock:
-            for entity_id, _score in tracked_hits:
-                self._mark_cycle_shadow(EntityKind.TOOL, entity_id)
             transitions = record_shadow_hits(
                 self._states,
                 kind=EntityKind.TOOL,
@@ -848,6 +846,8 @@ class TierManager:
                 wake_cycle_id=self._epoch.wake_cycle_id,
                 tools_by_id=tools_by_id,
             )
+            for transition in transitions:
+                self._mark_cycle_shadow(transition.kind, transition.entity_id)
         if transitions and cfg.mode == TierMode.SHADOW:
             logger.debug("tool shadow transitions: %d", len(transitions))
         self._finish_record(config)
@@ -861,8 +861,6 @@ class TierManager:
         if not hits:
             return
         with self._state_lock:
-            for entity_id, _score in hits:
-                self._mark_cycle_shadow(EntityKind.SKILL, entity_id)
             transitions = record_shadow_hits(
                 self._states,
                 kind=EntityKind.SKILL,
@@ -870,6 +868,8 @@ class TierManager:
                 cfg=cfg,
                 wake_cycle_id=self._epoch.wake_cycle_id,
             )
+            for transition in transitions:
+                self._mark_cycle_shadow(transition.kind, transition.entity_id)
         if transitions and cfg.mode == TierMode.SHADOW:
             logger.debug("skill shadow transitions: %d", len(transitions))
         self._finish_record(config)
