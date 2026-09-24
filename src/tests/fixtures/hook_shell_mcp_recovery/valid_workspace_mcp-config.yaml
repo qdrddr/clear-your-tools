@@ -1,0 +1,29 @@
+default_agent: cursor
+agents:
+  cursor: mcp/cursor.json
+catalog_scope: workspace
+transport: stdio
+verify_only: false
+http:
+  host: 127.0.0.1
+  port: 8766
+  mcp_path: /mcp
+  catalog_path: /catalog
+pruning:
+  tools:
+    stub: basic
+    stub_by_agent:
+      codex: codex
+      cursor: basic
+      claude: basic
+    stubs:
+      - name: basic
+        always:
+          tool: [name]
+          required_properties: [name]
+          optional_properties: []
+      - name: codex
+        always:
+          tool: [name, description]
+          required_properties: [name]
+          optional_properties: []

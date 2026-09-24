@@ -564,7 +564,7 @@ def test_slow_clock_demotes_t2_without_injection_when_exposure_high() -> None:
     )
     transitions = evaluate_slow_clock({("tool", "tool:unused"): state}, cfg=cfg, epoch=EpochState())
     assert transitions
-    assert any(t.reason == "slow_demote_t2_t1" for t in transitions)
+    assert any(t.reason == "slow_demote_t2_t1_unused" for t in transitions)
     assert state.stable_tier == Tier.COLD
 
 

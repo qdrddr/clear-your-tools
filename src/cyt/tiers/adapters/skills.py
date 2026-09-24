@@ -811,6 +811,35 @@ def resolve_tiered_skill_matches(
     partition = manager.partition_skills(resolved_entries, config)
     manager.record_skill_candidates(partition.search_entries, config)
 
+    if query.strip():
+        dormant_ids = [
+            entity_id
+            for entry in resolved_entries
+            if (entity_id := skill_entity_id(entry))
+            and partition.tier_by_skill.get(entity_id) == Tier.DORMANT
+        ]
+        if dormant_ids:
+            skills_by_id: dict[str, dict[str, Any]] = {}
+            for entry in resolved_entries:
+                entity_id = skill_entity_id(entry)
+                if not entity_id:
+                    continue
+                document = entry.document if isinstance(entry.document, dict) else {}
+                skills_by_id[entity_id] = {
+                    "name": document.get("name") or entry.doc_id,
+                    "description": document.get("description") or "",
+                    "doc_id": entry.doc_id,
+                }
+            from cyt.tiers.shadow import schedule_skill_shadow_evaluation
+
+            schedule_skill_shadow_evaluation(
+                config=config,
+                query=query,
+                dormant_entity_ids=dormant_ids,
+                skills_by_id=skills_by_id,
+                manager=manager,
+            )
+
     search_pool = prepare_skill_entries_for_tier_search(
         partition.search_entries,
         partition.tier_by_skill,

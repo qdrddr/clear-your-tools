@@ -101,6 +101,31 @@ def _stats_from_raw(raw: object) -> EffectiveStats:
     return stats
 
 
+def _seed_entity_states(
+    store: TierStore,
+    project: TierProject,
+    *,
+    kind: str,
+    states: dict[str, dict[str, Any]],
+) -> None:
+    for entity_id, row in states.items():
+        if not isinstance(row, dict):
+            continue
+        store.upsert_entity_state(
+            project,
+            EntityTierState(
+                entity_id=str(entity_id),
+                kind=kind,
+                stable_tier=_tier_value(row.get("stable_tier")),
+                effective_tier=_tier_value(
+                    row.get("effective_tier"),
+                    default=_tier_value(row.get("stable_tier")),
+                ),
+                stats=_stats_from_raw(row.get("stats")),
+            ),
+        )
+
+
 def seed_tier_db(pack: TiersStatsFixturePack) -> int:
     """Insert scenario tier states; returns project_id."""
     store = TierStore.open(str(pack.db_path))
@@ -109,28 +134,32 @@ def seed_tier_db(pack: TiersStatsFixturePack) -> int:
         project = TierProject(project_id=project_id, root_path=pack.workspace)
         for kind_key, states in pack.scenario.tier_states.items():
             kind = "tool" if kind_key == "tools" else "skill"
-            for entity_id, row in states.items():
-                if not isinstance(row, dict):
-                    continue
-                store.upsert_entity_state(
-                    project,
-                    EntityTierState(
-                        entity_id=str(entity_id),
-                        kind=kind,
-                        stable_tier=_tier_value(row.get("stable_tier")),
-                        effective_tier=_tier_value(
-                            row.get("effective_tier"),
-                            default=_tier_value(row.get("stable_tier")),
-                        ),
-                        stats=_stats_from_raw(row.get("stats")),
-                    ),
-                )
+            if isinstance(states, dict):
+                _seed_entity_states(store, project, kind=kind, states=states)
         return project_id
     finally:
         store.close()
 
 
-def tier_stats_config(pack: TiersStatsFixturePack) -> dict[str, Any]:
+def seed_skill_tier_states(
+    pack: TiersStatsFixturePack,
+    states: dict[str, dict[str, Any]],
+) -> None:
+    """Insert additional skill tier states without changing shared scenario fixtures."""
+    store = TierStore.open(str(pack.db_path))
+    try:
+        project_id = store.get_or_create_project(str(pack.workspace))
+        project = TierProject(project_id=project_id, root_path=pack.workspace)
+        _seed_entity_states(store, project, kind="skill", states=states)
+    finally:
+        store.close()
+
+
+def tier_stats_config(
+    pack: TiersStatsFixturePack,
+    *,
+    skills_enabled: bool = True,
+) -> dict[str, Any]:
     return set_hook_workspace_in_config(
         {
             "pruning": {
@@ -150,7 +179,7 @@ def tier_stats_config(pack: TiersStatsFixturePack) -> dict[str, Any]:
                 },
             },
             "skills": {
-                "enabled": True,
+                "enabled": skills_enabled,
                 "tiers": {
                     "mode": "shadow",
                 },
@@ -247,18 +276,26 @@ class _CytMcpPathPack(Protocol):
     def global_mcp_defs(self) -> Path: ...
 
 
+def patch_load_config(
+    monkeypatch: pytest.MonkeyPatch,
+    config: dict[str, Any],
+) -> None:
+    def _load_config(*args, **kwargs):
+        return config
+
+    monkeypatch.setattr("cyt.config.load_config", _load_config)
+    monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
+
+
 def patch_cyt_mcp_paths(
     monkeypatch: pytest.MonkeyPatch,
     pack: _CytMcpPathPack,
+    *,
+    skills_enabled: bool = True,
 ) -> None:
     if isinstance(pack, TiersStatsFixturePack):
-        config = tier_stats_config(pack)
-
-        def _load_config(*args, **kwargs):
-            return config
-
-        monkeypatch.setattr("cyt.config.load_config", _load_config)
-        monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
+        config = tier_stats_config(pack, skills_enabled=skills_enabled)
+        patch_load_config(monkeypatch, config)
     monkeypatch.setattr(
         "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",
         lambda: pack.catalog_cache_dir,

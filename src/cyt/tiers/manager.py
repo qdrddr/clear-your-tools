@@ -795,20 +795,36 @@ class TierManager:
         )
         if not canonical_id:
             return
+        cfg = tier_section_config(config, kind="skill")
         epoch_ran = False
+        sync_flush = False
         with self._state_lock:
             state = self._ensure_state(EntityKind.SKILL, canonical_id)
             if state is None:
                 return
             state.stats.used += 1.0
+            state.stats.epoch_used += 1.0
             self._mark_cycle_used(EntityKind.SKILL, canonical_id)
             if canonical_id not in self._last_injected_skills:
                 state.stats.used_without_injection += 1.0
+            fast_promote_on_tool_use(state, cfg=cfg)
+            state.stats.last_seen_ms = int(time.time() * 1000)
             epoch_ran = self._touch_request(config)
+            self._touch_stats_request(state)
+            sync_flush = (
+                state.temp_promotion_until_ms is not None
+                or state.effective_tier > state.stable_tier
+            )
         if not epoch_ran:
-            self._finish_record(config)
+            self._finish_record(config, sync_flush=sync_flush)
 
-    def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
+    def apply_shadow_tool_hits(
+        self,
+        hits: list[tuple[str, float]],
+        config: dict[str, Any],
+        *,
+        tools_by_id: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         from cyt.tiers.adapters.tools import tool_entity_tracked_for_config
         from cyt.tiers.shadow import record_shadow_hits
 
@@ -830,9 +846,32 @@ class TierManager:
                 hits=tracked_hits,
                 cfg=cfg,
                 wake_cycle_id=self._epoch.wake_cycle_id,
+                tools_by_id=tools_by_id,
             )
         if transitions and cfg.mode == TierMode.SHADOW:
             logger.debug("tool shadow transitions: %d", len(transitions))
+        self._finish_record(config)
+
+    def apply_shadow_skill_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
+        from cyt.tiers.shadow import record_shadow_hits
+
+        if not tiers_active(config, kind="skill"):
+            return
+        cfg = tier_section_config(config, kind="skill")
+        if not hits:
+            return
+        with self._state_lock:
+            for entity_id, _score in hits:
+                self._mark_cycle_shadow(EntityKind.SKILL, entity_id)
+            transitions = record_shadow_hits(
+                self._states,
+                kind=EntityKind.SKILL,
+                hits=hits,
+                cfg=cfg,
+                wake_cycle_id=self._epoch.wake_cycle_id,
+            )
+        if transitions and cfg.mode == TierMode.SHADOW:
+            logger.debug("skill shadow transitions: %d", len(transitions))
         self._finish_record(config)
 
     def status(

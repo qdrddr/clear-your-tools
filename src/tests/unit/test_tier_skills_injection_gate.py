@@ -161,6 +161,42 @@ def test_tiers_stats_kind_skills_errors_when_disabled(
     assert "skills.enabled is false" in capsys.readouterr().err
 
 
+def test_build_status_overview_omits_skill_fields_when_disabled(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from cyt.tiers.status_overview import build_status_overview
+
+    (tmp_path / ".git").mkdir()
+    db_path = tmp_path / "tier_state.db"
+    config = _skills_disabled_config(db_path)
+
+    def _load_config(*args, **kwargs):
+        return config
+
+    monkeypatch.setattr("cyt.config.load_config", _load_config)
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: [],
+    )
+    _managers.clear()
+    manager = get_tier_manager(config, workspace=tmp_path)
+    status = manager.status(config)
+    overview = build_status_overview(
+        status,
+        config=config,
+        workspace_root=tmp_path,
+        agent="cursor",
+        include_skills=False,
+    )
+
+    assert "skills" not in overview.get("tiers", {})
+    assert "skills" not in overview.get("tier_statistics", {})
+    assert "skill_directories" not in overview
+    troubleshooting = overview.get("troubleshooting") or {}
+    assert "db_skill_entities" not in troubleshooting
+
+
 def test_record_skills_injection_writes_both_dbs(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

@@ -1,0 +1,326 @@
+{
+  "config": {
+    "prompt_cache_ttl_minutes": 5,
+    "ttl_multiplier": 1.0,
+    "idle_gap_triggers_epoch": true,
+    "disk_flush_seconds": 0,
+    "min_injections_before_reconsider": 2,
+    "temp_promotion_turns": 3
+  },
+  "fixed_now_ms": 1700000060000,
+  "epoch_expired_now_ms": 1700000305000,
+  "tool": {
+    "wire_name": "gitnexus_query",
+    "entity_id": "cyt_mcp:gitnexus_query",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "search_query": {"type": "string"}
+      },
+      "required": ["search_query"]
+    }
+  },
+  "skill": {
+    "entity_id": "skill:create-hook",
+    "doc_id": "create-hook",
+    "description": "Create Cursor hooks and hook scripts"
+  },
+  "fast_wake_prompts": {
+    "tool": "please run gitnexus_query on the codebase",
+    "skill": "follow the create-hook skill instructions",
+    "mcp_server_batch": "use gitnexus_query for graph search"
+  },
+  "mcp_server_tools": [
+    {
+      "wire_name": "gitnexus_query",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "mcp_server": "gitnexus",
+      "tool_name": "query",
+      "description": "Query gitnexus knowledge graph"
+    },
+    {
+      "wire_name": "gitnexus_context",
+      "entity_id": "cyt_mcp:gitnexus_context",
+      "mcp_server": "gitnexus",
+      "tool_name": "context",
+      "description": "Get gitnexus context bundle"
+    },
+    {
+      "wire_name": "gitnexus_trace",
+      "entity_id": "cyt_mcp:gitnexus_trace",
+      "mcp_server": "gitnexus",
+      "tool_name": "trace",
+      "description": "Trace gitnexus call paths"
+    }
+  ],
+  "slow_clock": [
+    {
+      "id": "tool_demote_t2_unused",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:unused_tool",
+      "stable_tier": "ACTIVE",
+      "effective_tier": "ACTIVE",
+      "stats": {},
+      "expected_stable_tier": "COLD",
+      "expected_reason": "slow_demote_t2_t1_unused"
+    },
+    {
+      "id": "tool_promote_t1_t2",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:promote_tool",
+      "stable_tier": "COLD",
+      "effective_tier": "COLD",
+      "stats": {
+        "candidates": 500,
+        "injected": 400,
+        "used": 200
+      },
+      "expected_stable_tier": "ACTIVE",
+      "expected_reason": "slow_promote_t1_t2"
+    },
+    {
+      "id": "skill_demote_t2_unused",
+      "kind": "skill",
+      "entity_id": "skill:unused",
+      "stable_tier": "ACTIVE",
+      "effective_tier": "ACTIVE",
+      "stats": {},
+      "expected_stable_tier": "COLD",
+      "expected_reason": "slow_demote_t2_t1_unused"
+    },
+    {
+      "id": "skill_demote_t4_emergency",
+      "kind": "skill",
+      "entity_id": "skill:stale-hot",
+      "stable_tier": "EXTRA_HOT",
+      "effective_tier": "EXTRA_HOT",
+      "stats": {
+        "injected": 10,
+        "candidates": 20,
+        "used": 0
+      },
+      "config_overrides": {
+        "emergency_t4_inject_min": 3,
+        "emergency_t4_utility_max": 0.99
+      },
+      "expected_stable_tier": "HOT",
+      "expected_reason": "emergency_t4_eviction"
+    },
+    {
+      "id": "skill_promote_t2_t3",
+      "kind": "skill",
+      "entity_id": "skill:rising",
+      "stable_tier": "ACTIVE",
+      "effective_tier": "ACTIVE",
+      "stats": {
+        "candidates": 500,
+        "injected": 400,
+        "used": 200
+      },
+      "expected_stable_tier": "HOT",
+      "expected_reason": "slow_promote_t2_t3"
+    }
+  ],
+  "fast_hot": [
+    {
+      "id": "tool_temp_jump_cold_to_hot",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "stable_tier": "COLD",
+      "effective_tier": "COLD",
+      "expected_effective_tier": "HOT",
+      "expected_stable_tier": "COLD",
+      "expected_reason": "tool_used",
+      "expect_temp_promotion": true
+    },
+    {
+      "id": "tool_temp_jump_active_to_hot",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:active_tool",
+      "stable_tier": "ACTIVE",
+      "effective_tier": "ACTIVE",
+      "expected_effective_tier": "HOT",
+      "expected_stable_tier": "ACTIVE",
+      "expected_reason": "tool_used",
+      "expect_temp_promotion": true
+    },
+    {
+      "id": "skill_temp_jump_cold_to_hot",
+      "kind": "skill",
+      "entity_id": "skill:create-hook",
+      "stable_tier": "COLD",
+      "effective_tier": "COLD",
+      "expected_effective_tier": "HOT",
+      "expected_stable_tier": "COLD",
+      "expected_reason": "skill_used",
+      "expect_temp_promotion": true
+    },
+    {
+      "id": "skill_fast_wake_t0_t1",
+      "kind": "skill",
+      "entity_id": "skill:dormant-skill",
+      "stable_tier": "DORMANT",
+      "effective_tier": "DORMANT",
+      "stats": {
+        "used_without_injection": 1
+      },
+      "wake_cycle_id": 5,
+      "sleep_cooldown_until_cycle": 0,
+      "expected_effective_tier": "COLD",
+      "expected_stable_tier": "COLD",
+      "expected_reason": "fast_wake",
+      "expect_temp_promotion": false
+    }
+  ],
+  "manager_integration": [
+    {
+      "id": "slow_epoch_demotes_unused_tool",
+      "path": "slow",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:epoch_unused",
+      "seed_tier": "ACTIVE",
+      "stats": {},
+      "expected_stable_tier": "COLD",
+      "expected_reason": "slow_demote_t2_t1_unused"
+    },
+    {
+      "id": "slow_epoch_promotes_skill",
+      "path": "slow",
+      "kind": "skill",
+      "entity_id": "skill:epoch-promote",
+      "seed_tier": "COLD",
+      "stats": {
+        "candidates": 500,
+        "injected": 400,
+        "used": 200
+      },
+      "expected_stable_tier": "ACTIVE",
+      "expected_reason": "slow_promote_t1_t2"
+    },
+    {
+      "id": "fast_hot_tool_use_then_epoch_crystallize",
+      "path": "fast_then_slow",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "seed_tier": "COLD",
+      "expected_after_fast_effective_tier": "HOT",
+      "expected_after_fast_stable_tier": "COLD",
+      "expected_after_epoch_stable_tier": "HOT",
+      "expected_epoch_reason": "slow_promote_epoch_crystallized"
+    }
+  ],
+  "gherkin": [
+    {
+      "id": "slow_tool_demotion",
+      "path": "slow",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gherkin_unused",
+      "seed_tier": "ACTIVE",
+      "expected_stable_tier": "COLD",
+      "expected_reason": "slow_demote_t2_t1_unused"
+    },
+    {
+      "id": "slow_skill_promotion",
+      "path": "slow",
+      "kind": "skill",
+      "entity_id": "skill:gherkin_promote",
+      "seed_tier": "COLD",
+      "stats": {
+        "candidates": 500,
+        "injected": 400,
+        "used": 200
+      },
+      "expected_stable_tier": "ACTIVE",
+      "expected_reason": "slow_promote_t1_t2"
+    },
+    {
+      "id": "fast_hot_tool_jump",
+      "path": "fast",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "seed_tier": "COLD",
+      "expected_effective_tier": "HOT",
+      "expected_stable_tier": "COLD"
+    },
+    {
+      "id": "fast_hot_epoch_crystallize",
+      "path": "fast_then_slow",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "seed_tier": "COLD",
+      "expected_after_epoch_stable_tier": "HOT"
+    },
+    {
+      "id": "slow_tool_promotion",
+      "path": "slow",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gherkin_promote_tool",
+      "seed_tier": "COLD",
+      "stats": {
+        "candidates": 500,
+        "injected": 400,
+        "used": 200
+      },
+      "expected_stable_tier": "ACTIVE",
+      "expected_reason": "slow_promote_t1_t2"
+    },
+    {
+      "id": "slow_skill_demotion",
+      "path": "slow",
+      "kind": "skill",
+      "entity_id": "skill:gherkin_unused",
+      "seed_tier": "ACTIVE",
+      "stats": {},
+      "expected_stable_tier": "COLD",
+      "expected_reason": "slow_demote_t2_t1_unused"
+    },
+    {
+      "id": "fast_hot_skill_jump",
+      "path": "fast",
+      "kind": "skill",
+      "entity_id": "skill:create-hook",
+      "seed_tier": "COLD",
+      "expected_effective_tier": "HOT",
+      "expected_stable_tier": "COLD"
+    },
+    {
+      "id": "fast_hot_skill_epoch_crystallize",
+      "path": "fast_then_slow",
+      "kind": "skill",
+      "entity_id": "skill:create-hook",
+      "seed_tier": "COLD",
+      "expected_after_epoch_stable_tier": "HOT"
+    },
+    {
+      "id": "fast_wake_tool_from_prompt",
+      "path": "fast_wake",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "seed_tier": "DORMANT",
+      "user_prompt_key": "tool",
+      "expected_stable_tier": "COLD",
+      "expected_reason": "fast_wake"
+    },
+    {
+      "id": "fast_wake_skill_from_prompt",
+      "path": "fast_wake",
+      "kind": "skill",
+      "entity_id": "skill:create-hook",
+      "seed_tier": "DORMANT",
+      "user_prompt_key": "skill",
+      "expected_stable_tier": "COLD",
+      "expected_reason": "fast_wake"
+    },
+    {
+      "id": "fast_wake_mcp_server_batch",
+      "path": "fast_wake",
+      "kind": "tool",
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "seed_tier": "DORMANT",
+      "user_prompt_key": "mcp_server_batch",
+      "mcp_server_batch": true,
+      "expected_stable_tier": "COLD",
+      "expected_reason": "fast_wake"
+    }
+  ]
+}

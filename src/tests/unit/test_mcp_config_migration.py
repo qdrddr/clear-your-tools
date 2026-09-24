@@ -14,6 +14,10 @@ from cyt.migrations.mcp_config import (
     upgrade_mcp_config_dict,
 )
 from cyt_mcp.stub_catalog import resolve_stub_name, resolve_stub_retain
+from tests.support.hook_shell_mcp_recovery_fixtures import (
+    CORRUPT_STUB_FRAGMENT,
+    write_corrupt_workspace_mcp_config,
+)
 
 
 def test_upgrade_replaces_codex_boolean_with_stub_by_agent() -> None:
@@ -102,27 +106,7 @@ def test_repair_stale_mcp_config_agent_paths_replaces_pytest_tmp(tmp_path: Path)
 
 
 def test_migrate_mcp_config_file_recovers_from_corrupt_yaml(tmp_path: Path) -> None:
-    config_path = tmp_path / "mcp-config.yaml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "default_agent: cursor",
-                "agents:",
-                "  cursor: mcp/cursor.json",
-                "pruning:",
-                "  tools:",
-                "    stubs:",
-                "      - name: codex",
-                "        always:",
-                "          optional_properties: []",
-                "      (no property descriptions; OpenAI Responses API expects description on wire).",
-                "      always:",
-                "        tool:",
-                "        - name",
-            ],
-        ),
-        encoding="utf-8",
-    )
+    config_path = write_corrupt_workspace_mcp_config(tmp_path / "mcp-config.yaml")
 
     migrated = migrate_mcp_config_file(config_path)
 
@@ -130,7 +114,7 @@ def test_migrate_mcp_config_file_recovers_from_corrupt_yaml(tmp_path: Path) -> N
     assert not config_path.is_file()
     backups = list(tmp_path.glob("mcp-config.yaml.corrupt.*"))
     assert len(backups) == 1
-    assert "OpenAI Responses API" in backups[0].read_text(encoding="utf-8")
+    assert CORRUPT_STUB_FRAGMENT in backups[0].read_text(encoding="utf-8")
 
 
 def test_maybe_repair_stale_mcp_config_file_writes_canonical_paths(tmp_path: Path) -> None:

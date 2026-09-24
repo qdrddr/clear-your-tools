@@ -59,7 +59,11 @@ def evaluate_fast_wake(
         query_relevance=query_relevance,
         sibling_activity=sibling_activity,
     )
-    if pressure < cfg.wake_threshold and state.stats.used_without_injection <= 0:
+    if (
+        pressure < cfg.wake_threshold
+        and state.stats.used_without_injection <= 0
+        and query_relevance < cfg.wake_threshold
+    ):
         return None
     old = state.effective_tier
     state.effective_tier = Tier.COLD
@@ -116,8 +120,8 @@ def fast_promote_on_tool_use(
     *,
     cfg: TierSectionConfig | None = None,
 ) -> TierTransition | None:
-    """Tools-only fast signal when the agent invoked the tool (any args)."""
-    if state.kind != "tool":
+    """Fast signal when the agent invoked a tool or skill."""
+    if state.kind not in ("tool", "skill"):
         return None
     now_ms = int(time.time() * 1000)
     if state.stable_tier >= Tier.HOT:
@@ -144,7 +148,7 @@ def fast_promote_on_tool_use(
         entity_id=state.entity_id,
         from_tier=old,
         to_tier=target,
-        reason="tool_used",
+        reason="skill_used" if state.kind == "skill" else "tool_used",
         temporary=True,
     )
 

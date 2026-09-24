@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "type": "command",
+        "command": "CYT_WORKSPACE=${workspaceFolder} uv run --directory __REPO_ROOT__ src/cyt_client/cli.py",
+        "timeout": 60
+      }
+    ],
+    "sessionStart": [
+      {
+        "type": "command",
+        "command": "CYT_WORKSPACE=${workspaceFolder} uv run --directory __REPO_ROOT__ src/cyt/cli/app.py hook daemon start --unattended",
+        "timeout": 60
+      },
+      {
+        "type": "command",
+        "command": "CYT_WORKSPACE=${workspaceFolder} uv run --directory __REPO_ROOT__ src/cyt_client/cli.py",
+        "timeout": 60
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "command": "CYT_WORKSPACE=${workspaceFolder} uv run --directory __REPO_ROOT__ src/cyt_client/cli.py",
+        "timeout": 60
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "CYT_WORKSPACE=${workspaceFolder} uv run --directory __REPO_ROOT__ src/cyt_client/cli.py",
+        "timeout": 60
+      }
+    ]
+  }
+}

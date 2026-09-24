@@ -81,11 +81,11 @@ def _min_exposure_met(state: EntityTierState, minimum: int) -> bool:
 
 
 def _tool_unused_at_t2(state: EntityTierState) -> bool:
-    """True when a tool is still default T2 but never injected or invoked.
+    """True when a tool or skill is still default T2 but never injected or invoked.
 
     BM25 candidacy alone does not preserve T2 across epochs; only injection/use signals do.
     """
-    if state.kind != "tool":
+    if state.kind not in ("tool", "skill"):
         return False
     stats = state.stats
     return (
@@ -278,10 +278,10 @@ def crystallize_successful_tool_promotions_at_epoch(
     *,
     epoch: EpochState,
 ) -> list[TierTransition]:
-    """Promote tools with successful use this epoch to stable HOT (recent signal wins)."""
+    """Promote tools/skills with successful use this epoch to stable HOT (recent signal wins)."""
     transitions: list[TierTransition] = []
     for state in states.values():
-        if state.kind != "tool" or not _epoch_had_success(state):
+        if state.kind not in ("tool", "skill") or not _epoch_had_success(state):
             continue
         state.temp_promotion_until_ms = None
         state.overlap_tier = None
@@ -317,7 +317,11 @@ def expire_temporary_promotions(
             continue
         if state.effective_tier != state.stable_tier:
             old = state.effective_tier
-            crystallize = state.kind == "tool" and old > state.stable_tier and state.stats.used > 0
+            crystallize = (
+                state.kind in ("tool", "skill")
+                and old > state.stable_tier
+                and state.stats.used > 0
+            )
             if crystallize:
                 old_stable = state.stable_tier
                 state.stable_tier = old
