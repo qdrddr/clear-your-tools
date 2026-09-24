@@ -171,6 +171,7 @@ def _prompt_cyt_mcp_hook_overlay(
 ) -> dict[str, Any] | None:
     from cyt.hook.cli_invocation import detect_hook_cli_invocation
     from cyt.tools.cyt_mcp_setup import (
+        clear_stale_verify_only_in_aggregator,
         cyt_mcp_hook_settings_overlay,
         has_migratable_mcp_backends,
         prompt_cyt_mcp_transport,
@@ -183,6 +184,7 @@ def _prompt_cyt_mcp_hook_overlay(
     )
     invocation = detect_hook_cli_invocation()
     scope = install_scope or CytInstallScope.from_cwd()
+    clear_stale_verify_only_in_aggregator(launch_agent)
     if not invocation.is_dev and not has_migratable_mcp_backends(launch_agent, scope):
         print(
             "No MCP backend servers found; skipping cyt-mcp injection.",

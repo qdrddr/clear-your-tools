@@ -497,6 +497,27 @@ def write_mcp_aggregator_yaml_at(
     )
 
 
+def clear_stale_verify_only_in_aggregator(
+    agent: str,
+    *,
+    aggregator_path: Path | None = None,
+) -> bool:
+    """Flip ``verify_only: true`` to false in an existing aggregator when leaving verify-only mode."""
+    del agent
+    path = (aggregator_path or DEFAULT_MCP_CONFIG_PATH).expanduser()
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    if "verify_only: true" not in text:
+        return False
+    updated = text.replace("verify_only: true", "verify_only: false")
+    if updated == text:
+        return False
+    _atomic_write_text(path, updated)
+    print(f"Cleared stale verify_only flag in {path}", file=sys.stderr)
+    return True
+
+
 def cyt_mcp_hook_settings_overlay(
     *,
     transport: CytMcpTransport,

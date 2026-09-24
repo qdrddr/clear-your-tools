@@ -157,7 +157,10 @@ jobs:
           for wheel in "${wheels[@]}"; do
             rm -rf "${tmp_dir:?}"/*
             unzip -q "${wheel}" -d "${tmp_dir}"
-            mapfile -t natives < <(find "${tmp_dir}" -path '*/cyt_indexer/_native*.so' -type f)
+            natives=()
+            while IFS= read -r native; do
+              natives+=("$native")
+            done < <(find "${tmp_dir}" -path '*/cyt_indexer/_native*.so' -type f)
             if ((${#natives[@]} == 0)); then
               echo "::error::no cyt_indexer native extension in ${wheel}"
               exit 1
