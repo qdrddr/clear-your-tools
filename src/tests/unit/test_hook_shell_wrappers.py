@@ -12,10 +12,13 @@ from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     agent_hook_command_env,
+    hook_shell_wrapper_paths,
+    install_hook_shell_wrappers,
     is_hook_shell_wrapper_command,
     is_unix_hook_wrapper_command,
     prefix_agent_hook_command,
     prefix_command_env,
+    remove_hook_shell_wrappers,
     use_hook_shell_wrappers,
 )
 from tests.support.cursor_hook_shell_wrapper_fixtures import (
@@ -129,6 +132,201 @@ def test_is_hook_shell_wrapper_command_recognizes_unix_and_windows_wrappers() ->
     assert is_hook_shell_wrapper_command(r"C:\hooks\cyt-client-dev.cmd")
     assert is_hook_shell_wrapper_command("/Users/me/.cursor/hooks/cyt-client-dev.sh")
     assert not is_hook_shell_wrapper_command(legacy_fish_breaking_client_command())
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix fish/bash wrapper semantics")
+def test_hook_wrapper_paths_do_not_write_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = tmp_path / "hooks"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    repo_root = dev_repo_root()
+    dev_paths = hook_shell_wrapper_paths(
+        invocation=HookCliInvocation(mode="dev", repo_root=repo_root),
+    )
+    prod_paths = hook_shell_wrapper_paths(
+        invocation=HookCliInvocation(mode="installed", repo_root=None),
+    )
+
+    assert dev_paths["client"].name == "cyt-client-dev.sh"
+    assert prod_paths["client"].name == "cyt-client.sh"
+    assert not hooks_dir.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix fish/bash wrapper semantics")
+def test_install_hook_wrappers_replaces_opposite_mode_scripts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = tmp_path / "hooks"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    repo_root = dev_repo_root()
+    dev_invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    prod_invocation = HookCliInvocation(mode="installed", repo_root=None)
+
+    install_hook_shell_wrappers(invocation=dev_invocation)
+    dev_client = hooks_dir / "cyt-client-dev.sh"
+    dev_daemon = hooks_dir / "cyt-hook-daemon-start-dev.sh"
+    assert dev_client.is_file() and dev_daemon.is_file()
+
+    install_hook_shell_wrappers(invocation=prod_invocation)
+    prod_client = hooks_dir / "cyt-client.sh"
+    prod_daemon = hooks_dir / "cyt-hook-daemon-start.sh"
+    assert prod_client.is_file() and prod_daemon.is_file()
+    assert not dev_client.is_file()
+    assert not dev_daemon.is_file()
+
+    install_hook_shell_wrappers(invocation=dev_invocation)
+    assert dev_client.is_file() and dev_daemon.is_file()
+    assert not prod_client.is_file()
+    assert not prod_daemon.is_file()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix fish/bash wrapper semantics")
+def test_install_cursor_hooks_skip_does_not_replace_wrappers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook import setup_wizard as hook_setup
+
+    hooks_dir = tmp_path / "hooks"
+    hooks_path = tmp_path / "hooks.json"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    repo_root = dev_repo_root()
+    dev_invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    prod_invocation = HookCliInvocation(mode="installed", repo_root=None)
+
+    install_hook_shell_wrappers(invocation=dev_invocation)
+    dev_client = hooks_dir / "cyt-client-dev.sh"
+    dev_text = dev_client.read_text(encoding="utf-8")
+    hooks_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "beforeSubmitPrompt": [
+                        {
+                            "type": "command",
+                            "command": str(dev_client),
+                            "timeout": 60,
+                        },
+                    ],
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(hook_setup, "_prompt_choice", lambda *args, **kwargs: "skip")
+
+    changed = hook_setup._install_cursor_hooks_for_target(
+        "Cursor",
+        hooks_path,
+        debug=False,
+        set_launch_agent=False,
+        invocation=prod_invocation,
+    )
+
+    assert changed is False
+    assert dev_client.is_file()
+    assert dev_client.read_text(encoding="utf-8") == dev_text
+    assert not (hooks_dir / "cyt-client.sh").is_file()
+    payload = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert payload["hooks"]["beforeSubmitPrompt"][0]["command"] == str(dev_client)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix fish/bash wrapper semantics")
+def test_install_cursor_hooks_update_switches_wrapper_mode_in_hooks_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook import setup_wizard as hook_setup
+
+    hooks_dir = tmp_path / "hooks"
+    hooks_path = tmp_path / "hooks.json"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    repo_root = dev_repo_root()
+    dev_invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    prod_invocation = HookCliInvocation(mode="installed", repo_root=None)
+
+    install_hook_shell_wrappers(invocation=dev_invocation)
+    dev_client = hooks_dir / "cyt-client-dev.sh"
+    hooks_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "beforeSubmitPrompt": [
+                        {
+                            "type": "command",
+                            "command": str(dev_client),
+                            "timeout": 60,
+                        },
+                    ],
+                    "sessionStart": [
+                        {
+                            "type": "command",
+                            "command": str(hooks_dir / "cyt-hook-daemon-start-dev.sh"),
+                            "timeout": 60,
+                        },
+                        {
+                            "type": "command",
+                            "command": str(dev_client),
+                            "timeout": 60,
+                        },
+                    ],
+                    "sessionEnd": [
+                        {"type": "command", "command": str(dev_client), "timeout": 60},
+                    ],
+                    "preToolUse": [
+                        {"type": "command", "command": str(dev_client), "timeout": 60},
+                    ],
+                    "preCompact": [
+                        {"type": "command", "command": str(dev_client), "timeout": 60},
+                    ],
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(hook_setup, "_prompt_choice", lambda *args, **kwargs: "update")
+
+    changed = hook_setup._install_cursor_hooks_for_target(
+        "Cursor",
+        hooks_path,
+        debug=False,
+        set_launch_agent=False,
+        invocation=prod_invocation,
+        include_post_tool_use=False,
+    )
+
+    assert changed is True
+    prod_client = hooks_dir / "cyt-client.sh"
+    prod_daemon = hooks_dir / "cyt-hook-daemon-start.sh"
+    assert prod_client.is_file() and prod_daemon.is_file()
+    assert not dev_client.is_file()
+    payload = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert payload["hooks"]["beforeSubmitPrompt"][0]["command"] == str(prod_client)
+    assert payload["hooks"]["sessionStart"][0]["command"] == str(prod_daemon)
+
+
+def test_remove_hook_shell_wrappers_removes_unix_scripts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = tmp_path / "hooks"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    install_dev_hook_wrappers(hooks_dir, monkeypatch=monkeypatch)
+    removed = remove_hook_shell_wrappers()
+    if sys.platform == "win32":
+        assert removed == []
+    else:
+        assert removed
+        assert not any(hooks_dir.iterdir())
 
 
 def test_install_dev_hook_wrappers_writes_executable_bash_script(

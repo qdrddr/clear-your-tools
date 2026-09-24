@@ -1,0 +1,43 @@
+{
+  "tools": [
+    {
+      "name": "semble_search",
+      "description": "Semantic codebase search using BM25 and embeddings",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_catalog_scope": "workspace"
+    },
+    {
+      "name": "gitnexus_cypher",
+      "description": "Run Cypher queries against the GitNexus knowledge graph",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_catalog_scope": "workspace"
+    },
+    {
+      "name": "code-review-graph_query_graph_tool",
+      "description": "Query the code review graph for architecture and flow context",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_catalog_scope": "workspace"
+    }
+  ]
+}

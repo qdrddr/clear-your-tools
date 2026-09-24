@@ -14,18 +14,28 @@ from cyt.hook.cli_invocation import (
     cyt_mcp_cli_script_relpath,
     cyt_mcp_mcp_server_entry,
 )
+from cyt.hook.install_scope import CytInstallScope
 from cyt.tools import cyt_mcp_setup
 from cyt_client.hook_executable import repo_root_from_uv_run_hook_command, resolve_hook_executable
 from cyt_client.hook_invocation import cyt_mcp_dev_wrapper_path
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
     CYT_MCP_USER_SERVER_KEY,
+    CYT_MCP_WORKSPACE_SERVER_KEY,
     LEGACY_CYT_MCP_SERVER_KEY,
     backend_mcp_servers,
     build_cyt_mcp_mcp_server_entry,
     dev_invocation_from_hooks_file,
     is_cyt_dev_hook_command,
     is_cyt_mcp_frontend_server,
+    workspace_aggregator_config_ref,
+)
+from tests.support.mcp_migration_fixtures import (
+    load_migration_scenario,
+    prepare_stale_workspace_migration_tree,
+    stale_user_cursor_mcp_payload,
+    stale_workspace_cursor_mcp_payload,
+    write_stale_user_cursor_mcp,
 )
 
 
@@ -260,6 +270,144 @@ def test_backend_mcp_servers_filters_self() -> None:
     }
     filtered = backend_mcp_servers(servers)
     assert filtered == {"backend": {"url": "https://example.com/mcp"}}
+
+
+def test_merge_cyt_mcp_json_servers_frontend_only_strips_stale_backends_when_equivalent(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    scenario = load_migration_scenario("user")
+    frontend_entry = build_cyt_mcp_mcp_server_entry(
+        "cursor",
+        dev_repo_root=repo_root,
+        dev_script_rel=cyt_mcp_cli_script_relpath(),
+    )
+    backend_name = str(scenario["backend_server"])
+    backend_spec = scenario["backend_spec"]
+    assert isinstance(backend_spec, dict)
+
+    merged = cyt_mcp_setup._merge_cyt_mcp_json_servers(
+        stale_user_cursor_mcp_payload(repo_root=repo_root),
+        frontend_entry,
+        server_key=CYT_MCP_USER_SERVER_KEY,
+        frontend_only=True,
+    )
+
+    assert merged == {CYT_MCP_USER_SERVER_KEY: frontend_entry}
+    assert backend_name not in (merged or {})
+
+
+def test_merge_cyt_mcp_json_servers_frontend_only_skips_when_already_clean(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    frontend_entry = build_cyt_mcp_mcp_server_entry(
+        "cursor",
+        dev_repo_root=repo_root,
+        dev_script_rel=cyt_mcp_cli_script_relpath(),
+    )
+    raw = {"mcpServers": {CYT_MCP_USER_SERVER_KEY: frontend_entry}}
+
+    merged = cyt_mcp_setup._merge_cyt_mcp_json_servers(
+        raw,
+        frontend_entry,
+        server_key=CYT_MCP_USER_SERVER_KEY,
+        frontend_only=True,
+    )
+
+    assert merged is None
+
+
+def test_setup_cyt_mcp_strips_backends_when_frontend_already_equivalent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "mcp.json"
+    target_dir = tmp_path / "backends"
+    aggregator_path = tmp_path / "mcp-config.yaml"
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    scenario = load_migration_scenario("user")
+    write_stale_user_cursor_mcp(source, repo_root=repo_root)
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", source)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", target_dir)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+
+    cyt_mcp_setup.setup_cyt_mcp_for_agent("cursor", invocation=invocation, transport="stdio")
+
+    agent_payload = json.loads(source.read_text(encoding="utf-8"))
+    assert set(agent_payload["mcpServers"]) == set(scenario["expected_agent_mcp_keys"])
+    backend_payload = json.loads((target_dir / "cursor.json").read_text(encoding="utf-8"))
+    assert set(backend_payload["mcpServers"]) == set(scenario["expected_backend_keys"])
+
+
+def test_merge_cyt_mcp_json_servers_workspace_frontend_only_strips_stale_backends(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    workspace_root = tmp_path / "workspace"
+    repo_root.mkdir()
+    workspace_root.mkdir()
+    scenario = load_migration_scenario("workspace")
+    frontend_entry = build_cyt_mcp_mcp_server_entry(
+        "cursor",
+        dev_repo_root=repo_root,
+        dev_script_rel=cyt_mcp_cli_script_relpath(),
+        aggregator_config=workspace_aggregator_config_ref("cursor", workspace_root),
+    )
+
+    merged = cyt_mcp_setup._merge_cyt_mcp_json_servers(
+        stale_workspace_cursor_mcp_payload(
+            repo_root=repo_root,
+            workspace_root=workspace_root,
+        ),
+        frontend_entry,
+        server_key=CYT_MCP_WORKSPACE_SERVER_KEY,
+        frontend_only=True,
+    )
+
+    assert merged == {CYT_MCP_WORKSPACE_SERVER_KEY: frontend_entry}
+    assert scenario["backend_server"] not in (merged or {})
+
+
+def test_setup_cyt_mcp_strips_workspace_backends_when_frontend_already_equivalent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = load_migration_scenario("workspace")
+    repo_root = tmp_path / "repo"
+    workspace_root = tmp_path / "workspace"
+    repo_root.mkdir()
+    project_mcp, backend_defs = prepare_stale_workspace_migration_tree(
+        workspace_root,
+        repo_root=repo_root,
+    )
+    scope = CytInstallScope(workspace_root=workspace_root.resolve())
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    monkeypatch.setattr(
+        cyt_mcp_setup.CytInstallScope,
+        "from_cwd",
+        classmethod(lambda cls, *, cwd=None: scope),
+    )
+
+    cyt_mcp_setup.setup_cyt_mcp_for_agent(
+        "cursor",
+        invocation=invocation,
+        transport="stdio",
+        configure_user=False,
+        configure_workspace=True,
+        scope=scope,
+    )
+
+    project_payload = json.loads(project_mcp.read_text(encoding="utf-8"))
+    backend_payload = json.loads(backend_defs.read_text(encoding="utf-8"))
+    assert set(project_payload["mcpServers"]) == set(scenario["expected_agent_mcp_keys"])
+    assert set(backend_payload["mcpServers"]) == set(scenario["expected_backend_keys"])
+    assert scenario["backend_server"] not in project_payload["mcpServers"]
 
 
 def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(

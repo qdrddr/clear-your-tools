@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
+
 from cyt.tiers.status_view import (
     StatusFilters,
     apply_status_view,
     entity_matches_name,
+    entity_matches_scope,
     entity_matches_server,
     filter_status_entities,
     flatten_status_entities,
@@ -46,6 +49,28 @@ def _sample_payload() -> dict:
             },
         },
     }
+
+
+def test_status_filters_default_scope_all() -> None:
+    filters = StatusFilters.from_args(argparse.Namespace())
+    assert filters.scope == "all"
+    assert filters.overview_mode is True
+
+
+def test_filter_status_entities_by_user_or_workspace_scope() -> None:
+    entities = [
+        {"kind": "tool", "entity_id": "cyt_mcp:ws_tool", "scope": "workspace"},
+        {"kind": "tool", "entity_id": "cyt_mcp:usr_tool", "scope": "user"},
+        {"kind": "skill", "entity_id": "skill:demo", "scope": "workspace"},
+    ]
+    assert len(filter_status_entities(entities, StatusFilters(scope="all"))) == 3
+    assert len(filter_status_entities(entities, StatusFilters(scope="user"))) == 1
+    assert filter_status_entities(entities, StatusFilters(scope="user"))[0]["entity_id"] == (
+        "cyt_mcp:usr_tool"
+    )
+    assert len(filter_status_entities(entities, StatusFilters(scope="workspace"))) == 2
+    assert entity_matches_scope({"scope": "workspace"}, "workspace")
+    assert not entity_matches_scope({"scope": "user"}, "workspace")
 
 
 def test_normalize_tier_filter() -> None:

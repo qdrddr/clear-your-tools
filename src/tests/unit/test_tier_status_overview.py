@@ -16,6 +16,7 @@ from cyt.tiers.status_detail import (
     validate_status_path_filter,
 )
 from cyt.tiers.status_overview import (
+    _catalog_scope_counts,
     _path_display,
     _short_path,
     build_status_overview,
@@ -49,9 +50,58 @@ def _mock_catalog(
 
 def test_status_filters_overview_mode() -> None:
     assert StatusFilters().overview_mode is True
+    assert StatusFilters(scope="all").overview_mode is True
     assert StatusFilters(kind="tools").overview_mode is False
     assert StatusFilters(path="/tmp/skills").overview_mode is False
     assert StatusFilters(scope="user").overview_mode is False
+    assert StatusFilters(scope="workspace").overview_mode is False
+
+
+def test_catalog_scope_counts_splits_user_workspace_and_unknown() -> None:
+    tools = [
+        {"name": "context7_query-docs", "cyt_catalog_scope": "user"},
+        {"name": "context7_resolve-library-id", "cyt_catalog_scope": "global"},
+        {"name": "gitnexus_cypher", "cyt_catalog_scope": "workspace"},
+        {"name": "legacy_tool"},
+    ]
+    assert _catalog_scope_counts(tools) == {"user": 2, "workspace": 1, "unknown": 1}
+
+
+def test_build_status_overview_includes_dual_layer_catalog_breakdown(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from tests.support.cyt_mcp_catalog_resilience_fixtures import (
+        load_resilience_scenario,
+        load_usr_tools_catalog,
+        load_ws_tools_catalog,
+    )
+
+    scenario = load_resilience_scenario("usr_ws_union_tiers_stats")
+    ws_tools = load_ws_tools_catalog()
+    usr_tools = load_usr_tools_catalog()
+    catalog = ws_tools + usr_tools
+    _mock_catalog(monkeypatch, catalog)
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.master_catalog_health_snapshot",
+        lambda config: {
+            "configured_sources": ["cyt_mcp"],
+            "catalog_tool_count": len(catalog),
+        },
+    )
+
+    overview = build_status_overview(
+        {"tools": {"mode": "shadow"}, "skills": {"mode": "shadow"}},
+        config={},
+        workspace_root=tmp_path,
+        agent="cursor",
+    )
+    troubleshooting = overview["troubleshooting"]
+    assert troubleshooting["catalog_user_tool_count"] == scenario.raw["expected_user_tool_count"]
+    assert troubleshooting["catalog_workspace_tool_count"] == scenario.raw[
+        "expected_workspace_tool_count"
+    ]
+    assert troubleshooting["catalog_tool_count"] == scenario.raw["expected_total_tools"]
 
 
 def test_short_path_substitutes_home_prefix() -> None:

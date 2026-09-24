@@ -1,0 +1,63 @@
+{
+  "agents": ["cursor", "claude", "codex"],
+  "scopes": ["user", "workspace"],
+  "backend_server": "example-backend",
+  "backend_spec": {
+    "command": "echo",
+    "args": ["backend"]
+  },
+  "case_templates": [
+    {
+      "id_suffix": "no_backends_when_agent_and_defs_missing",
+      "agent_mcp_state": "missing",
+      "defs_state": "missing",
+      "expect_should_install": false,
+      "expect_backend_in_defs": false
+    },
+    {
+      "id_suffix": "no_backends_when_agent_and_defs_empty",
+      "agent_mcp_state": "empty",
+      "defs_state": "empty",
+      "expect_should_install": false,
+      "expect_backend_in_defs": false
+    },
+    {
+      "id_suffix": "no_install_when_agent_frontend_only_and_defs_empty",
+      "agent_mcp_state": "frontend_only",
+      "defs_state": "empty",
+      "expect_should_install": false,
+      "expect_backend_in_defs": false,
+      "expect_frontend_unchanged": true
+    },
+    {
+      "id_suffix": "add_frontend_when_agent_has_backend",
+      "agent_mcp_state": "has_backend",
+      "defs_state": "empty",
+      "expect_should_install": true,
+      "expect_backend_in_defs": true,
+      "expect_agent_frontend_only_after": true
+    },
+    {
+      "id_suffix": "add_frontend_when_defs_has_backend_and_agent_missing",
+      "agent_mcp_state": "missing",
+      "defs_state": "has_backend",
+      "expect_should_install": true,
+      "expect_backend_in_defs": true
+    },
+    {
+      "id_suffix": "add_frontend_when_defs_has_backend_and_agent_empty",
+      "agent_mcp_state": "empty",
+      "defs_state": "has_backend",
+      "expect_should_install": true,
+      "expect_backend_in_defs": true
+    },
+    {
+      "id_suffix": "add_frontend_when_defs_has_backend_and_agent_frontend_only",
+      "agent_mcp_state": "frontend_only",
+      "defs_state": "has_backend",
+      "expect_should_install": true,
+      "expect_backend_in_defs": true,
+      "expect_agent_frontend_only_after": true
+    }
+  ]
+}

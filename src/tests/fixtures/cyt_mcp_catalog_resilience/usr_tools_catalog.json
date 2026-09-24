@@ -1,0 +1,16 @@
+{
+  "tools": [
+    {
+      "name": "context7_resolve-library-id",
+      "description": "Resolve a library id for Context7 docs",
+      "input_schema": {"type": "object"},
+      "cyt_catalog_scope": "user"
+    },
+    {
+      "name": "context7_query-docs",
+      "description": "Query Context7 documentation",
+      "input_schema": {"type": "object"},
+      "cyt_catalog_scope": "user"
+    }
+  ]
+}

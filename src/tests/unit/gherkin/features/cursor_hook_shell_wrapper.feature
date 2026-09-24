@@ -22,3 +22,22 @@ Feature: Cursor hook shell wrappers for fish and bash compatibility
     When the cyt-client shell wrapper runs from fish
     Then cyt-client should continue successfully
     And the Cursor rules file should reset to the lifecycle placeholder
+
+  Scenario: Production hook install replaces development wrapper scripts
+    Given cursor hooks.json references development shell wrappers
+    When cursor hooks are upserted switching to production mode
+    Then cursor hooks.json should reference production shell wrapper scripts
+    And development shell wrapper scripts should be removed from disk
+
+  Scenario: Development hook install replaces production wrapper scripts
+    Given cursor hooks.json references production shell wrappers
+    When cursor hooks are upserted switching to development mode
+    Then cursor hooks.json should reference development shell wrapper scripts
+    And production shell wrapper scripts should be removed from disk
+
+  Scenario: Skipping hook update does not mutate wrappers when switching modes
+    Given cursor hooks.json references development shell wrappers
+    When cursor hook install is skipped switching to production mode
+    Then cursor hooks.json should still reference development shell wrapper scripts
+    And development shell wrapper scripts should remain on disk
+    And production shell wrapper scripts should not exist on disk

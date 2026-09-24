@@ -33,3 +33,17 @@ Feature: cyt development mode injection
     When cyt-mcp setup migrates backends for cursor
     Then cursor agent mcp.json should contain only cyt-mcp
     And migrated backends should include the backend server
+
+  Scenario: MCP re-migration strips stale backends when cyt-mcp-usr is already equivalent
+    Given cyt hook development mode for the current repo
+    And cursor's user-scoped mcp.json contains equivalent cyt-mcp-usr and a stale backend server
+    When cyt-mcp setup migrates backends for cursor
+    Then cursor's user-scoped mcp.json should contain only cyt-mcp-usr
+    And migrated backends should include the stale backend server
+
+  Scenario: MCP re-migration strips stale backends when cyt-mcp-ws is already equivalent
+    Given cyt hook development mode for the current repo
+    And the workspace .cursor/mcp.json contains equivalent cyt-mcp-ws and a stale backend server
+    When cyt-mcp setup migrates workspace backends for cursor
+    Then the workspace .cursor/mcp.json should contain only cyt-mcp-ws
+    And workspace backends at .agents/cyt/config/mcp/cursor.json should include the stale backend server

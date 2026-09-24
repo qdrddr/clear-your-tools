@@ -1,0 +1,39 @@
+{
+  "scenarios": [
+    {
+      "id": "session_start_creates_placeholder",
+      "description": "sessionStart writes lifecycle placeholder when rules file is absent",
+      "lifecycle_event": "sessionStart",
+      "initial_rules_state": "absent"
+    },
+    {
+      "id": "session_end_resets_substantive",
+      "description": "sessionEnd resets substantive rules to lifecycle placeholder",
+      "lifecycle_event": "sessionEnd",
+      "initial_rules_state": "substantive"
+    },
+    {
+      "id": "before_submit_populates_tools",
+      "description": "beforeSubmitPrompt syncs pruned MCP tools into cyt-injection.mdc",
+      "lifecycle_event": "beforeSubmitPrompt",
+      "prompt": "Locate BM25 code, use semble_search gitnexus_cypher",
+      "expected_tool_names": ["gitnexus_cypher", "semble_search"],
+      "expected_rules_markers": ["<agent-tools", "<cyt-mcp-ws>", "alwaysApply: true"]
+    },
+    {
+      "id": "before_submit_populates_tools_and_skills",
+      "description": "beforeSubmitPrompt syncs pruned tools and skills when both enabled",
+      "lifecycle_event": "beforeSubmitPrompt",
+      "prompt": "Use Context7 MCP for specific library documentation and gitnexus_cypher for graph queries",
+      "skills_fixture": true,
+      "expected_tool_names": ["gitnexus_cypher"],
+      "expected_rules_markers": ["<agent-tools", "<agent-skills"]
+    },
+    {
+      "id": "full_session_lifecycle",
+      "description": "sessionStart placeholder, prompt injection, sessionEnd placeholder",
+      "phases": ["sessionStart", "beforeSubmitPrompt", "sessionEnd"],
+      "prompt_scenario_id": "before_submit_populates_tools"
+    }
+  ]
+}

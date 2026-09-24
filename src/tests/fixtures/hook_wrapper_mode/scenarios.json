@@ -1,0 +1,41 @@
+{
+  "scenarios": [
+    {
+      "id": "skip_does_not_mutate_wrappers_when_switching_mode",
+      "description": "Choosing skip during hook install must not write opposite-mode wrapper scripts or change hooks.json.",
+      "action": "skip",
+      "from_mode": "dev",
+      "to_mode": "prod",
+      "expect_hooks_changed": false,
+      "expect_wrapper_mode_on_disk": "dev"
+    },
+    {
+      "id": "update_switches_prod_to_dev",
+      "description": "Choosing update during dev hook install replaces production wrapper scripts and hooks.json paths.",
+      "action": "update",
+      "from_mode": "prod",
+      "to_mode": "dev",
+      "expect_hooks_changed": true,
+      "expect_wrapper_mode_on_disk": "dev"
+    },
+    {
+      "id": "update_switches_dev_to_prod",
+      "description": "Choosing update during production hook install replaces development wrapper scripts and hooks.json paths.",
+      "action": "update",
+      "from_mode": "dev",
+      "to_mode": "prod",
+      "expect_hooks_changed": true,
+      "expect_wrapper_mode_on_disk": "prod"
+    },
+    {
+      "id": "broken_hooks_json_missing_wrapper_files",
+      "description": "hooks.json references dev wrapper paths while only production wrapper files exist on disk; update must repair both.",
+      "action": "update",
+      "from_mode": "dev",
+      "to_mode": "prod",
+      "disk_mode": "prod",
+      "expect_hooks_changed": true,
+      "expect_wrapper_mode_on_disk": "prod"
+    }
+  ]
+}

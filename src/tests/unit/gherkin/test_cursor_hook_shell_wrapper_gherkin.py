@@ -10,11 +10,20 @@ import pytest
 from pytest_bdd import given, scenarios, then, when
 
 from cyt.hook import setup_wizard as hook_setup
-from cyt.hook.cli_invocation import HookCliInvocation, repo_root_from_proxy_cli_script
+from cyt.hook.cli_invocation import (
+    HookCliInvocation,
+    hook_shell_wrapper_paths,
+    install_hook_shell_wrappers,
+    repo_root_from_proxy_cli_script,
+)
 from cyt_client.rules_file import (
     RULES_REL_PATH,
     is_rules_placeholder_body,
     read_cursor_rules_injection,
+)
+from tests.support.hook_wrapper_mode_fixtures import (
+    assert_wrapper_mode_on_disk,
+    load_wrapper_mode_scenario,
 )
 from tests.support.cursor_hook_shell_wrapper_fixtures import (
     FISH_BREAKING_INLINE_PREFIX,
@@ -180,3 +189,216 @@ def then_rules_reset(gherkin_context: GherkinContext) -> None:
     workspace = gherkin_context.payload["workspace"]
     body = read_cursor_rules_injection(workspace)
     assert is_rules_placeholder_body(body)
+
+
+def _minimal_cursor_hooks_json(*, client_command: str, daemon_command: str) -> dict[str, object]:
+    client_entry = {"type": "command", "command": client_command, "timeout": 60}
+    return {
+        "version": 1,
+        "hooks": {
+            "beforeSubmitPrompt": [client_entry],
+            "sessionStart": [
+                {"type": "command", "command": daemon_command, "timeout": 60},
+                client_entry,
+            ],
+            "sessionEnd": [client_entry],
+            "preToolUse": [client_entry],
+            "preCompact": [client_entry],
+        },
+    }
+
+
+@given("cursor hooks.json references development shell wrappers")
+def given_hooks_reference_dev_wrappers(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = tmp_path / "cursor" / "hooks"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    repo_root = _repo_root()
+    dev_invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    dev_paths = install_hook_shell_wrappers(invocation=dev_invocation)
+    hooks_path = tmp_path / "hooks.json"
+    hooks_path.write_text(
+        json.dumps(
+            _minimal_cursor_hooks_json(
+                client_command=str(dev_paths["client"]),
+                daemon_command=str(dev_paths["daemon_start"]),
+            ),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gherkin_context.payload["hooks_path"] = hooks_path
+    gherkin_context.payload["hooks_dir"] = hooks_dir
+
+
+@given("cursor hooks.json references production shell wrappers")
+def given_hooks_reference_prod_wrappers(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = tmp_path / "cursor" / "hooks"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    prod_invocation = HookCliInvocation(mode="installed", repo_root=None)
+    prod_paths = install_hook_shell_wrappers(invocation=prod_invocation)
+    hooks_path = tmp_path / "hooks.json"
+    hooks_path.write_text(
+        json.dumps(
+            _minimal_cursor_hooks_json(
+                client_command=str(prod_paths["client"]),
+                daemon_command=str(prod_paths["daemon_start"]),
+            ),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gherkin_context.payload["hooks_path"] = hooks_path
+    gherkin_context.payload["hooks_dir"] = hooks_dir
+
+
+@when("cursor hooks are upserted switching to production mode")
+def when_upsert_prod_hooks(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    prod_invocation = HookCliInvocation(mode="installed", repo_root=None)
+    install_hook_shell_wrappers(invocation=prod_invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=prod_invocation,
+        install_wrappers=False,
+        include_post_tool_use=False,
+    )
+    hooks_path = gherkin_context.payload["hooks_path"]
+    changed = hook_setup.upsert_cursor_hooks_into_file(
+        hooks_path,
+        **hook_setup.cursor_upsert_hook_kwargs(entries, config={}, include_post_tool_use=False),
+    )
+    gherkin_context.payload["hooks_changed"] = changed
+    gherkin_context.payload["hooks_data"] = json.loads(hooks_path.read_text(encoding="utf-8"))
+    gherkin_context.payload["target_mode"] = "prod"
+
+
+@when("cursor hooks are upserted switching to development mode")
+def when_upsert_dev_hooks_from_prod(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    repo_root = _repo_root()
+    dev_invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    install_hook_shell_wrappers(invocation=dev_invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=dev_invocation,
+        install_wrappers=False,
+        include_post_tool_use=False,
+    )
+    hooks_path = gherkin_context.payload["hooks_path"]
+    changed = hook_setup.upsert_cursor_hooks_into_file(
+        hooks_path,
+        **hook_setup.cursor_upsert_hook_kwargs(entries, config={}, include_post_tool_use=False),
+    )
+    gherkin_context.payload["hooks_changed"] = changed
+    gherkin_context.payload["hooks_data"] = json.loads(hooks_path.read_text(encoding="utf-8"))
+    gherkin_context.payload["target_mode"] = "dev"
+
+
+@then("cursor hooks.json should reference production shell wrapper scripts")
+def then_hooks_reference_prod_wrappers(gherkin_context: GherkinContext) -> None:
+    assert gherkin_context.payload["hooks_changed"] is True
+    prod_paths = hook_shell_wrapper_paths(
+        invocation=HookCliInvocation(mode="installed", repo_root=None),
+    )
+    data = gherkin_context.payload["hooks_data"]
+    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == str(prod_paths["client"])
+    assert Path(str(prod_paths["client"])).is_file()
+
+
+@then("cursor hooks.json should reference development shell wrapper scripts")
+def then_hooks_reference_dev_wrappers(gherkin_context: GherkinContext) -> None:
+    assert gherkin_context.payload["hooks_changed"] is True
+    repo_root = _repo_root()
+    dev_paths = hook_shell_wrapper_paths(
+        invocation=HookCliInvocation(mode="dev", repo_root=repo_root),
+    )
+    data = gherkin_context.payload["hooks_data"]
+    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == str(dev_paths["client"])
+    assert Path(str(dev_paths["client"])).is_file()
+
+
+@then("development shell wrapper scripts should be removed from disk")
+def then_dev_wrappers_removed(gherkin_context: GherkinContext) -> None:
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    if sys.platform == "win32":
+        names = ("cyt-client-dev.cmd", "cyt-hook-daemon-start-dev.cmd")
+    else:
+        names = ("cyt-client-dev.sh", "cyt-hook-daemon-start-dev.sh")
+    for name in names:
+        assert not (hooks_dir / name).is_file()
+
+
+@then("production shell wrapper scripts should be removed from disk")
+def then_prod_wrappers_removed(gherkin_context: GherkinContext) -> None:
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    if sys.platform == "win32":
+        names = ("cyt-client.cmd", "cyt-hook-daemon-start.cmd")
+    else:
+        names = ("cyt-client.sh", "cyt-hook-daemon-start.sh")
+    for name in names:
+        assert not (hooks_dir / name).is_file()
+
+
+@when("cursor hook install is skipped switching to production mode")
+def when_skip_prod_hook_install(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook import setup_wizard as hook_setup
+
+    scenario = load_wrapper_mode_scenario("skip_does_not_mutate_wrappers_when_switching_mode")
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    hooks_path = gherkin_context.payload["hooks_path"]
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    monkeypatch.setattr(hook_setup, "_prompt_choice", lambda *args, **kwargs: scenario["action"])
+    prod_invocation = HookCliInvocation(mode="installed", repo_root=None)
+    gherkin_context.payload["hooks_changed"] = hook_setup._install_cursor_hooks_for_target(
+        "Cursor",
+        hooks_path,
+        debug=False,
+        set_launch_agent=False,
+        invocation=prod_invocation,
+        include_post_tool_use=False,
+    )
+
+
+@then("cursor hooks.json should still reference development shell wrapper scripts")
+def then_hooks_still_reference_dev_wrappers(gherkin_context: GherkinContext) -> None:
+    assert gherkin_context.payload["hooks_changed"] is False
+    hooks_path = gherkin_context.payload["hooks_path"]
+    data = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert str(data["hooks"]["beforeSubmitPrompt"][0]["command"]).endswith(
+        "cyt-client-dev.cmd" if sys.platform == "win32" else "cyt-client-dev.sh",
+    )
+
+
+@then("development shell wrapper scripts should remain on disk")
+def then_dev_wrappers_remain(gherkin_context: GherkinContext) -> None:
+    assert_wrapper_mode_on_disk(gherkin_context.payload["hooks_dir"], "dev")
+
+
+@then("production shell wrapper scripts should not exist on disk")
+def then_prod_wrappers_absent(gherkin_context: GherkinContext) -> None:
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    if sys.platform == "win32":
+        names = ("cyt-client.cmd", "cyt-hook-daemon-start.cmd")
+    else:
+        names = ("cyt-client.sh", "cyt-hook-daemon-start.sh")
+    for name in names:
+        assert not (hooks_dir / name).is_file()

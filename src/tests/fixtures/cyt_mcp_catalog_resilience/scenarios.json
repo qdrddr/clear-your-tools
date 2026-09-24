@@ -1,0 +1,68 @@
+{
+  "scenarios": [
+    {
+      "id": "usr_reload_empty_cache",
+      "description": "cyt-mcp-usr tools/list must not return an empty list when the runtime cache is cold",
+      "catalog_scope": "user",
+      "expected_min_tools": 1,
+      "expected_wire_tool": "get-tool-definitions"
+    },
+    {
+      "id": "ws_reload_populated_cache",
+      "description": "cyt-mcp-ws tools/list serves stub projections when the runtime cache is populated",
+      "catalog_scope": "workspace",
+      "expected_tool_names": [
+        "semble_search",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool"
+      ]
+    },
+    {
+      "id": "daemon_restart_registry_hydrate",
+      "description": "CLI readers restore workspace catalog after in-memory registry loss",
+      "minimum_master_catalog_tools": 3,
+      "expected_tool_names": [
+        "semble_search",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool"
+      ]
+    },
+    {
+      "id": "hook_inject_bm25_prompt",
+      "description": "Hook inject includes pruned cyt-mcp tools when the registry is populated",
+      "prompt": "Locate primary code implementing BM25, use MCP: semble_search gitnexus_cypher code-review-graph_query_graph_tool",
+      "expected_tool_names_in_stdout": [
+        "gitnexus_cypher",
+        "semble_search"
+      ]
+    },
+    {
+      "id": "usr_ws_union_tiers_stats",
+      "description": "tiers stats Total unions usr + ws hook catalog layers (excludes get-tool-definitions)",
+      "expected_ws_tool_names": [
+        "semble_search",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool"
+      ],
+      "expected_usr_tool_names": [
+        "context7_resolve-library-id",
+        "context7_query-docs"
+      ],
+      "expected_total_tools": 5,
+      "expected_scope": "all",
+      "expected_user_tool_count": 2,
+      "expected_workspace_tool_count": 3
+    },
+    {
+      "id": "usr_disk_merge_ws_registry",
+      "description": "Master catalog merges user-scoped disk tools when registry only has ws layer",
+      "expected_merged_tool_names": [
+        "semble_search",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool",
+        "context7_resolve-library-id",
+        "context7_query-docs"
+      ]
+    }
+  ]
+}

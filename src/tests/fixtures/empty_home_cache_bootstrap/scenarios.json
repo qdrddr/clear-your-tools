@@ -1,0 +1,55 @@
+{
+  "bm25_prompt": "Locate primary code implementing BM25, use MCP: semble_search, fff_grep, code-review-graph_query_graph_tool, gitnexus_cypher. Ensure each tool successfully was called and returned non empty result.",
+  "expected_tool_names": [
+    "semble_search",
+    "fff_grep",
+    "gitnexus_cypher",
+    "code-review-graph_query_graph_tool"
+  ],
+  "expected_injection_markers": [
+    "<agent-tools path=",
+    "<cyt-mcp>",
+    "<tool name="
+  ],
+  "minimum_master_catalog_tools": 4,
+  "skill_fixture_name": "create-hook.md",
+  "scenarios": [
+    {
+      "id": "cold_home_inject_preview_fails",
+      "description": "inject preview fails with disk_cache=miss when cyt home cache is empty",
+      "expect_exit_code": 1,
+      "expect_stderr_contains": [
+        "No tools in master hook catalog",
+        "disk_cache=miss"
+      ]
+    },
+    {
+      "id": "cyt_mcp_push_then_inject_preview_ok",
+      "description": "inject preview succeeds after cyt-mcp push populates registry and disk",
+      "expect_exit_code": 0,
+      "expect_stderr_excludes": [
+        "No tools in master hook catalog"
+      ]
+    },
+    {
+      "id": "daemon_warm_hydrates_from_push",
+      "description": "warm_caches hydrates master catalog from push-populated disk after in-memory clear",
+      "minimum_master_catalog_tools": 4
+    },
+    {
+      "id": "proxy_lifespan_loads_registry_snapshot",
+      "description": "proxy lifespan registry load restores catalog_for_hook from disk snapshot",
+      "expected_tool_names": [
+        "semble_search",
+        "fff_grep",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool"
+      ]
+    },
+    {
+      "id": "warm_caches_builds_skills_index",
+      "description": "warm_caches builds skills registry entries on disk when skills are enabled",
+      "skill_fixture_name": "create-hook.md"
+    }
+  ]
+}

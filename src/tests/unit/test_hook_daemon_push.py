@@ -104,6 +104,68 @@ def test_push_once_skipped_without_workspace_root() -> None:
         fake_post.assert_not_called()
 
 
+def test_push_once_deferred_when_catalog_empty(tmp_path: Path) -> None:
+    cache = RuntimeToolCache()
+    config = _config(workspace_root=tmp_path)
+
+    with (
+        patch(
+            "cyt_mcp.hook_daemon_push.resolve_hook_register_url",
+            return_value="http://127.0.0.1:8834/hook/catalog/register",
+        ),
+        patch("cyt_mcp.hook_daemon_push._post_json") as fake_post,
+    ):
+        ok, _rev = _push_once(config, cache)
+        assert ok is False
+        fake_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_push_loop_uses_updated_push_context(tmp_path: Path) -> None:
+    bootstrap_cache = RuntimeToolCache()
+    workspace_cache = RuntimeToolCache()
+    workspace_cache.replace([{"name": "tool_ws", "inputSchema": {"type": "object"}}])
+    config = _config(workspace_root=tmp_path)
+    key = _instance_key(config)
+
+    bootstrap_context = PushContext(
+        config_holder=ConfigHolder(config),
+        cache=bootstrap_cache,
+        server=MagicMock(),
+    )
+    workspace_context = PushContext(
+        config_holder=ConfigHolder(config),
+        cache=workspace_cache,
+        server=MagicMock(),
+    )
+
+    from cyt_mcp import hook_daemon_push as push_mod
+
+    push_mod._push_contexts[key] = bootstrap_context
+    attempts: list[int] = []
+
+    def fake_push_once(_config: AggregatorConfig, cache: RuntimeToolCache) -> tuple[bool, int]:
+        attempts.append(len(cache.snapshot()))
+        if len(attempts) == 1:
+            push_mod._push_contexts[key] = workspace_context
+            return False, 0
+        return len(cache.snapshot()) > 0, 0
+
+    async def stop_after_success_sleep(_delay: float) -> None:
+        if _delay >= 10.0:
+            raise asyncio.CancelledError()
+
+    with (
+        patch.object(push_mod, "_push_once", side_effect=fake_push_once),
+        patch.object(push_mod, "_maybe_reload_permissions", new=AsyncMock()),
+        patch.object(push_mod.asyncio, "sleep", side_effect=stop_after_success_sleep),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await push_mod._retry_push_loop(bootstrap_context)
+
+    assert attempts == [0, 1]
+
+
 def test_push_once_hash_only_404_triggers_full_resend(tmp_path: Path) -> None:
     cache = RuntimeToolCache()
     cache.replace([{"name": "tool_b", "inputSchema": {"type": "object"}}])

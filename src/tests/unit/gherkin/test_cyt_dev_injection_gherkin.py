@@ -18,13 +18,20 @@ from cyt.hook.cli_invocation import (
     prefix_agent_hook_command,
     repo_root_from_proxy_cli_script,
 )
+from cyt.hook.install_scope import CytInstallScope
 from cyt.tools import cyt_mcp_setup
 from cyt_client.mcp_entry import (
     CYT_MCP_USER_SERVER_KEY,
+    CYT_MCP_WORKSPACE_SERVER_KEY,
     build_cyt_mcp_mcp_server_entry,
     user_aggregator_config_ref,
 )
 from cyt_client.pairing import repair_pairing
+from tests.support.mcp_migration_fixtures import (
+    load_migration_scenario,
+    prepare_stale_workspace_migration_tree,
+    write_stale_user_cursor_mcp,
+)
 from tests.unit.gherkin.conftest import GherkinContext
 
 FEATURES = Path(__file__).resolve().parent / "features" / "cyt_dev_injection.feature"
@@ -270,3 +277,88 @@ def then_backends_exclude_self(gherkin_context: GherkinContext) -> None:
 def then_backends_include_backend(gherkin_context: GherkinContext) -> None:
     payload = json.loads(gherkin_context.payload["backend_path"].read_text(encoding="utf-8"))
     assert "wiseinfotec" in payload["mcpServers"]
+
+
+@given("cursor mcp.json contains equivalent cyt-mcp-usr and a stale backend server")
+@given("cursor's user-scoped mcp.json contains equivalent cyt-mcp-usr and a stale backend server")
+def given_mcp_with_equivalent_frontend_and_stale_backend(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    repo_root = gherkin_context.payload["repo_root"]
+    scenario = load_migration_scenario("user")
+    mcp_path = tmp_path / "mcp.json"
+    write_stale_user_cursor_mcp(mcp_path, repo_root=repo_root)
+    gherkin_context.payload["source_mcp_path"] = mcp_path
+    gherkin_context.payload["stale_backend_name"] = scenario["backend_server"]
+
+
+@then("cursor's user-scoped mcp.json should contain only cyt-mcp-usr")
+def then_user_scoped_mcp_frontend_only(gherkin_context: GherkinContext) -> None:
+    payload = json.loads(gherkin_context.payload["source_mcp_path"].read_text(encoding="utf-8"))
+    assert set(payload["mcpServers"]) == {CYT_MCP_USER_SERVER_KEY}
+
+
+@then("migrated backends should include the stale backend server")
+def then_backends_include_stale_backend(gherkin_context: GherkinContext) -> None:
+    backend_name = gherkin_context.payload["stale_backend_name"]
+    payload = json.loads(gherkin_context.payload["backend_path"].read_text(encoding="utf-8"))
+    assert backend_name in payload["mcpServers"]
+
+
+@given(
+    "the workspace .cursor/mcp.json contains equivalent cyt-mcp-ws and a stale backend server"
+)
+def given_workspace_mcp_with_equivalent_frontend_and_stale_backend(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    repo_root = gherkin_context.payload["repo_root"]
+    scenario = load_migration_scenario("workspace")
+    workspace_root = tmp_path / "workspace"
+    project_mcp, backend_defs = prepare_stale_workspace_migration_tree(
+        workspace_root,
+        repo_root=repo_root,
+    )
+    gherkin_context.payload["workspace_root"] = workspace_root
+    gherkin_context.payload["source_mcp_path"] = project_mcp
+    gherkin_context.payload["backend_path"] = backend_defs
+    gherkin_context.payload["stale_backend_name"] = scenario["backend_server"]
+
+
+@when("cyt-mcp setup migrates workspace backends for cursor")
+def when_setup_migrates_workspace_backends(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_root = gherkin_context.payload["workspace_root"]
+    scope = CytInstallScope(workspace_root=workspace_root.resolve())
+    monkeypatch.setattr(
+        cyt_mcp_setup.CytInstallScope,
+        "from_cwd",
+        classmethod(lambda cls, *, cwd=None: scope),
+    )
+    invocation = gherkin_context.payload["invocation"]
+    cyt_mcp_setup.setup_cyt_mcp_for_agent(
+        "cursor",
+        invocation=invocation,
+        transport="stdio",
+        configure_user=False,
+        configure_workspace=True,
+        scope=scope,
+    )
+
+
+@then("the workspace .cursor/mcp.json should contain only cyt-mcp-ws")
+def then_workspace_mcp_frontend_only(gherkin_context: GherkinContext) -> None:
+    payload = json.loads(gherkin_context.payload["source_mcp_path"].read_text(encoding="utf-8"))
+    assert set(payload["mcpServers"]) == {CYT_MCP_WORKSPACE_SERVER_KEY}
+
+
+@then(
+    "workspace backends at .agents/cyt/config/mcp/cursor.json should include the stale backend server"
+)
+def then_workspace_backends_include_stale_backend(gherkin_context: GherkinContext) -> None:
+    backend_name = gherkin_context.payload["stale_backend_name"]
+    payload = json.loads(gherkin_context.payload["backend_path"].read_text(encoding="utf-8"))
+    assert backend_name in payload["mcpServers"]

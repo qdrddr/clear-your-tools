@@ -1,0 +1,28 @@
+{
+  "scenarios": [
+    {
+      "id": "rerun_user_migration_strips_stale_backends_when_frontend_equivalent",
+      "scope": "user",
+      "description": "Re-running cyt-mcp user migration must strip leftover backend MCP servers from ~/.cursor/mcp.json even when cyt-mcp-usr is already up to date.",
+      "backend_server": "context7",
+      "backend_spec": {
+        "url": "https://mcp.context7.com/mcp"
+      },
+      "expected_agent_mcp_keys": ["cyt-mcp-usr"],
+      "expected_backend_keys": ["context7"]
+    },
+    {
+      "id": "rerun_workspace_migration_strips_stale_backends_when_frontend_equivalent",
+      "scope": "workspace",
+      "description": "Re-running cyt-mcp workspace migration must move backends from .cursor/mcp.json to .agents/cyt/config/mcp/cursor.json and leave only cyt-mcp-ws in .cursor/mcp.json even when cyt-mcp-ws is already up to date.",
+      "source_mcp_relpath": ".cursor/mcp.json",
+      "backend_defs_relpath": ".agents/cyt/config/mcp/cursor.json",
+      "backend_server": "context7",
+      "backend_spec": {
+        "url": "https://mcp.context7.com/mcp"
+      },
+      "expected_agent_mcp_keys": ["cyt-mcp-ws"],
+      "expected_backend_keys": ["context7"]
+    }
+  ]
+}
