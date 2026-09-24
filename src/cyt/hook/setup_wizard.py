@@ -44,7 +44,10 @@ from cyt.hook.cli_invocation import (
     is_hook_shell_wrapper_command,
     prefix_agent_hook_command,
     prefix_command_env,
+    install_hook_shell_wrappers,
+    remove_hook_shell_wrappers,
     remove_windows_hook_wrappers,
+    use_hook_shell_wrappers,
 )
 from cyt.hook.install_scope import CytInstallScope
 from cyt.launch.inject_via_prompt import ensure_hook_inject_via
@@ -284,6 +287,7 @@ def cursor_session_start_entries(
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
+    install_wrappers: bool = True,
 ) -> list[dict[str, Any]]:
     """sessionStart: start hook daemon, then reset rules file to lifecycle placeholder."""
     return [
@@ -292,12 +296,14 @@ def cursor_session_start_entries(
             set_launch_agent=set_launch_agent,
             invocation=invocation,
             use_cursor_wrappers=True,
+            install_wrappers=install_wrappers,
         ),
         cyt_session_end_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
             use_cursor_wrappers=True,
+            install_wrappers=install_wrappers,
         ),
     ]
 
@@ -321,12 +327,14 @@ def cursor_session_end_entry(
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
+    install_wrappers: bool = True,
 ) -> dict[str, Any]:
     return cyt_client_entry(
         agent=agent,
         set_launch_agent=set_launch_agent,
         invocation=invocation,
         use_cursor_wrappers=True,
+        install_wrappers=install_wrappers,
     )
 
 
@@ -360,12 +368,14 @@ def cursor_hook_entries(
     invocation: HookCliInvocation | None = None,
     include_post_tool_use: bool = True,
     config: dict[str, Any] | None = None,
+    install_wrappers: bool = True,
 ) -> CursorHookEntries:
     client_entry = cyt_client_entry(
         agent=agent,
         set_launch_agent=set_launch_agent,
         invocation=invocation,
         use_cursor_wrappers=True,
+        install_wrappers=install_wrappers,
     )
     post_tool: dict[str, Any] = {
         **client_entry,
@@ -381,11 +391,13 @@ def cursor_hook_entries(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
+            install_wrappers=install_wrappers,
         ),
         "session_end": cursor_session_end_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
+            install_wrappers=install_wrappers,
         ),
         "pre_tool": client_entry,
         "pre_tool_read": pre_tool_read,
@@ -431,6 +443,22 @@ def cursor_upsert_hook_kwargs(
     }
 
 
+def _cursor_hooks_need_wrapper_refresh(
+    existing_commands: list[str],
+    desired_commands: list[str],
+) -> bool:
+    if set(existing_commands) != set(desired_commands):
+        return True
+    if len(existing_commands) != len(desired_commands):
+        return True
+    for command in existing_commands:
+        if not is_hook_shell_wrapper_command(command):
+            continue
+        if not Path(command.strip()).is_file():
+            return True
+    return False
+
+
 def cursor_desired_hook_commands(
     *,
     agent: AgentName = "cursor",
@@ -438,6 +466,7 @@ def cursor_desired_hook_commands(
     invocation: HookCliInvocation | None = None,
     include_post_tool_use: bool = True,
     config: dict[str, Any] | None = None,
+    install_wrappers: bool = False,
 ) -> list[str]:
     entries = cursor_hook_entries(
         agent=agent,
@@ -445,6 +474,7 @@ def cursor_desired_hook_commands(
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
         config=config,
+        install_wrappers=install_wrappers,
     )
     session_start_commands = [
         str(entry.get("command")) for entry in entries["session_start"] if isinstance(entry, dict)
@@ -773,6 +803,7 @@ def _finalize_hook_command(
     invocation: HookCliInvocation | None,
     use_cursor_wrappers: bool,
     daemon: bool,
+    install_wrappers: bool = True,
 ) -> str:
     hook_env = agent_hook_command_env(agent=agent if set_launch_agent else None)
     if daemon:
@@ -780,6 +811,7 @@ def _finalize_hook_command(
             command = cursor_hook_daemon_start_command(
                 invocation=invocation,
                 hook_env=hook_env,
+                install_wrappers=install_wrappers,
             )
         else:
             command = cyt_daemon_start_command(invocation=invocation)
@@ -787,6 +819,7 @@ def _finalize_hook_command(
         command = cursor_hook_client_command(
             invocation=invocation,
             hook_env=hook_env,
+            install_wrappers=install_wrappers,
         )
     else:
         command = cyt_client_command(invocation=invocation)
@@ -807,6 +840,7 @@ def cyt_client_entry(
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
     use_cursor_wrappers: bool = False,
+    install_wrappers: bool = True,
 ) -> dict[str, Any]:
     command = _finalize_hook_command(
         agent=agent,
@@ -814,6 +848,7 @@ def cyt_client_entry(
         invocation=invocation,
         use_cursor_wrappers=use_cursor_wrappers,
         daemon=False,
+        install_wrappers=install_wrappers,
     )
     return {"type": "command", "command": command, "timeout": USER_PROMPT_TIMEOUT_SECONDS}
 
@@ -824,6 +859,7 @@ def cyt_session_end_entry(
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
     use_cursor_wrappers: bool = False,
+    install_wrappers: bool = True,
 ) -> dict[str, Any]:
     command = _finalize_hook_command(
         agent=agent,
@@ -831,6 +867,7 @@ def cyt_session_end_entry(
         invocation=invocation,
         use_cursor_wrappers=use_cursor_wrappers,
         daemon=False,
+        install_wrappers=install_wrappers,
     )
     return {"type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECONDS}
 
@@ -841,6 +878,7 @@ def cyt_daemon_start_entry(
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
     use_cursor_wrappers: bool = False,
+    install_wrappers: bool = True,
 ) -> dict[str, Any]:
     command = _finalize_hook_command(
         agent=agent,
@@ -848,6 +886,7 @@ def cyt_daemon_start_entry(
         invocation=invocation,
         use_cursor_wrappers=use_cursor_wrappers,
         daemon=True,
+        install_wrappers=install_wrappers,
     )
     return {"type": "command", "command": command, "timeout": SESSION_START_TIMEOUT_SECONDS}
 
@@ -2038,6 +2077,19 @@ def _install_nested_hooks_for_targets(
     return any_changed
 
 
+def _apply_cursor_hook_wrappers(
+    *,
+    invocation: HookCliInvocation,
+    set_launch_agent: bool,
+) -> None:
+    if not use_hook_shell_wrappers(invocation=invocation):
+        return
+    install_hook_shell_wrappers(
+        invocation=invocation,
+        hook_env=agent_hook_command_env(agent="cursor" if set_launch_agent else None),
+    )
+
+
 def _handle_existing_cursor_hooks(
     label: str,
     path: Path,
@@ -2045,6 +2097,8 @@ def _handle_existing_cursor_hooks(
     *,
     needs_update: bool,
     upsert_kwargs: dict[str, Any],
+    invocation: HookCliInvocation,
+    set_launch_agent: bool,
     include_post_tool_use: bool = True,
 ) -> bool:
     """Prompt for update/remove/skip when CYT hooks already exist; return whether file changed."""
@@ -2068,6 +2122,7 @@ def _handle_existing_cursor_hooks(
         print(f"{label}: no CYT hook to remove in {path}")
         return False
 
+    _apply_cursor_hook_wrappers(invocation=invocation, set_launch_agent=set_launch_agent)
     if upsert_cursor_hooks_into_file(path, **upsert_kwargs):
         print(f"{label}: updated CYT hooks in {path}")
         return True
@@ -2094,6 +2149,7 @@ def _install_cursor_hooks_for_target(
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
         config=config,
+        install_wrappers=False,
     )
     upsert_kwargs = cursor_upsert_hook_kwargs(
         entries,
@@ -2113,14 +2169,14 @@ def _install_cursor_hooks_for_target(
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
         config=config,
+        install_wrappers=False,
     )
-    needs_update = set(existing_commands) != set(desired_commands) or len(existing_commands) != len(
-        desired_commands,
-    )
+    needs_update = _cursor_hooks_need_wrapper_refresh(existing_commands, desired_commands)
 
     if apply_silently:
         if not needs_update:
             return False
+        _apply_cursor_hook_wrappers(invocation=invocation, set_launch_agent=set_launch_agent)
         if upsert_cursor_hooks_into_file(path, **upsert_kwargs):
             print(f"{label}: updated CYT hooks with selected command options")
             return True
@@ -2134,12 +2190,15 @@ def _install_cursor_hooks_for_target(
             hooks_section,
             needs_update=needs_update if existing_commands else True,
             upsert_kwargs=upsert_kwargs,
+            invocation=invocation,
+            set_launch_agent=set_launch_agent,
             include_post_tool_use=include_post_tool_use,
         )
 
     if not _prompt_yes_no(f"Install CYT hooks for {label}?", default_yes=True):
         print(f"{label}: skipped")
         return False
+    _apply_cursor_hook_wrappers(invocation=invocation, set_launch_agent=set_launch_agent)
     if upsert_cursor_hooks_into_file(path, **upsert_kwargs):
         print(f"{label}: added CYT hooks to {path}")
         return True
@@ -2819,9 +2878,9 @@ def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
             any_changed = True
 
     if "cursor" in selected_agents:
-        removed = remove_windows_hook_wrappers()
+        removed = remove_hook_shell_wrappers()
         if removed:
-            print(f"Cursor: removed {len(removed)} Windows hook wrapper(s)")
+            print(f"Cursor: removed {len(removed)} hook wrapper(s)")
 
     if any_changed:
         print("\nRestart your agent so hook and MCP changes take effect.")

@@ -224,6 +224,7 @@ def build_status_overview(
     scoped = set_hook_workspace_in_config(config, workspace_root) if workspace_root else config
     catalog_tools = get_master_tool_catalog(scoped, blocking=True) or []
     catalog_health = master_catalog_health_snapshot(scoped)
+    catalog_scope_counts = _catalog_scope_counts(catalog_tools)
     mcp_config_files = _list_mcp_config_files(agent=agent, workspace_root=workspace_root)
     workspace_mcp_defs = any(
         row.get("scope") == "workspace" and row.get("exists") and row.get("kind") == "server_defs"
@@ -273,6 +274,9 @@ def build_status_overview(
                 "catalog_user_global_only": not workspace_mcp_defs,
                 "configured_sources": catalog_health.get("configured_sources"),
                 "catalog_tool_count": catalog_health.get("catalog_tool_count"),
+                "catalog_user_tool_count": catalog_scope_counts.get("user", 0),
+                "catalog_workspace_tool_count": catalog_scope_counts.get("workspace", 0),
+                "catalog_unscoped_tool_count": catalog_scope_counts.get("unknown", 0),
                 "tracked_catalog_tool_count": tools_block.get("tracked_catalog_tool_count"),
                 "db_tool_entities": db_tool_count,
                 **{
@@ -370,6 +374,21 @@ def _append_overview_tiers(lines: list[str], overview: dict[str, Any]) -> None:
         lines.append(f"skills: mode={skills_tiers.get('mode')}")
 
 
+def _catalog_scope_counts(tools: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {"user": 0, "workspace": 0, "unknown": 0}
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        scope = str(tool.get("cyt_catalog_scope") or "").strip().lower()
+        if scope in {"user", "global"}:
+            counts["user"] += 1
+        elif scope == "workspace":
+            counts["workspace"] += 1
+        else:
+            counts["unknown"] += 1
+    return counts
+
+
 def _scope_label(row: dict[str, Any]) -> str:
     scope = str(row.get("scope") or "")
     return f"[{scope}]" if scope else ""
@@ -446,10 +465,18 @@ def _append_overview_troubleshooting(lines: list[str], overview: dict[str, Any])
             "histograms may match across repos)",
         )
     if "catalog_tool_count" in troubleshooting:
-        lines.append(
+        catalog_line = (
             "catalog: "
             f"count={troubleshooting.get('catalog_tool_count')}  "
-            f"tracked={troubleshooting.get('tracked_catalog_tool_count')}",
+            f"tracked={troubleshooting.get('tracked_catalog_tool_count')}"
+        )
+        user_count = troubleshooting.get("catalog_user_tool_count")
+        workspace_count = troubleshooting.get("catalog_workspace_tool_count")
+        if isinstance(user_count, int) and isinstance(workspace_count, int):
+            catalog_line += f"  user={user_count}  workspace={workspace_count}"
+        lines.append(catalog_line)
+        lines.append(
+            "note: hook catalog excludes get-tool-definitions; MCP UI tool counts include it",
         )
     lines.append(f"tier_db: {troubleshooting.get('tier_state_db')}")
     db_entity_parts: list[str] = []

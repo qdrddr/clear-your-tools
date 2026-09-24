@@ -357,6 +357,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
         status_agent=status_agent,
         path_root=path_root,
     )
+    status_payload["scope"] = filters.scope
 
     payload = apply_status_view(status_payload, filters)
     if args.json:

@@ -81,6 +81,7 @@ __all__ = [
     "cyt_mcp_mcp_server_entry",
     "detect_cyt_mcp_cli_invocation",
     "detect_hook_cli_invocation",
+    "hook_shell_wrapper_paths",
     "install_hook_shell_wrappers",
     "invoked_via_cyt_cli_script",
     "is_hook_shell_wrapper_command",
@@ -89,6 +90,9 @@ __all__ = [
     "proxy_cli_script_path",
     "repo_root_from_cyt_cli_script",
     "repo_root_from_proxy_cli_script",
+    "remove_hook_shell_wrappers",
+    "remove_unix_hook_wrappers",
+    "remove_windows_hook_wrappers",
     "resolve_hook_executable",
     "use_hook_shell_wrappers",
     "use_windows_hook_wrappers",
@@ -377,6 +381,29 @@ def _write_unix_wrapper(
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def hook_shell_wrapper_paths(
+    *,
+    invocation: HookCliInvocation | None = None,
+) -> dict[str, Path]:
+    """Resolve Cursor hook wrapper paths without writing files."""
+    invocation = invocation or detect_hook_cli_invocation()
+    hooks_dir = cursor_hooks_dir()
+    if is_windows():
+        client_name = WINDOWS_CLIENT_DEV_WRAPPER if invocation.is_dev else WINDOWS_CLIENT_WRAPPER
+        daemon_name = (
+            WINDOWS_DAEMON_START_DEV_WRAPPER if invocation.is_dev else WINDOWS_DAEMON_START_WRAPPER
+        )
+    else:
+        client_name = UNIX_CLIENT_DEV_WRAPPER if invocation.is_dev else UNIX_CLIENT_WRAPPER
+        daemon_name = (
+            UNIX_DAEMON_START_DEV_WRAPPER if invocation.is_dev else UNIX_DAEMON_START_WRAPPER
+        )
+    return {
+        "client": hooks_dir / client_name,
+        "daemon_start": hooks_dir / daemon_name,
+    }
+
+
 def install_unix_hook_wrappers(
     *,
     invocation: HookCliInvocation | None = None,
@@ -471,6 +498,24 @@ def remove_windows_hook_wrappers() -> list[Path]:
     return removed
 
 
+def remove_unix_hook_wrappers() -> list[Path]:
+    removed: list[Path] = []
+    hooks_dir = cursor_hooks_dir()
+    for name in _UNIX_WRAPPER_NAMES:
+        path = hooks_dir / name
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    return removed
+
+
+def remove_hook_shell_wrappers() -> list[Path]:
+    """Remove all Cursor hook wrapper scripts for the active platform."""
+    if is_windows():
+        return remove_windows_hook_wrappers()
+    return remove_unix_hook_wrappers()
+
+
 def _windows_cmd_basename(command: str) -> str:
     """Return the final ``.cmd`` filename from a Windows hook command path."""
     return PureWindowsPath(command.strip().strip('"')).name.casefold()
@@ -508,15 +553,18 @@ def cursor_hook_client_command(
     *,
     invocation: HookCliInvocation | None = None,
     hook_env: dict[str, str] | None = None,
+    install_wrappers: bool = True,
 ) -> str:
     """Return the command string written into Cursor ``hooks.json``."""
     invocation = invocation or detect_hook_cli_invocation()
     if use_hook_shell_wrappers(invocation=invocation):
-        wrappers = install_hook_shell_wrappers(
-            invocation=invocation,
-            hook_env=hook_env,
-        )
-        return str(wrappers["client"])
+        if install_wrappers:
+            wrappers = install_hook_shell_wrappers(
+                invocation=invocation,
+                hook_env=hook_env,
+            )
+            return str(wrappers["client"])
+        return str(hook_shell_wrapper_paths(invocation=invocation)["client"])
     return _inline_cyt_client_command(invocation=invocation)
 
 
@@ -524,15 +572,18 @@ def cursor_hook_daemon_start_command(
     *,
     invocation: HookCliInvocation | None = None,
     hook_env: dict[str, str] | None = None,
+    install_wrappers: bool = True,
 ) -> str:
     """Return the daemon start command written into Cursor ``hooks.json``."""
     invocation = invocation or detect_hook_cli_invocation()
     if use_hook_shell_wrappers(invocation=invocation):
-        wrappers = install_hook_shell_wrappers(
-            invocation=invocation,
-            hook_env=hook_env,
-        )
-        return str(wrappers["daemon_start"])
+        if install_wrappers:
+            wrappers = install_hook_shell_wrappers(
+                invocation=invocation,
+                hook_env=hook_env,
+            )
+            return str(wrappers["daemon_start"])
+        return str(hook_shell_wrapper_paths(invocation=invocation)["daemon_start"])
     return _inline_cyt_daemon_start_command(invocation=invocation)
 
 

@@ -174,6 +174,7 @@ def _prompt_cyt_mcp_hook_overlay(
         clear_stale_verify_only_in_aggregator,
         cyt_mcp_hook_settings_overlay,
         has_migratable_mcp_backends,
+        has_migratable_user_mcp_backends,
         prompt_cyt_mcp_transport,
         setup_cyt_mcp_for_agent,
         write_agent_cyt_mcp_entry,
@@ -197,7 +198,11 @@ def _prompt_cyt_mcp_hook_overlay(
         transport=transport,
         agent=launch_agent,
     )
-    if invocation.is_dev and invocation.repo_root is not None:
+    if (
+        invocation.is_dev
+        and invocation.repo_root is not None
+        and has_migratable_user_mcp_backends(launch_agent, scope)
+    ):
         print(
             f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
             file=sys.stderr,
@@ -233,7 +238,7 @@ def _prompt_cyt_mcp_hook_overlay(
             require_user_backends=False,
             require_workspace_backends=False,
         )
-    elif not (invocation.is_dev and invocation.repo_root is not None):
+    elif has_migratable_user_mcp_backends(launch_agent, scope):
         write_agent_cyt_mcp_entry(
             launch_agent,
             invocation=invocation,

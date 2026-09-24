@@ -348,6 +348,58 @@ def _merge_degraded_backend_tools(
     return merged
 
 
+def _usr_scope_disk_catalog(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Load user-scoped cyt-mcp tools from the global install-scope disk cache."""
+    agent = tools_hook_cyt_mcp_agent(config)
+    global_agg, global_defs = _global_scope_paths(agent)
+    global_fp = scope_config_fingerprint(global_agg, global_defs)
+    cache_key = _CytMcpCacheKey(agent=agent, slug=global_fp, workspace="")
+    return _disk_catalog_tools(cache_key)
+
+
+def _user_scoped_tools_from_merged_disk(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return user-origin tools stored in the workspace-merged disk envelope."""
+    cache_key = _cache_key_for_config(config)
+    return [
+        tool
+        for tool in _disk_catalog_tools(cache_key)
+        if _normalize_catalog_scope(tool.get("cyt_catalog_scope")) == "user"
+    ]
+
+
+def _merge_missing_user_scope_catalog_tools(
+    config: dict[str, Any],
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Union user-scoped tools when the hook registry only has the workspace layer."""
+    existing_names = {str(tool.get("name") or "") for tool in tools if str(tool.get("name") or "")}
+    if any(_normalize_catalog_scope(tool.get("cyt_catalog_scope")) == "user" for tool in tools):
+        return tools
+
+    candidates: list[dict[str, Any]] = []
+    candidates.extend(_usr_scope_disk_catalog(config))
+    candidates.extend(_user_scoped_tools_from_merged_disk(config))
+    if not candidates:
+        return tools
+
+    merged = list(tools)
+    for tool in candidates:
+        name = str(tool.get("name") or "").strip()
+        if not name or name in existing_names:
+            continue
+        stamped = copy.deepcopy(tool)
+        if _normalize_catalog_scope(stamped.get("cyt_catalog_scope")) is None:
+            stamped["cyt_catalog_scope"] = "user"
+        merged.append(stamped)
+        existing_names.add(name)
+    if len(merged) > len(tools):
+        logger.info(
+            "cyt-mcp catalog merged %d user-scoped tools from disk",
+            len(merged) - len(tools),
+        )
+    return merged
+
+
 def _hydrate_missing_servers_from_disk(
     cache_key: _CytMcpCacheKey,
     tools: list[dict[str, Any]],
@@ -373,11 +425,16 @@ def _fetch_catalog_from_registry(
     *,
     allow_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    from cyt.hook.catalog_registry import catalog_for_hook
+    from cyt.hook.catalog_registry import (
+        catalog_for_hook,
+        hydrate_catalog_registry_for_read,
+    )
 
+    hydrate_catalog_registry_for_read()
     agent = tools_hook_cyt_mcp_agent(config)
     workspace = hook_workspace_from_config(config)
     tools = catalog_for_hook(agent, workspace, allow_stale=allow_stale)
+    tools = _merge_missing_user_scope_catalog_tools(config, tools)
     return _normalize_tools_list(tools)
 
 

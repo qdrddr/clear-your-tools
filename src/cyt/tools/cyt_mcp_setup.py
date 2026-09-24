@@ -629,7 +629,17 @@ def _merge_cyt_mcp_json_servers(
 
     if frontend_only:
         existing = raw.get("mcpServers")
-        if isinstance(existing, dict) and mcp_entries_equivalent(existing.get(server_key), entry):
+        if not isinstance(existing, dict):
+            existing = {}
+        equivalent = mcp_entries_equivalent(existing.get(server_key), entry)
+        extra_backend_keys = [
+            key for key in existing if key not in CYT_MCP_FRONTEND_SERVER_KEYS
+        ]
+        already_frontend_only = not extra_backend_keys and set(existing.keys()) <= {
+            server_key,
+            *CYT_MCP_FRONTEND_SERVER_KEYS,
+        }
+        if equivalent and already_frontend_only:
             return None
         return {server_key: entry}
 
@@ -813,12 +823,9 @@ def setup_cyt_mcp_workspace_for_agent(
     if not scope.has_workspace:
         return
     agent = agent.strip() or "cursor"
+    _ = require_backends
     resolved = invocation or detect_hook_cli_invocation()
-    if (
-        require_backends
-        and not resolved.is_dev
-        and not has_migratable_workspace_mcp_backends(agent, scope)
-    ):
+    if not has_migratable_workspace_mcp_backends(agent, scope):
         return
 
     cyt_dir = scope.workspace_cyt_dir(agent)
@@ -954,11 +961,8 @@ def setup_cyt_mcp_user_for_agent(
     """Install cyt-mcp-usr (user-global frontend + user backend defs)."""
     resolved = invocation or detect_hook_cli_invocation()
     install_scope = scope or CytInstallScope.from_cwd()
-    if (
-        require_backends
-        and not resolved.is_dev
-        and not has_migratable_user_mcp_backends(agent, install_scope)
-    ):
+    _ = require_backends
+    if not has_migratable_user_mcp_backends(agent, install_scope):
         return
 
     if migrate_backends:

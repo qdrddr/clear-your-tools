@@ -21,7 +21,7 @@ class StatusFilters:
     agent: str | None = None
     path: str | None = None
     path_display: str | None = None
-    scope: str | None = None
+    scope: str = "all"
 
     @classmethod
     def from_args(
@@ -62,13 +62,9 @@ class StatusFilters:
             if isinstance(agent_raw, str) and agent_raw.strip()
             else None
         )
-        scope_raw = getattr(args, "scope", None)
-        scope = (
-            str(scope_raw).strip().lower()
-            if isinstance(scope_raw, str)
-            and str(scope_raw).strip().lower() in {"user", "workspace"}
-            else None
-        )
+        scope_raw = getattr(args, "scope", "all")
+        scope_text = str(scope_raw or "all").strip().lower()
+        scope = scope_text if scope_text in {"all", "user", "workspace"} else "all"
         path_value = str(path_root) if path_root is not None else None
         return cls(
             kind=kind,
@@ -89,7 +85,7 @@ class StatusFilters:
             and self.name is None
             and self.server is None
             and self.path is None
-            and self.scope is None
+            and self.scope == "all"
         )
 
     @property
@@ -112,7 +108,7 @@ class StatusFilters:
             out["path"] = self.path_display
         elif self.path is not None:
             out["path"] = self.path
-        if self.scope is not None:
+        if self.scope != "all":
             out["scope"] = self.scope
         return out
 
@@ -280,7 +276,7 @@ def filter_status_entities(
             continue
         if filters.server is not None and not entity_matches_server(entity, filters.server):
             continue
-        if filters.scope is not None and not entity_matches_scope(entity, filters.scope):
+        if filters.scope != "all" and not entity_matches_scope(entity, filters.scope):
             continue
         if filters.path is not None and kind == "skill":
             if not skill_matches_path_filter(
@@ -478,6 +474,9 @@ def format_project_header(payload: dict[str, Any]) -> str:
     agent = payload.get("agent")
     if isinstance(agent, str) and agent.strip():
         lines.append(f"agent: {agent.strip()}")
+    scope = payload.get("scope")
+    if isinstance(scope, str) and scope.strip():
+        lines.append(f"scope: {scope.strip()}")
     return "\n".join(lines)
 
 
@@ -679,6 +678,10 @@ def add_status_filter_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--scope",
-        choices=("user", "workspace"),
-        help="Limit entities to user (global) or workspace scope",
+        choices=("all", "user", "workspace"),
+        default="all",
+        help=(
+            "Limit entities to user (global) or workspace scope "
+            "(default: all — include both user and workspace tools and skills)"
+        ),
     )

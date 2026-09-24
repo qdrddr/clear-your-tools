@@ -295,8 +295,11 @@ class SessionWorkspaceMiddleware(Middleware):
                 if _cache_count == 0:
                     _cache_count = await wait_for_catalog_cache_ready(
                         runtime.cache,
-                        max_wait_seconds=3.0,
+                        max_wait_seconds=8.0,
                     )
+                if _cache_count == 0:
+                    hydrate_runtime_cache(runtime.cache, runtime.config)
+                    _cache_count = len(runtime.cache.snapshot())
                 if _cache_count == 0 and runtime is not self._coordinator.bootstrap:
                     bootstrap = self._coordinator.bootstrap
                     bootstrap_count = len(bootstrap.cache.snapshot())
@@ -309,7 +312,8 @@ class SessionWorkspaceMiddleware(Middleware):
                         runtime.config,
                         config_holder=runtime.config_holder,
                     )
-                return []
+                self._coordinator.ensure_backends_mounted(runtime.config.mcp_servers)
+                return await call_next(context)
             finally:
                 reset_session_scoping_active(scoping_token)
                 reset_current_session_runtime(token)

@@ -474,6 +474,51 @@ def list_catalog_registrations() -> list[dict[str, Any]]:
         return [_registration_to_dict(entry) for entry in _registrations.values()]
 
 
+def _sync_live_registrations_from_daemon() -> int:
+    """Merge live hook-daemon registrations into this process (CLI / proxy readers)."""
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    from cyt.hook.daemon_client import resolve_hook_path
+
+    status_url = resolve_hook_path("/hook/catalog/status")
+    if not status_url:
+        return 0
+    try:
+        with urlopen(status_url, timeout=1.5) as response:
+            payload = json.loads(response.read())
+    except (URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return 0
+    if not isinstance(payload, dict):
+        return 0
+    registrations = payload.get("registrations")
+    if not isinstance(registrations, list):
+        return 0
+
+    loaded = 0
+    now = time.monotonic()
+    for item in registrations:
+        if not isinstance(item, dict):
+            continue
+        entry = _entry_from_dict(item)
+        if entry is None:
+            continue
+        entry.stale = False
+        entry.last_seen_at = now
+        key = _registry_key(entry.agent, entry.workspace_root or None, entry.catalog_layer)
+        with _registry_lock:
+            _registrations[key] = entry
+        loaded += 1
+    return loaded
+
+
+def hydrate_catalog_registry_for_read() -> int:
+    """Load stale disk snapshot, then overlay live hook-daemon registrations."""
+    loaded = load_catalog_registry_from_disk(mark_stale=True)
+    live = _sync_live_registrations_from_daemon()
+    return loaded + live
+
+
 def _entry_tools(
     entry: _CatalogRegistration | None,
     *,

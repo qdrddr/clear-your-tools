@@ -66,6 +66,11 @@ def _instance_key(config: AggregatorConfig) -> str:
     return f"{config.agent}:workspace:{ws}:{layer}"
 
 
+def _resolve_push_context(key: str, fallback: PushContext | None = None) -> PushContext | None:
+    """Return the latest push context; workspace runtimes replace bootstrap caches."""
+    return _push_contexts.get(key, fallback)
+
+
 def _can_push_to_registry(config: AggregatorConfig) -> bool:
     if config.workspace_root is None:
         logger.debug("cyt-mcp catalog push skipped: workspace_root not resolved")
@@ -268,6 +273,8 @@ def _push_once(config: AggregatorConfig, cache: RuntimeToolCache) -> tuple[bool,
     tools = payload_data.get("tools")
     if not isinstance(tools, list):
         tools = []
+    if not tools:
+        return False, 0
     from cyt_mcp.catalog import catalog_tools_content_hash
 
     content_hash = catalog_tools_content_hash(tools)
@@ -290,15 +297,18 @@ def _push_once(config: AggregatorConfig, cache: RuntimeToolCache) -> tuple[bool,
 
 
 async def _retry_push_loop(context: PushContext) -> None:
-    config = context.config_holder.config
-    cache = context.cache
-    key = _instance_key(config)
+    key = _instance_key(context.config_holder.config)
     delay_index = 0
     while True:
+        active = _resolve_push_context(key, context)
+        if active is None:
+            return
+        config = active.config_holder.config
+        cache = active.cache
         try:
             success, revision = await asyncio.to_thread(_push_once, config, cache)
             if success and revision:
-                await _maybe_reload_permissions(key=key, revision=revision, context=context)
+                await _maybe_reload_permissions(key=key, revision=revision, context=active)
         except Exception as exc:
             logger.debug("cyt-mcp catalog push loop error: %s", exc)
             success = False
@@ -364,21 +374,32 @@ def schedule_catalog_push(
 
 
 async def _push_immediate(context: PushContext) -> None:
-    config = context.config_holder.config
-    success, revision = await asyncio.to_thread(_push_once, config, context.cache)
+    key = _instance_key(context.config_holder.config)
+    active = _resolve_push_context(key, context)
+    if active is None:
+        return
+    config = active.config_holder.config
+    success, revision = await asyncio.to_thread(_push_once, config, active.cache)
     if success and revision:
-        key = _instance_key(config)
-        await _maybe_reload_permissions(key=key, revision=revision, context=context)
+        await _maybe_reload_permissions(key=key, revision=revision, context=active)
 
 
 async def _retry_push_loop_legacy(config: AggregatorConfig, cache: RuntimeToolCache) -> None:
     key = _instance_key(config)
     delay_index = 0
     while True:
+        active = _resolve_push_context(key)
+        push_config = active.config_holder.config if active is not None else config
+        push_cache = active.cache if active is not None else cache
+        push_context = active
         try:
-            success, revision = await asyncio.to_thread(_push_once, config, cache)
+            success, revision = await asyncio.to_thread(_push_once, push_config, push_cache)
             if success and revision:
-                await _maybe_reload_permissions(key=key, revision=revision, context=None)
+                await _maybe_reload_permissions(
+                    key=key,
+                    revision=revision,
+                    context=push_context,
+                )
         except Exception as exc:
             logger.debug("cyt-mcp catalog push loop error: %s", exc)
             success = False
@@ -393,16 +414,22 @@ async def _retry_push_loop_legacy(config: AggregatorConfig, cache: RuntimeToolCa
 
 async def _push_immediate_legacy(config: AggregatorConfig, cache: RuntimeToolCache) -> None:
     key = _instance_key(config)
-    success, revision = await asyncio.to_thread(_push_once, config, cache)
+    active = _resolve_push_context(key)
+    push_config = active.config_holder.config if active is not None else config
+    push_cache = active.cache if active is not None else cache
+    success, revision = await asyncio.to_thread(_push_once, push_config, push_cache)
     if success and revision:
-        await _maybe_reload_permissions(key=key, revision=revision, context=None)
+        await _maybe_reload_permissions(key=key, revision=revision, context=active)
 
 
 def _push_sync_with_retry(config: AggregatorConfig, cache: RuntimeToolCache) -> None:
     key = _instance_key(config)
     delay_index = 0
     while True:
-        success, revision = _push_once(config, cache)
+        active = _resolve_push_context(key)
+        push_config = active.config_holder.config if active is not None else config
+        push_cache = active.cache if active is not None else cache
+        success, revision = _push_once(push_config, push_cache)
         if success and revision:
             last = _last_permissions_revision.get(key, 0)
             if revision > last:
