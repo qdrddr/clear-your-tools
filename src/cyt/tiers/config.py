@@ -334,6 +334,13 @@ def skills_tier_prompt_eval_active(cfg: dict[str, Any]) -> bool:
     return skills_enabled(cfg) and tiers_active(cfg, kind="skill")
 
 
+def tools_tier_prompt_eval_active(cfg: dict[str, Any]) -> bool:
+    """True when hook/proxy should run tier-scoped tool pruning on user prompts."""
+    from cyt.config import tools_enabled
+
+    return tools_enabled(cfg) and tiers_active(cfg, kind="tool")
+
+
 def resolve_tier_status_agent(
     config: dict[str, Any],
     *,

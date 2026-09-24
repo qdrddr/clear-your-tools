@@ -159,13 +159,14 @@ def tier_stats_config(
     pack: TiersStatsFixturePack,
     *,
     skills_enabled: bool = True,
+    tools_enabled: bool = True,
 ) -> dict[str, Any]:
     return set_hook_workspace_in_config(
         {
             "pruning": {
                 "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
                 "tools": {
-                    "enabled": True,
+                    "enabled": tools_enabled,
                     "hook": {
                         "tools_from": ["cyt_mcp"],
                         "cyt_mcp": {"agent": "cursor"},
@@ -292,9 +293,14 @@ def patch_cyt_mcp_paths(
     pack: _CytMcpPathPack,
     *,
     skills_enabled: bool = True,
+    tools_enabled: bool = True,
 ) -> None:
     if isinstance(pack, TiersStatsFixturePack):
-        config = tier_stats_config(pack, skills_enabled=skills_enabled)
+        config = tier_stats_config(
+            pack,
+            skills_enabled=skills_enabled,
+            tools_enabled=tools_enabled,
+        )
         patch_load_config(monkeypatch, config)
     monkeypatch.setattr(
         "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",

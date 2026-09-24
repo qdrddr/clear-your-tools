@@ -256,18 +256,19 @@ def build_tier_statistics(
     *,
     catalog_tools: list[dict[str, Any]] | None = None,
     include_skills: bool = True,
+    include_tools: bool = True,
 ) -> dict[str, Any]:
     tools_raw = status.get("tools")
     skills_raw = status.get("skills")
     tools_block: dict[str, Any] = tools_raw if isinstance(tools_raw, dict) else {}
     skills_block: dict[str, Any] = skills_raw if isinstance(skills_raw, dict) else {}
-    stats: dict[str, Any] = {
-        "tools": build_kind_tier_statistics(
+    stats: dict[str, Any] = {}
+    if include_tools:
+        stats["tools"] = build_kind_tier_statistics(
             tools_block,
             kind="tool",
             catalog_tools=catalog_tools,
-        ),
-    }
+        )
     if include_skills:
         stats["skills"] = build_kind_tier_statistics(
             skills_block,
@@ -395,21 +396,41 @@ def _append_historical_activity_lines(
     tools_stats: dict[str, Any] | None,
     skills_stats: dict[str, Any] | None,
 ) -> None:
-    tools_injected = _activity_metric(
-        tools_stats,
-        metric="injected",
-        entities_key="injected_entities",
-    )
-    skills_injected = _activity_metric(
-        skills_stats,
-        metric="injected",
-        entities_key="injected_entities",
-    )
-    tools_used = _activity_metric(tools_stats, metric="used", entities_key="used_entities")
-    skills_used = _activity_metric(skills_stats, metric="used", entities_key="used_entities")
-
+    include_tools = tools_stats is not None
     include_skills = skills_stats is not None
-    if tools_injected is None and (not include_skills or skills_injected is None):
+
+    tools_injected = (
+        _activity_metric(
+            tools_stats,
+            metric="injected",
+            entities_key="injected_entities",
+        )
+        if include_tools
+        else None
+    )
+    skills_injected = (
+        _activity_metric(
+            skills_stats,
+            metric="injected",
+            entities_key="injected_entities",
+        )
+        if include_skills
+        else None
+    )
+    tools_used = (
+        _activity_metric(tools_stats, metric="used", entities_key="used_entities")
+        if include_tools
+        else None
+    )
+    skills_used = (
+        _activity_metric(skills_stats, metric="used", entities_key="used_entities")
+        if include_skills
+        else None
+    )
+
+    if (not include_tools or tools_injected is None) and (
+        not include_skills or skills_injected is None
+    ):
         return
 
     def _kind_metric(
@@ -418,19 +439,20 @@ def _append_historical_activity_lines(
         *,
         label: str,
     ) -> str:
-        tools_text = (
-            f"tools {label}={tools[0]} ({tools[1]})"
-            if tools is not None
-            else f"tools {label}=0 (0)"
-        )
-        if not include_skills:
-            return tools_text
-        skills_text = (
-            f"skills {label}={skills[0]} ({skills[1]})"
-            if skills is not None
-            else f"skills {label}=0 (0)"
-        )
-        return f"{tools_text}  {skills_text}"
+        parts: list[str] = []
+        if include_tools:
+            parts.append(
+                f"tools {label}={tools[0]} ({tools[1]})"
+                if tools is not None
+                else f"tools {label}=0 (0)",
+            )
+        if include_skills:
+            parts.append(
+                f"skills {label}={skills[0]} ({skills[1]})"
+                if skills is not None
+                else f"skills {label}=0 (0)",
+            )
+        return "  ".join(parts)
 
     lines.append("")
     lines.append("Historical signals (decayed sum):")

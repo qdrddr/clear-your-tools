@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from cyt.config import load_config, skills_enabled
+from cyt.config import load_config, skills_enabled, tools_enabled
 from cyt.tiers.config import resolve_tier_project, resolve_tier_status_agent
 from cyt.tiers.manager import get_tier_manager
 from cyt.tiers.status_view import (
@@ -230,6 +230,28 @@ def _strip_skills_from_status_display(status_payload: dict[str, Any]) -> None:
         histogram.pop("skill", None)
 
 
+_TOOLS_STATS_UNAVAILABLE = "tools.enabled is false; tool tier stats are unavailable"
+
+
+def _tools_stats_display_blocked(
+    config: dict,
+    *,
+    filters: StatusFilters,
+) -> str | None:
+    if tools_enabled(config):
+        return None
+    if filters.kind == "tools" or filters.server is not None:
+        return _TOOLS_STATS_UNAVAILABLE
+    return None
+
+
+def _strip_tools_from_status_display(status_payload: dict[str, Any]) -> None:
+    status_payload.pop("tools", None)
+    histogram = status_payload.get("histogram")
+    if isinstance(histogram, dict):
+        histogram.pop("tool", None)
+
+
 def _build_tiers_status_payload(
     *,
     config: dict,
@@ -253,16 +275,20 @@ def _build_tiers_status_payload(
         "agent": status.get("agent") or status_agent,
     }
     include_skills = skills_enabled(config)
+    include_tools = tools_enabled(config)
     status_payload["overview"] = build_status_overview(
         status_payload,
         config=config,
         workspace_root=project_root,
         agent=status_agent,
         include_skills=include_skills,
+        include_tools=include_tools,
     )
 
     if not include_skills:
         _strip_skills_from_status_display(status_payload)
+    if not include_tools:
+        _strip_tools_from_status_display(status_payload)
 
     if path_root is not None and isinstance(status_payload.get("skills"), dict):
         _apply_skill_path_filter_to_status(
@@ -320,6 +346,10 @@ def run_tiers_status(args: argparse.Namespace) -> int:
     skills_display_error = _skills_stats_display_blocked(config, filters=filters)
     if skills_display_error is not None:
         return _status_error(skills_display_error, json_output=bool(args.json))
+
+    tools_display_error = _tools_stats_display_blocked(config, filters=filters)
+    if tools_display_error is not None:
+        return _status_error(tools_display_error, json_output=bool(args.json))
 
     status_payload = _build_tiers_status_payload(
         config=config,

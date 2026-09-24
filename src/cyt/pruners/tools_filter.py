@@ -49,7 +49,7 @@ from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.pruners.token_stats import format_tool_token_line
 from cyt.tiers.adapters.tools import merge_t4_tools, stamp_tool_injection_tiers
-from cyt.tiers.config import tiers_active
+from cyt.tiers.config import tools_tier_prompt_eval_active
 from cyt.tiers.manager import NoOpTierManager, TierManager
 from cyt.tiers.models import ToolsTierApplyResult
 from cyt.tiers.shadow import schedule_tool_shadow_evaluation
@@ -1013,16 +1013,26 @@ def _tier_prune_context(
     from cyt.tiers.manager import get_tier_manager_for_config
 
     tier_manager = get_tier_manager_for_config(config)
-    tier_apply = tier_manager.apply_tools(original_tools, config)
-    tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
-    from cyt.tiers.adapters.tools import prepare_tools_for_tier_pipeline
+    if tools_tier_prompt_eval_active(config):
+        tier_apply = tier_manager.apply_tools(original_tools, config)
+        tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
+        from cyt.tiers.adapters.tools import prepare_tools_for_tier_pipeline
 
-    tools_for_prune = prepare_tools_for_tier_pipeline(
-        tools_for_prune,
-        tier_apply.tier_by_tool,
-    )
-    # Candidacy exposure: count tools entering BM25 (tier-eligible pool), not the full catalog.
-    tier_manager.record_tool_candidates(tools_for_prune, config)
+        tools_for_prune = prepare_tools_for_tier_pipeline(
+            tools_for_prune,
+            tier_apply.tier_by_tool,
+        )
+        # Candidacy exposure: count tools entering BM25 (tier-eligible pool), not the full catalog.
+        tier_manager.record_tool_candidates(tools_for_prune, config)
+    else:
+        tier_apply = ToolsTierApplyResult(
+            eligible_tools=list(original_tools),
+            t4_direct=[],
+            excluded_t0=[],
+            policy_overrides={},
+            tier_by_tool={},
+        )
+        tools_for_prune = list(original_tools)
     t4_direct = list(tier_apply.t4_direct)
     output_policy_ctx = output_policy_context_for_terminal_stage(
         config,
@@ -1132,7 +1142,7 @@ def _finalize_applied_prune_result(
         pruned = enrich_tools_with_examples(pruned, query, config)
     except Exception as exc:
         logger.warning("tool example enrichment failed: %s", exc)
-    if tiers_active(config, kind="tool"):
+    if tools_tier_prompt_eval_active(config):
         schedule_tool_shadow_evaluation(
             config=config,
             query=scoring_query,

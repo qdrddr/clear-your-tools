@@ -57,7 +57,9 @@ def schedule_tool_shadow_evaluation(
     tier_apply: ToolsTierApplyResult,
     manager: TierManager | NoOpTierManager,
 ) -> None:
-    if not tiers_active(config, kind="tool") or not query.strip():
+    from cyt.tiers.config import tools_tier_prompt_eval_active
+
+    if not tools_tier_prompt_eval_active(config) or not query.strip():
         return
     dormant_ids = list(tier_apply.excluded_t0)
     if not dormant_ids:

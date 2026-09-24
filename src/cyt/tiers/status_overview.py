@@ -215,6 +215,7 @@ def build_status_overview(
     workspace_root: Path | None,
     agent: str,
     include_skills: bool = True,
+    include_tools: bool = True,
 ) -> dict[str, Any]:
     from cyt.hook.workspace_config import set_hook_workspace_in_config
     from cyt.tiers.config import tier_state_db_path
@@ -247,19 +248,44 @@ def build_status_overview(
 
     tier_statistics = build_tier_statistics(
         status,
-        catalog_tools=catalog_tools,
+        catalog_tools=catalog_tools if include_tools else None,
         include_skills=include_skills,
+        include_tools=include_tools,
     )
 
-    tiers: dict[str, Any] = {
-        "tools": {
+    tiers: dict[str, Any] = {}
+    if include_tools:
+        tiers["tools"] = {
             "mode": tools_block.get("mode"),
-        },
-    }
+        }
     if include_skills:
         tiers["skills"] = {
             "mode": skills_block.get("mode"),
         }
+
+    troubleshooting: dict[str, Any] = {
+        "scoped_project_id": status.get("project_id"),
+        "tier_state_db": _short_path(tier_state_db_path(scoped)),
+    }
+    if include_tools:
+        troubleshooting.update(
+            {
+                "catalog_user_global_only": not workspace_mcp_defs,
+                "configured_sources": catalog_health.get("configured_sources"),
+                "catalog_tool_count": catalog_health.get("catalog_tool_count"),
+                "tracked_catalog_tool_count": tools_block.get("tracked_catalog_tool_count"),
+                "db_tool_entities": db_tool_count,
+                **{
+                    key: catalog_health[key]
+                    for key in (
+                        "catalog_age_seconds",
+                        "composite_fingerprint_prefix",
+                        "source_fingerprints",
+                    )
+                    if key in catalog_health
+                },
+            },
+        )
 
     overview: dict[str, Any] = {
         "epoch": {
@@ -272,31 +298,15 @@ def build_status_overview(
         },
         "tiers": tiers,
         "tier_statistics": tier_statistics,
-        "mcp_servers": _list_mcp_servers(
+        "troubleshooting": troubleshooting,
+    }
+    if include_tools:
+        overview["mcp_servers"] = _list_mcp_servers(
             catalog_tools,
             agent=agent,
             workspace_root=workspace_root,
-        ),
-        "mcp_config_files": mcp_config_files,
-        "troubleshooting": {
-            "scoped_project_id": status.get("project_id"),
-            "catalog_user_global_only": not workspace_mcp_defs,
-            "configured_sources": catalog_health.get("configured_sources"),
-            "catalog_tool_count": catalog_health.get("catalog_tool_count"),
-            "tracked_catalog_tool_count": tools_block.get("tracked_catalog_tool_count"),
-            "tier_state_db": _short_path(tier_state_db_path(scoped)),
-            "db_tool_entities": db_tool_count,
-            **{
-                key: catalog_health[key]
-                for key in (
-                    "catalog_age_seconds",
-                    "composite_fingerprint_prefix",
-                    "source_fingerprints",
-                )
-                if key in catalog_health
-            },
-        },
-    }
+        )
+        overview["mcp_config_files"] = mcp_config_files
     if include_skills:
         overview["skill_directories"] = _list_skill_directories(
             scoped,
@@ -435,16 +445,20 @@ def _append_overview_troubleshooting(lines: list[str], overview: dict[str, Any])
             "catalog_scope: user-global only (no workspace MCP server defs; "
             "histograms may match across repos)",
         )
-    lines.append(
-        "catalog: "
-        f"count={troubleshooting.get('catalog_tool_count')}  "
-        f"tracked={troubleshooting.get('tracked_catalog_tool_count')}",
-    )
+    if "catalog_tool_count" in troubleshooting:
+        lines.append(
+            "catalog: "
+            f"count={troubleshooting.get('catalog_tool_count')}  "
+            f"tracked={troubleshooting.get('tracked_catalog_tool_count')}",
+        )
     lines.append(f"tier_db: {troubleshooting.get('tier_state_db')}")
-    db_entities = f"tools={troubleshooting.get('db_tool_entities')}"
+    db_entity_parts: list[str] = []
+    if "db_tool_entities" in troubleshooting:
+        db_entity_parts.append(f"tools={troubleshooting.get('db_tool_entities')}")
     if "db_skill_entities" in troubleshooting:
-        db_entities += f"  skills={troubleshooting.get('db_skill_entities')}"
-    lines.append(f"db_entities: {db_entities}")
+        db_entity_parts.append(f"skills={troubleshooting.get('db_skill_entities')}")
+    if db_entity_parts:
+        lines.append(f"db_entities: {'  '.join(db_entity_parts)}")
     sources = troubleshooting.get("configured_sources")
     if isinstance(sources, list) and sources:
         lines.append(f"sources: {', '.join(str(item) for item in sources)}")
