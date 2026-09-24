@@ -58,7 +58,7 @@ def format_saved_tokens_line(
 ) -> str:
     saved = tokens_in - tokens_out - frontend_tokens
     pct = savings_percent(tokens_in, saved)
-    return f"Saved (tokens): {saved} ({pct:.1f}%) = {tokens_in}-{tokens_out}+{frontend_tokens}"
+    return f"Saved (tokens): {saved} ({pct:.1f}%) = {tokens_in}-({tokens_out}+{frontend_tokens})"
 
 
 def savings_percent(tokens_in: int, saved: int) -> float:

@@ -168,7 +168,7 @@ def test_print_preview_token_summary_writes_to_stderr(
     assert "Tools after cleaning agent-tools (compact JSON):" in err
     assert "Frontend stubs (compact JSON):" in err
     assert "Saved (tokens):" in err
-    assert "= 100-20+10" in err
+    assert "= 100-(20+10)" in err
 
 
 def test_run_inject_preview_defers_token_logging_to_stderr(

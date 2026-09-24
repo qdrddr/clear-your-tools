@@ -60,4 +60,4 @@ def test_format_preview_token_summary_lines_order() -> None:
     assert lines[0] == "\nTools before cleaning (compact JSON): tools=202, tokens=1000"
     assert lines[1] == "Tools after cleaning agent-tools (compact JSON): tokens=200"
     assert lines[2].startswith("Frontend stubs (compact JSON):")
-    assert lines[3] == "Saved (tokens): 750 (75.0%) = 1000-200+50"
+    assert lines[3] == "Saved (tokens): 750 (75.0%) = 1000-(200+50)"
