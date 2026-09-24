@@ -327,6 +327,13 @@ def tiers_apply(cfg: dict[str, Any], *, kind: str) -> bool:
     return section.mode.applies
 
 
+def skills_tier_prompt_eval_active(cfg: dict[str, Any]) -> bool:
+    """True when hook/proxy should run tier-scoped skill search on user prompts."""
+    from cyt.config import skills_enabled
+
+    return skills_enabled(cfg) and tiers_active(cfg, kind="skill")
+
+
 def resolve_tier_status_agent(
     config: dict[str, Any],
     *,

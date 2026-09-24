@@ -150,6 +150,7 @@ def tier_stats_config(pack: TiersStatsFixturePack) -> dict[str, Any]:
                 },
             },
             "skills": {
+                "enabled": True,
                 "tiers": {
                     "mode": "shadow",
                 },
@@ -250,6 +251,14 @@ def patch_cyt_mcp_paths(
     monkeypatch: pytest.MonkeyPatch,
     pack: _CytMcpPathPack,
 ) -> None:
+    if isinstance(pack, TiersStatsFixturePack):
+        config = tier_stats_config(pack)
+
+        def _load_config(*args, **kwargs):
+            return config
+
+        monkeypatch.setattr("cyt.config.load_config", _load_config)
+        monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
     monkeypatch.setattr(
         "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",
         lambda: pack.catalog_cache_dir,

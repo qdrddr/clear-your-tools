@@ -23,6 +23,31 @@ def _mock_tracked_catalog(monkeypatch: MonkeyPatch, *tool_names: str) -> None:
     )
 
 
+def _patch_load_config_from_yaml(
+    monkeypatch: MonkeyPatch,
+    config_path: Path,
+    *,
+    skills_enabled: bool = True,
+) -> dict:
+    import yaml
+
+    from cyt.config import _config_with_bundled_defaults
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if skills_enabled and isinstance(raw, dict):
+        skills = raw.setdefault("skills", {})
+        if isinstance(skills, dict):
+            skills["enabled"] = True
+    merged = _config_with_bundled_defaults(raw if isinstance(raw, dict) else {})
+
+    def _load_config(*args, **kwargs):
+        return merged
+
+    monkeypatch.setattr("cyt.config.load_config", _load_config)
+    monkeypatch.setattr("cyt.tiers.cli.load_config", _load_config)
+    return merged
+
+
 def test_tiers_status_json(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     (tmp_path / ".git").mkdir()
     db_path = tmp_path / "tier_state.db"
@@ -96,6 +121,7 @@ skills:
         store.close()
 
     _mock_tracked_catalog(monkeypatch, "search")
+    _patch_load_config_from_yaml(monkeypatch, config_path)
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["stats", "--workspace", str(tmp_path), "--json"])
@@ -355,6 +381,7 @@ skills:
         store.close()
 
     _mock_tracked_catalog(monkeypatch, "search")
+    _patch_load_config_from_yaml(monkeypatch, config_path)
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["stats", "--workspace", str(tmp_path)])

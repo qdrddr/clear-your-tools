@@ -30,6 +30,8 @@ from cyt.tiers.status_view import (
 )
 from cyt.tiers.store import TierStore
 
+from tests.unit.test_tier_cli import _patch_load_config_from_yaml
+
 
 def _mock_catalog(
     monkeypatch: MonkeyPatch,
@@ -323,6 +325,7 @@ skills:
         monkeypatch,
         [{"name": "ctx_execute", "server_key": "context-mode", "cyt_catalog_source": "cyt_mcp"}],
     )
+    _patch_load_config_from_yaml(monkeypatch, config_path)
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["stats", "--workspace", str(tmp_path)])
@@ -382,6 +385,7 @@ skills:
         encoding="utf-8",
     )
     _mock_catalog(monkeypatch, [])
+    _patch_load_config_from_yaml(monkeypatch, config_path)
     monkeypatch.chdir(tmp_path)
     _managers.clear()
 

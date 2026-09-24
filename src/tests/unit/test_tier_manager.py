@@ -522,6 +522,34 @@ def test_expire_temporary_promotions_reverts_unused_tool_temp_promotion() -> Non
     assert transitions[0].reason == "temp_promotion_expired"
 
 
+def test_slow_clock_demotes_unused_t2_without_exposure_gate() -> None:
+    cfg = tier_section_config({"tools": {"tiers": {}}}, kind="tool")
+    state = EntityTierState(
+        entity_id="tool:unused",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.ACTIVE,
+    )
+    transitions = evaluate_slow_clock({("tool", "tool:unused"): state}, cfg=cfg, epoch=EpochState())
+    assert transitions
+    assert any(t.reason == "slow_demote_t2_t1_unused" for t in transitions)
+    assert state.stable_tier == Tier.COLD
+
+
+def test_slow_clock_demotes_t2_with_candidates_but_no_injection() -> None:
+    cfg = tier_section_config({"tools": {"tiers": {}}}, kind="tool")
+    state = EntityTierState(
+        entity_id="tool:bm25_only",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.ACTIVE,
+        stats=EffectiveStats(candidates=4.0),
+    )
+    transitions = evaluate_slow_clock({("tool", "tool:bm25_only"): state}, cfg=cfg, epoch=EpochState())
+    assert any(t.reason == "slow_demote_t2_t1_unused" for t in transitions)
+    assert state.stable_tier == Tier.COLD
+
+
 def test_slow_clock_demotes_t2_without_injection_when_exposure_high() -> None:
     cfg = tier_section_config(
         {"tools": {"tiers": {"evaluation": {"min_injections_before_reconsider": 8}}}},

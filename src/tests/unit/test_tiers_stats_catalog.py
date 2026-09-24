@@ -148,8 +148,8 @@ def test_tier_manager_status_merges_catalog_tools_and_workspace_skills(
     assert len(hot) == 1
     assert hot[0]["entity_id"] == expected["hot_tool_entity_id"]
 
-    active_names = {row.get("entity_id", "").rsplit(":", 1)[-1] for row in tools["by_tier"]["T2"]}
-    assert active_names == {"context-mode_ctx_execute", "context-mode_ctx_search"}
+    dormant_names = {row.get("entity_id", "").rsplit(":", 1)[-1] for row in tools["by_tier"]["T0"]}
+    assert dormant_names == {"context-mode_ctx_execute", "context-mode_ctx_search"}
 
     skills = status["skills"]
     skill_names = {row.get("name") for row in skills["by_tier"]["T0"]}

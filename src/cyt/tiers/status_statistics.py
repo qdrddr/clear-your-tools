@@ -8,6 +8,7 @@ from typing import Any
 TableRowFormatter = Callable[[list[str], list[int]], str]
 
 _TIER_LABELS = tuple(f"T{i}" for i in range(5))
+_TIER_DISPLAY_ORDER = tuple(reversed(_TIER_LABELS))
 _EFFECTIVE_BOUND_TIERS = frozenset({"T1", "T2", "T3", "T4"})
 
 
@@ -254,23 +255,26 @@ def build_tier_statistics(
     status: dict[str, Any],
     *,
     catalog_tools: list[dict[str, Any]] | None = None,
+    include_skills: bool = True,
 ) -> dict[str, Any]:
     tools_raw = status.get("tools")
     skills_raw = status.get("skills")
     tools_block: dict[str, Any] = tools_raw if isinstance(tools_raw, dict) else {}
     skills_block: dict[str, Any] = skills_raw if isinstance(skills_raw, dict) else {}
-    return {
+    stats: dict[str, Any] = {
         "tools": build_kind_tier_statistics(
             tools_block,
             kind="tool",
             catalog_tools=catalog_tools,
         ),
-        "skills": build_kind_tier_statistics(
+    }
+    if include_skills:
+        stats["skills"] = build_kind_tier_statistics(
             skills_block,
             kind="skill",
             catalog_tools=catalog_tools,
-        ),
-    }
+        )
+    return stats
 
 
 def append_kind_tier_statistics_table(
@@ -296,8 +300,12 @@ def append_kind_tier_statistics_table(
         widths = [5, 5, 4, 6]
         header = ["Tier", "Count", "Temp", "Tokens"]
     lines.append(format_table_row(header, widths))
-    for row in rows:
-        if not isinstance(row, dict):
+    rows_by_tier = {
+        str(row.get("tier") or ""): row for row in rows if isinstance(row, dict)
+    }
+    for tier in _TIER_DISPLAY_ORDER:
+        row = rows_by_tier.get(tier)
+        if row is None:
             continue
         count = int(row.get("count", 0))
         tokens_known = int(row.get("tokens_known", 0))
@@ -400,7 +408,8 @@ def _append_historical_activity_lines(
     tools_used = _activity_metric(tools_stats, metric="used", entities_key="used_entities")
     skills_used = _activity_metric(skills_stats, metric="used", entities_key="used_entities")
 
-    if tools_injected is None and skills_injected is None:
+    include_skills = skills_stats is not None
+    if tools_injected is None and (not include_skills or skills_injected is None):
         return
 
     def _kind_metric(
@@ -414,6 +423,8 @@ def _append_historical_activity_lines(
             if tools is not None
             else f"tools {label}=0 (0)"
         )
+        if not include_skills:
+            return tools_text
         skills_text = (
             f"skills {label}={skills[0]} ({skills[1]})"
             if skills is not None

@@ -298,6 +298,50 @@ def test_build_kind_tier_statistics_unknown_tokens() -> None:
     assert row["tokens"] == 0
 
 
+def test_append_kind_tier_statistics_table_displays_t4_first() -> None:
+    lines: list[str] = []
+
+    def _format_table_row(columns: list[str], widths: list[int]) -> str:
+        return "  ".join(
+            str(column).ljust(width) for column, width in zip(columns, widths, strict=True)
+        )
+
+    from cyt.tiers.status_statistics import append_kind_tier_statistics_table
+
+    append_kind_tier_statistics_table(
+        lines,
+        {
+            "rows": [
+                {"tier": "T0", "count": 1, "temp": 0, "tokens": 0, "tokens_known": 0},
+                {"tier": "T1", "count": 0, "temp": 0, "tokens": 0, "tokens_known": 0},
+                {"tier": "T2", "count": 2, "temp": 0, "tokens": 100, "tokens_known": 2},
+                {"tier": "T3", "count": 1, "temp": 0, "tokens": 50, "tokens_known": 1},
+                {"tier": "T4", "count": 0, "temp": 0, "tokens": 0, "tokens_known": 0},
+            ],
+            "totals": {
+                "count": 4,
+                "temp": 0,
+                "tokens": 150,
+                "tokens_known": 3,
+                "effective_tokens": 0,
+                "effective_tokens_known": 0,
+            },
+        },
+        title="=== tools ===",
+        format_table_row=_format_table_row,
+        show_effective=True,
+    )
+
+    tier_lines = [
+        line.split()[0]
+        for line in lines
+        if line and not line.startswith("=") and not line.startswith("effective:")
+    ]
+    assert tier_lines[0] == "Tier"
+    assert tier_lines[1:6] == ["T4", "T3", "T2", "T1", "T0"]
+    assert tier_lines[6] == "Total"
+
+
 def test_append_tier_statistics_tables_historical_activity_lines() -> None:
     lines: list[str] = []
 
@@ -338,3 +382,36 @@ def test_append_tier_statistics_tables_historical_activity_lines() -> None:
     assert "Historical signals (decayed sum):" in lines
     assert "  Demand:  tools injected=270.3 (88)  skills injected=3 (2)" in lines
     assert "  Usage:   tools used=41.8 (45)  skills used=12 (5)" in lines
+
+
+def test_append_tier_statistics_tables_historical_activity_tools_only() -> None:
+    lines: list[str] = []
+
+    def _format_table_row(columns: list[str], widths: list[int]) -> str:
+        return "  ".join(
+            str(column).ljust(width) for column, width in zip(columns, widths, strict=True)
+        )
+
+    append_tier_statistics_tables(
+        lines,
+        {
+            "tier_statistics": {
+                "tools": {
+                    "rows": [],
+                    "totals": {"count": 0, "temp": 0, "tokens": 0, "tokens_known": 0},
+                    "activity": {
+                        "injected": 119.0,
+                        "used": 32.7,
+                        "injected_entities": 72,
+                        "used_entities": 16,
+                    },
+                },
+            },
+        },
+        format_table_row=_format_table_row,
+    )
+
+    assert "Historical signals (decayed sum):" in lines
+    assert "  Demand:  tools injected=119 (72)" in lines
+    assert "  Usage:   tools used=32.7 (16)" in lines
+    assert not any("skills" in line for line in lines)

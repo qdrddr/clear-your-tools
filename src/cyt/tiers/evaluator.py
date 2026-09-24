@@ -80,6 +80,23 @@ def _min_exposure_met(state: EntityTierState, minimum: int) -> bool:
     return state.stats.candidates >= minimum
 
 
+def _tool_unused_at_t2(state: EntityTierState) -> bool:
+    """True when a tool is still default T2 but never injected or invoked.
+
+    BM25 candidacy alone does not preserve T2 across epochs; only injection/use signals do.
+    """
+    if state.kind != "tool":
+        return False
+    stats = state.stats
+    return (
+        stats.epoch_used <= 0
+        and stats.injected <= 0
+        and stats.used <= 0
+        and stats.attempts <= 0
+        and stats.used_without_injection <= 0
+    )
+
+
 def _promote_tier(
     state: EntityTierState,
     target: Tier,
@@ -223,6 +240,10 @@ def evaluate_slow_clock(  # noqa: C901
             ):
                 transitions.append(
                     _promote_tier(state, Tier.HOT, reason="slow_promote_t2_t3", temporary=False),
+                )
+            elif _tool_unused_at_t2(state):
+                transitions.append(
+                    _demote_tier(state, Tier.COLD, reason="slow_demote_t2_t1_unused"),
                 )
             elif (
                 _min_exposure_met(state, cfg.min_injections_before_reconsider)

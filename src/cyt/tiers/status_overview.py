@@ -214,6 +214,7 @@ def build_status_overview(
     config: dict[str, Any],
     workspace_root: Path | None,
     agent: str,
+    include_skills: bool = True,
 ) -> dict[str, Any]:
     from cyt.hook.workspace_config import set_hook_workspace_in_config
     from cyt.tiers.config import tier_state_db_path
@@ -244,9 +245,23 @@ def build_status_overview(
 
     from cyt.tiers.status_statistics import build_tier_statistics
 
-    tier_statistics = build_tier_statistics(status, catalog_tools=catalog_tools)
+    tier_statistics = build_tier_statistics(
+        status,
+        catalog_tools=catalog_tools,
+        include_skills=include_skills,
+    )
 
-    return {
+    tiers: dict[str, Any] = {
+        "tools": {
+            "mode": tools_block.get("mode"),
+        },
+    }
+    if include_skills:
+        tiers["skills"] = {
+            "mode": skills_block.get("mode"),
+        }
+
+    overview: dict[str, Any] = {
         "epoch": {
             "epoch_id": status.get("epoch_id"),
             "wake_cycle_id": status.get("wake_cycle_id"),
@@ -255,14 +270,7 @@ def build_status_overview(
             "epoch_timeout_seconds": status.get("epoch_timeout_seconds"),
             "epoch_remaining_seconds": status.get("epoch_remaining_seconds"),
         },
-        "tiers": {
-            "tools": {
-                "mode": tools_block.get("mode"),
-            },
-            "skills": {
-                "mode": skills_block.get("mode"),
-            },
-        },
+        "tiers": tiers,
         "tier_statistics": tier_statistics,
         "mcp_servers": _list_mcp_servers(
             catalog_tools,
@@ -270,11 +278,6 @@ def build_status_overview(
             workspace_root=workspace_root,
         ),
         "mcp_config_files": mcp_config_files,
-        "skill_directories": _list_skill_directories(
-            scoped,
-            agent=agent,
-            workspace_root=workspace_root,
-        ),
         "troubleshooting": {
             "scoped_project_id": status.get("project_id"),
             "catalog_user_global_only": not workspace_mcp_defs,
@@ -283,7 +286,6 @@ def build_status_overview(
             "tracked_catalog_tool_count": tools_block.get("tracked_catalog_tool_count"),
             "tier_state_db": _short_path(tier_state_db_path(scoped)),
             "db_tool_entities": db_tool_count,
-            "db_skill_entities": db_skill_count,
             **{
                 key: catalog_health[key]
                 for key in (
@@ -295,6 +297,16 @@ def build_status_overview(
             },
         },
     }
+    if include_skills:
+        overview["skill_directories"] = _list_skill_directories(
+            scoped,
+            agent=agent,
+            workspace_root=workspace_root,
+        )
+        troubleshooting = overview["troubleshooting"]
+        if isinstance(troubleshooting, dict):
+            troubleshooting["db_skill_entities"] = db_skill_count
+    return overview
 
 
 def format_duration_compact(seconds: int) -> str:
@@ -429,11 +441,10 @@ def _append_overview_troubleshooting(lines: list[str], overview: dict[str, Any])
         f"tracked={troubleshooting.get('tracked_catalog_tool_count')}",
     )
     lines.append(f"tier_db: {troubleshooting.get('tier_state_db')}")
-    lines.append(
-        "db_entities: "
-        f"tools={troubleshooting.get('db_tool_entities')}  "
-        f"skills={troubleshooting.get('db_skill_entities')}",
-    )
+    db_entities = f"tools={troubleshooting.get('db_tool_entities')}"
+    if "db_skill_entities" in troubleshooting:
+        db_entities += f"  skills={troubleshooting.get('db_skill_entities')}"
+    lines.append(f"db_entities: {db_entities}")
     sources = troubleshooting.get("configured_sources")
     if isinstance(sources, list) and sources:
         lines.append(f"sources: {', '.join(str(item) for item in sources)}")

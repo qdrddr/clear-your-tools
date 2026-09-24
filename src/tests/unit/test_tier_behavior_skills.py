@@ -227,7 +227,7 @@ def test_resolve_tiered_skill_matches_merges_t4_direct(
     matches = resolve_tiered_skill_matches(
         "create hook",
         entries,
-        config={},
+        config={"skills": {"enabled": True, "tiers": {"mode": "live"}}},
         skip_frontmatter_gate=True,
     )
     assert len(matches) == 1

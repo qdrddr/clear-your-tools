@@ -788,7 +788,7 @@ def resolve_tiered_skill_matches(
     """Partition by tier, search eligible pool, and merge T4 direct inject matches."""
     from cyt.hook.workspace_config import hook_workspace_from_config
     from cyt.skills.search import search_skills
-    from cyt.tiers.config import tiers_apply
+    from cyt.tiers.config import skills_tier_prompt_eval_active, tiers_apply
     from cyt.tiers.manager import get_tier_manager
 
     resolved_entries = list(entries)
@@ -796,6 +796,16 @@ def resolve_tiered_skill_matches(
         from cyt.skills.search import eligible_skills_after_gate
 
         resolved_entries = eligible_skills_after_gate(query, resolved_entries, config=config)
+
+    if not skills_tier_prompt_eval_active(config):
+        return search_skills(
+            query,
+            resolved_entries,
+            config=config,
+            max_tokens=max_tokens,
+            pruner_settings=pruner_settings,
+            skip_frontmatter_gate=True,
+        )
 
     manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
     partition = manager.partition_skills(resolved_entries, config)
