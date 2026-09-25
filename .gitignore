@@ -189,3 +189,4 @@ graphify-out/
 .agents/
 .cursor\rules\cyt-injection.mdc
 .github/context-mode/
+.debug_

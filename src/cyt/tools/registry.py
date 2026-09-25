@@ -35,11 +35,7 @@ def load_tool_catalog(
     cold_start = False
     if not blocking:
         snapshot = get_master_tool_catalog(cfg, blocking=False)
-        if (
-            snapshot is not None
-            and len(snapshot) == 0
-            and uses_cyt_mcp_tool_catalog(cfg)
-        ):
+        if snapshot is not None and len(snapshot) == 0 and uses_cyt_mcp_tool_catalog(cfg):
             blocking = True
             cold_start = True
     return get_master_tool_catalog(cfg, blocking=blocking, cold_start=cold_start)

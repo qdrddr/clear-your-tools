@@ -285,6 +285,10 @@ def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
         entry.last_seen_at = now
         key = _registry_key(entry.agent, entry.workspace_root or None, entry.catalog_layer)
         with _registry_lock:
+            existing = _registrations.get(key)
+            # Disk snapshots are stale fallbacks; never clobber a live in-process push.
+            if existing is not None and not existing.stale:
+                continue
             _registrations[key] = entry
         loaded += 1
     logger.info("catalog registry loaded %d entries from disk (stale=%s)", loaded, mark_stale)

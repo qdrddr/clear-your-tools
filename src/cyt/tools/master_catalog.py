@@ -64,6 +64,10 @@ def master_catalog_rebuild_in_progress(config: dict[str, Any] | None = None) -> 
 
 def clear_master_catalog_cache() -> None:
     with _catalog_lock:
+        pending_keys = list(_rebuild_in_progress)
+    for cache_key in pending_keys:
+        _wait_for_in_progress_rebuild(cache_key)
+    with _catalog_lock:
         _catalog_states.clear()
         _rebuild_in_progress.clear()
         for event in _rebuild_waiters.values():

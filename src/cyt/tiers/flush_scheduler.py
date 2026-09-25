@@ -23,7 +23,7 @@ _atexit_registered = False
 
 def start_tier_flush_scheduler(config: dict[str, Any] | None = None) -> None:
     """Start the background tier flush scheduler when tiers are active."""
-    global _thread, _atexit_registered
+    global _thread, _atexit_registered, _last_flush_start
 
     cfg = config or load_config()
     if not tiers_active(cfg, kind="tool"):
@@ -35,6 +35,9 @@ def start_tier_flush_scheduler(config: dict[str, Any] | None = None) -> None:
         if _thread is not None and _thread.is_alive():
             return
         _stop_event.clear()
+        # Defer the first periodic flush until one interval elapses. An immediate
+        # flush here races with in-flight tier records in deferred mode.
+        _last_flush_start = time.monotonic()
         _thread = threading.Thread(
             target=_scheduler_loop,
             kwargs={"config": cfg},

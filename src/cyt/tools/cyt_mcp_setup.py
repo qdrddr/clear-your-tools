@@ -632,9 +632,7 @@ def _merge_cyt_mcp_json_servers(
         if not isinstance(existing, dict):
             existing = {}
         equivalent = mcp_entries_equivalent(existing.get(server_key), entry)
-        extra_backend_keys = [
-            key for key in existing if key not in CYT_MCP_FRONTEND_SERVER_KEYS
-        ]
+        extra_backend_keys = [key for key in existing if key not in CYT_MCP_FRONTEND_SERVER_KEYS]
         already_frontend_only = not extra_backend_keys and set(existing.keys()) <= {
             server_key,
             *CYT_MCP_FRONTEND_SERVER_KEYS,
@@ -824,7 +822,6 @@ def setup_cyt_mcp_workspace_for_agent(
         return
     agent = agent.strip() or "cursor"
     _ = require_backends
-    resolved = invocation or detect_hook_cli_invocation()
     if not has_migratable_workspace_mcp_backends(agent, scope):
         return
 

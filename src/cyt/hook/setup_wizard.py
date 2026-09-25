@@ -40,13 +40,12 @@ from cyt.hook.cli_invocation import (
     cyt_client_command,
     cyt_daemon_start_command,
     detect_hook_cli_invocation,
+    install_hook_shell_wrappers,
     is_dev_cyt_hook_command,
     is_hook_shell_wrapper_command,
     prefix_agent_hook_command,
     prefix_command_env,
-    install_hook_shell_wrappers,
     remove_hook_shell_wrappers,
-    remove_windows_hook_wrappers,
     use_hook_shell_wrappers,
 )
 from cyt.hook.install_scope import CytInstallScope

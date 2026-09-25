@@ -374,7 +374,7 @@ def _append_overview_tiers(lines: list[str], overview: dict[str, Any]) -> None:
         lines.append(f"skills: mode={skills_tiers.get('mode')}")
 
 
-def _catalog_scope_counts(tools: list[dict[str, Any]]) -> dict[str, int]:
+def _catalog_scope_counts(tools: list[Any]) -> dict[str, int]:
     counts = {"user": 0, "workspace": 0, "unknown": 0}
     for tool in tools:
         if not isinstance(tool, dict):
