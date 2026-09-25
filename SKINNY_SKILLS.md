@@ -131,7 +131,7 @@ limit **0.4**) are skipped.
 | `rerank` | Yes | Reranker picks the best sections |
 | `llm` | Yes | LLM picks sections; can run inside proxy pruning |
 
-Indexes are built on first use under `~/.config/cyt/skills/entries/{content_sha256}/` and reused afterward.
+Indexes are built on first use under `~/.config/cyt/cache/skills/{content_sha256}/` and reused afterward.
 Each entry stores node files under `nodes/` and BM25 chunk variants under `chunks/bm25/{index_params_hash}/`.
 
 ### Build and retrieve manually (`cyt-indexer`)

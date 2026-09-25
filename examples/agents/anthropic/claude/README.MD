@@ -87,5 +87,5 @@ echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","prompt":"config
   resolved model as `details.resolved_model`.
 - **SessionStart** — not required; legacy `SessionStart` hooks are ignored if still configured.
 
-The first inject may build the per-skill catalog under `~/.config/cyt/skills/entries/`; later runs
+The first inject may build the per-skill catalog under `~/.config/cyt/cache/skills/`; later runs
 reuse cached decomposed indexes.

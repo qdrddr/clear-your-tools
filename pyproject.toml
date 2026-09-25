@@ -292,6 +292,7 @@ pythonpath = ["src"]
 testpaths = ["src/tests"]
 markers = [
     "integration: tests that call real external APIs (manual only: pytest -m integration --run-integration)",
+    "paid: tests that call paid LLM/reranking APIs (manual only: pytest -m paid --run-paid; see scripts/local/tests/pytest-paid.sh)",
     "runtime: tests that may spawn cyt hook daemon or cyt launch proxy (manual only: pytest -m runtime --run-runtime)",
     "gherkin: BDD scenarios (pytest-bdd; see src/tests/unit/gherkin and src/tests/integration/gherkin)",
     "qa: manual harness scripts under src/tests/qa/",
@@ -307,7 +308,7 @@ filterwarnings = [
     "ignore:.*Use BaseMetaSerializer.*:DeprecationWarning",
     "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",
 ]
-addopts = "-q -m 'not integration and not qa and not runtime'"
+addopts = "-q -m 'not integration and not paid and not qa and not runtime'"
 asyncio_mode = "auto"
 
 [tool.coverage.run]

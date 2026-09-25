@@ -44,4 +44,4 @@ echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","model":"gpt-4",
   `UserPromptSubmit` hook alone is enough for injection and stats. `cyt hook --stdin` reads `model` from
   the hook payload.
 
-The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.
+The first inject may build cached skill indexes under `~/.config/cyt/cache/skills/`; later runs reuse them.

@@ -82,7 +82,7 @@ otherwise BM25 matching uses the prompt text alone.
 - **`sessionStart`** — starts the hook daemon only (`cyt hook daemon start`).
 - **`sessionEnd`** — deletes the rules file when the chat session closes.
 
-The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.
+The first inject may build cached skill indexes under `~/.config/cyt/cache/skills/`; later runs reuse them.
 
 Skill directories for Cursor: `.cursor/skills/` in the project and `~/.cursor/skills/` in the home directory.
 
