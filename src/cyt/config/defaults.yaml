@@ -146,7 +146,7 @@ models:
           input_cost_per_token: 5e-08
           output_cost_per_token: 0
   bm25:
-    index_dir: ~/.config/cyt/bm25
+    index_dir: ~/.config/cyt/cache/bm25
     mmap: true
     stem_language: english
     stopwords: en
@@ -527,7 +527,7 @@ tools:
   pipelines:
     bm25:
       score_skills: 0.5
-      index_dir: ~/.config/cyt/bm25
+      index_dir: ~/.config/cyt/cache/bm25
       score_tool: 0.4
       prune_enums: true
       score_tool_enum: 0.1
@@ -576,9 +576,9 @@ network:
 
 cache:
   enabled: true
-  bm25_dir: ~/.config/cyt/bm25
-  skills_dir: ~/.config/cyt/skills
-  tools_dir: ~/.config/cyt/tools
+  bm25_dir: ~/.config/cyt/cache/bm25
+  skills_dir: ~/.config/cyt/cache/skills
+  tools_dir: ~/.config/cyt/cache/tools
   memory:
     lazy_registry: false
     async_disk_writes: true

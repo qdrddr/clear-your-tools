@@ -568,6 +568,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_executor_parser(subparsers)
     add_cloudflare_parser(subparsers)
 
+    from cyt.cache.cli import add_cache_parser
     from cyt.migrations.cli import add_config_parser
     from cyt.permissions.cli import add_permissions_parser
     from cyt.tiers.cli import add_tiers_parser
@@ -575,6 +576,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     add_permissions_parser(subparsers)
     add_tiers_parser(subparsers)
+    add_cache_parser(subparsers)
     add_inject_parser(subparsers)
     add_config_parser(subparsers)
 
@@ -917,6 +919,10 @@ _HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
             "[--kind {all,tools,skills}] [--tier T0-T4] [--name TEXT] [--server NAME]"
         ),
     ),
+    "cache": (
+        "cache_handler",
+        "usage: cyt cache clear [--tools|--skills|--bm25|--catalog|--all]",
+    ),
     "config": (
         "config_handler",
         "usage: cyt config {current|history|migrate} ...",
@@ -972,7 +978,7 @@ def _dispatch_handler_registry_command(args: argparse.Namespace) -> bool:
     if handler is None:
         raise SystemExit(usage)
     result = handler(args)
-    if args.command == "tiers":
+    if args.command in {"tiers", "cache"}:
         raise SystemExit(int(result))
     return True
 

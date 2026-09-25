@@ -213,15 +213,19 @@ def _schedule_snapshot_write() -> None:
     thread.start()
 
 
+def _write_registry_snapshot_file(payload: list[dict[str, Any]]) -> None:
+    REGISTRY_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = REGISTRY_SNAPSHOT_DIR / f"registrations.{uuid.uuid4().hex}.tmp"
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(REGISTRY_SNAPSHOT_FILE)
+
+
 def _write_snapshot_async() -> None:
     global _snapshot_pending
     try:
         with _registry_lock:
             payload = [_registration_to_dict(entry) for entry in _registrations.values()]
-        REGISTRY_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = REGISTRY_SNAPSHOT_DIR / f"registrations.{uuid.uuid4().hex}.tmp"
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(REGISTRY_SNAPSHOT_FILE)
+        _write_registry_snapshot_file(payload)
     except OSError as exc:
         logger.warning("catalog registry snapshot write failed: %s", exc)
     finally:
@@ -229,40 +233,52 @@ def _write_snapshot_async() -> None:
             _snapshot_pending = False
 
 
-def _purge_legacy_snapshot_file() -> bool:
-    """Delete on-disk snapshot when it lacks dual-layer ``catalog_layer`` metadata."""
-    if not REGISTRY_SNAPSHOT_FILE.is_file():
-        return False
-    try:
-        raw = json.loads(REGISTRY_SNAPSHOT_FILE.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        try:
-            REGISTRY_SNAPSHOT_FILE.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return True
-    if not isinstance(raw, list):
-        try:
-            REGISTRY_SNAPSHOT_FILE.unlink(missing_ok=True)
-        except OSError:
-            pass
+def _compact_registry_snapshot_entries(raw: list[Any]) -> list[dict[str, Any]]:
+    """Return canonical registration dicts, dropping legacy or invalid rows."""
+    compact: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        entry = _entry_from_dict(item)
+        if entry is None:
+            continue
+        compact.append(_registration_to_dict(entry))
+    return compact
+
+
+def _registry_snapshot_needs_compaction(raw: list[Any], compact: list[dict[str, Any]]) -> bool:
+    if len(compact) != len(raw):
         return True
     for item in raw:
-        if isinstance(item, dict) and _normalize_catalog_layer(item.get("catalog_layer")) is None:
-            try:
-                REGISTRY_SNAPSHOT_FILE.unlink(missing_ok=True)
-            except OSError as exc:
-                logger.warning("catalog registry legacy snapshot purge failed: %s", exc)
-                return False
-            logger.info("purged legacy catalog registry snapshot (missing catalog_layer)")
+        if not isinstance(item, dict):
+            return True
+        entry = _entry_from_dict(item)
+        if entry is None:
+            return True
+        if item != _registration_to_dict(entry):
             return True
     return False
 
 
+def _migrate_registry_snapshot_file(raw: list[Any]) -> list[dict[str, Any]]:
+    """One-shot rewrite: persist only valid workspace-scoped registration rows."""
+    compact = _compact_registry_snapshot_entries(raw)
+    if not _registry_snapshot_needs_compaction(raw, compact):
+        return compact
+    try:
+        _write_registry_snapshot_file(compact)
+        logger.info(
+            "catalog registry snapshot compacted (%d -> %d entries)",
+            len(raw),
+            len(compact),
+        )
+    except OSError as exc:
+        logger.warning("catalog registry snapshot compaction failed: %s", exc)
+    return compact
+
+
 def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
-    """Load registry snapshot; return count loaded. Skips legacy entries without catalog_layer."""
-    if _purge_legacy_snapshot_file():
-        return 0
+    """Load registry snapshot; return count loaded. Compacts legacy rows on first read."""
     if not REGISTRY_SNAPSHOT_FILE.is_file():
         return 0
     try:
@@ -272,11 +288,10 @@ def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
         return 0
     if not isinstance(raw, list):
         return 0
+    compact = _migrate_registry_snapshot_file(raw)
     loaded = 0
     now = time.monotonic()
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
+    for item in compact:
         entry = _entry_from_dict(item)
         if entry is None:
             continue
@@ -654,6 +669,4 @@ def prune_expired_registrations() -> int:
         for key in keys_to_remove:
             del _registrations[key]
             removed += 1
-    if removed:
-        _schedule_snapshot_write()
     return removed

@@ -1,4 +1,4 @@
-"""Per-skill catalog cache under ~/.config/cyt/skills/entries/."""
+"""Per-skill catalog cache under ~/.config/cyt/cache/skills/{content_hash}/."""
 
 from __future__ import annotations
 

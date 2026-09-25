@@ -546,9 +546,6 @@ class TierManager:
             self._epoch.wake_cycle_id += 1
             self._clear_cycle_activity()
             self._request_cycle_open = True
-            # Persist wake cycle immediately so tiers stats / other processes see it
-            # without waiting for deferred entity-stat flushes.
-            self._store.save_epoch_state(self.project, self._epoch)
             self._mark_dirty()
 
     def end_request_cycle(self) -> None:

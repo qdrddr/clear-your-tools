@@ -47,6 +47,14 @@ def _db_argv(argv: list[str]) -> list[str] | None:
     return argv[1:]
 
 
+def _cache_argv(argv: list[str]) -> list[str] | None:
+    if not argv:
+        return None
+    if argv[0] != "cache":
+        return None
+    return argv[1:]
+
+
 def main(argv: list[str] | None = None) -> None:
     """Route *argv* (default ``sys.argv[1:]``) to the appropriate CYT CLI handler."""
     run_main(_route, argv)
@@ -106,6 +114,12 @@ def _route(argv: list[str] | None = None) -> None:
         from cyt.db.cli import main as db_main
 
         sys.exit(db_main(db_argv))
+
+    cache_argv = _cache_argv(cli_argv)
+    if cache_argv is not None:
+        from cyt.cache.cli import main as cache_main
+
+        sys.exit(cache_main(cache_argv))
 
     inject_argv = _inject_argv(cli_argv)
     if inject_argv is not None:

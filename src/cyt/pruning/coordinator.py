@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -71,6 +72,7 @@ def prepare_prune_context(
     tools_allowed: bool | None = None,
     for_hook: bool = False,
     tools_pipeline_override: list[str] | None = None,
+    log_token_counts: bool = True,
 ) -> PruneContext | None:
     if config is None or not query:
         return None
@@ -109,6 +111,7 @@ def prepare_prune_context(
         skills_allowed=resolved_skills_allowed,
         tools_allowed=resolved_tools_allowed,
         upstream_kind=upstream_kind,
+        log_token_counts=log_token_counts,
     )
     return ctx
 
@@ -270,6 +273,7 @@ def _run_tools_filter(
                 catalog_bulk_id=source.source_id if for_hook else None,
                 phase_timer=phase_timer,
                 phase_prefix=prefix,
+                log_token_counts=ctx.log_token_counts,
             )
     return filter_tools_for_query(
         source.tools,
@@ -283,6 +287,7 @@ def _run_tools_filter(
         upstream_kind=ctx.upstream_kind,
         tools_to_catalog_entries=source.tools_to_catalog_entries,
         catalog_bulk_id=source.source_id if for_hook else None,
+        log_token_counts=ctx.log_token_counts,
     )
 
 
@@ -439,6 +444,7 @@ def coordinate_skills_tools_prune(
     tools_pipeline_override: list[str] | None = None,
     skill_out: dict[str, Any] | None = None,
     phase_timer: PhaseTimer | None = None,
+    log_token_counts: bool = True,
 ) -> CoordinateResult:
     tool_count = max((len(source.tools) for source in tool_sources), default=0)
     eligible_count = len(skill_entries or [])
@@ -454,6 +460,7 @@ def coordinate_skills_tools_prune(
         tools_allowed=tools_allowed,
         for_hook=for_hook,
         tools_pipeline_override=tools_pipeline_override,
+        log_token_counts=log_token_counts,
     )
     if ctx is None:
         return CoordinateResult()
@@ -471,7 +478,11 @@ def coordinate_skills_tools_prune(
 
     tier_manager = get_tier_manager_for_config(config)
     if not tier_manager.is_noop:
-        tier_manager.begin_request_cycle(config)
+        tier_ctx = (
+            phase_timer.measure("tiers:begin-cycle") if phase_timer is not None else nullcontext()
+        )
+        with tier_ctx:
+            tier_manager.begin_request_cycle(config)
     try:
         return run_prune_plan(
             plan,

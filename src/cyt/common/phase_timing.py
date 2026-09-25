@@ -68,6 +68,22 @@ def merge_phase_timings(
     return merged.to_dict()
 
 
+def format_phase_timing_verbose(timing: dict[str, Any]) -> str:
+    total_ms = timing.get("total_ms", 0)
+    lines = [f"cyt: phase timing total={total_ms}ms"]
+    phases = timing.get("phases")
+    if isinstance(phases, list):
+        for raw in phases:
+            if not isinstance(raw, dict):
+                continue
+            name = raw.get("name", "?")
+            elapsed = raw.get("elapsed_ms", 0)
+            meta = raw.get("meta")
+            suffix = f" {meta}" if meta else ""
+            lines.append(f"  - {name}: {elapsed}ms{suffix}")
+    return "\n".join(lines)
+
+
 def extend_timing_payload(
     base: dict[str, Any] | None,
     *timers: PhaseTimer | None,

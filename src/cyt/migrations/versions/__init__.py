@@ -15,6 +15,7 @@ _REVISION_MODULE_NAMES = (
     "005_skills_agent_directories",
     "006_policies_stubs_schema",
     "007_config_layout_restructure",
+    "008_cache_layout_consolidation",
 )
 
 

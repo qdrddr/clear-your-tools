@@ -153,6 +153,7 @@ def run_hook_coordinated_prune(
     skills_max_tokens: int | None = None,
     io_guarded: bool = False,
     pruner_settings: PrunerSettingsCache | None = None,
+    log_token_counts: bool = True,
 ) -> tuple[
     PruneResult | None,
     list[MatchedSkill] | None,
@@ -205,6 +206,7 @@ def run_hook_coordinated_prune(
             skill_out=skill_out,
             pruner_settings=pruner_settings,
             phase_timer=hook_timer,
+            log_token_counts=log_token_counts,
         )
 
     prune_result = _merge_hook_prune_results(coordinated.prune_results) if tool_sources else None

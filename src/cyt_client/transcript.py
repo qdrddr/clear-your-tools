@@ -110,6 +110,35 @@ def _attach_cyt_cwd(data: dict[str, Any]) -> None:
     cyt["cwd"] = workspace_path_string(data) or str(workspace)
 
 
+def _attach_cyt_transcript(data: dict[str, Any]) -> None:
+    prompt = data.get("prompt")
+    if isinstance(prompt, str) and prompt.strip():
+        return
+    transcript_path = _transcript_path_from_data(data)
+    if transcript_path is None:
+        return
+    path = Path(transcript_path)
+    if path.is_file():
+        data["cyt_transcript"] = _load_transcript(path)
+
+
+def _apply_rules_injection(
+    data: dict[str, Any],
+    *,
+    rules_injection: str | None,
+    force_rules_refresh: bool,
+) -> None:
+    if rules_injection is not None:
+        if rules_injection.strip():
+            data[CYT_RULES_INJECTION_FIELD] = rules_injection.strip()
+        elif force_rules_refresh:
+            data[CYT_FORCE_RULES_REFRESH_FIELD] = True
+    else:
+        _attach_cyt_rules_injection(data)
+    if force_rules_refresh:
+        data[CYT_FORCE_RULES_REFRESH_FIELD] = True
+
+
 def enrich_hook_payload(
     payload_bytes: bytes,
     *,
@@ -130,22 +159,12 @@ def enrich_hook_payload(
 
     _attach_cyt_agent(data)
     _attach_cyt_cwd(data)
-
-    transcript_path = _transcript_path_from_data(data)
-    if transcript_path is not None:
-        path = Path(transcript_path)
-        if path.is_file():
-            data["cyt_transcript"] = _load_transcript(path)
-
-    if rules_injection is not None:
-        if rules_injection.strip():
-            data[CYT_RULES_INJECTION_FIELD] = rules_injection.strip()
-        elif force_rules_refresh:
-            data[CYT_FORCE_RULES_REFRESH_FIELD] = True
-    else:
-        _attach_cyt_rules_injection(data)
-    if force_rules_refresh:
-        data[CYT_FORCE_RULES_REFRESH_FIELD] = True
+    _attach_cyt_transcript(data)
+    _apply_rules_injection(
+        data,
+        rules_injection=rules_injection,
+        force_rules_refresh=force_rules_refresh,
+    )
     attach_client_skills(data)
     _attach_cyt_session_log(data)
 

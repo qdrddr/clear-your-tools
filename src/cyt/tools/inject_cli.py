@@ -3,32 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
-from cyt.config import load_config, tools_hook_sources
-from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
-from cyt.indexer.tokens import count_json_tokens
-from cyt.pruners.token_stats import build_preview_token_stats, format_preview_token_summary_lines
-from cyt.pruners.tools_filter import filter_tools_for_query
-from cyt.tools.hook import gate_and_format_hook_tools
-from cyt.tools.inject import injection_token_count
-from cyt.tools.master_catalog import get_master_tool_catalog
-from cyt.tools.source_inject import (
-    format_cloudflare_source_section,
-    format_cyt_mcp_source_section,
-    format_definitions_source_section,
-    format_executor_source_section,
-    format_mcp_source_section,
-    format_multi_source_agent_tools,
-)
-from cyt_client.sessions import session_log_path
 from cyt_core.types.prune import PruneResult
-from cyt_mcp.catalog_export import catalog_token_stats, frontend_payload_from_hook_tools
-from cyt_mcp.config import load_aggregator_config
 
 
 def _add_preview_arguments(parser: argparse.ArgumentParser) -> None:
@@ -69,6 +49,11 @@ def _add_preview_arguments(parser: argparse.ArgumentParser) -> None:
             "Session id (reads .cursor/cyt/sessions/<ID>.jsonl) to apply "
             "pre-exposure gating like the hook"
         ),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print phase timing breakdown to stderr (same shape as cyt-client --verbose)",
     )
 
 
@@ -112,6 +97,14 @@ def _format_sections(
     *,
     workspace_path: Path,
 ) -> dict[str, str]:
+    from cyt.tools.source_inject import (
+        format_cloudflare_source_section,
+        format_cyt_mcp_source_section,
+        format_definitions_source_section,
+        format_executor_source_section,
+        format_mcp_source_section,
+    )
+
     workspace_paths = [str(workspace_path.resolve())]
     sections: dict[str, str] = {}
     if pruned_by_source.get("cyt_mcp"):
@@ -147,6 +140,8 @@ def _full_definitions_for_tools(
     *,
     agent: str,
 ) -> dict[str, dict[str, Any]]:
+    import asyncio
+
     from cyt_mcp.aggregator import build_aggregator
     from cyt_mcp.config import load_aggregator_config
     from cyt_mcp.config_holder import ConfigHolder
@@ -183,6 +178,12 @@ def _preview_token_stats(
     agent: str,
     workspace: Path,
 ) -> dict[str, int | float]:
+    from cyt.indexer.tokens import count_json_tokens
+    from cyt.pruners.token_stats import build_preview_token_stats
+    from cyt.tools.inject import injection_token_count
+    from cyt_mcp.catalog_export import catalog_token_stats, frontend_payload_from_hook_tools
+    from cyt_mcp.config import load_aggregator_config
+
     all_tools = [tool for tools in grouped.values() for tool in tools]
     tokens_in = count_json_tokens(all_tools) if all_tools else 0
     tokens_out = injection_token_count(pruned_injection) if pruned_injection.strip() else 0
@@ -216,6 +217,8 @@ def _preview_token_stats(
 def _print_preview_token_summary(token_stats: dict[str, int | float]) -> None:
     if not token_stats:
         return
+    from cyt.pruners.token_stats import format_preview_token_summary_lines
+
     for line in format_preview_token_summary_lines(token_stats):
         print(line, file=sys.stderr, flush=True)
 
@@ -251,6 +254,8 @@ def resolve_preview_session_log(
     agent: str,
 ) -> Path:
     """Resolve session JSONL path (workspace first, then agent home)."""
+    from cyt_client.sessions import session_log_path
+
     payload = _preview_hook_payload(
         workspace=workspace,
         query="",
@@ -262,27 +267,6 @@ def resolve_preview_session_log(
         hint = str(path) if path is not None else "(unresolved)"
         raise FileNotFoundError(f"Session log not found: {hint}")
     return path
-
-
-def _prune_result_from_filter(
-    result: PruneResult,
-    *,
-    query: str,
-    tools: list[dict[str, Any]],
-) -> PruneResult:
-    return PruneResult(
-        tools=result.tools,
-        status=result.status,
-        query=query,
-        tools_in=result.tools_in,
-        mcp_tools_in=result.tools_in,
-        tools_out=result.tools_out,
-        error=result.error,
-        tokens_in=result.tokens_in,
-        tokens_out=result.tokens_out,
-        tokens_saved=result.tokens_saved,
-        tools_final=result.tools,
-    )
 
 
 def _session_gate_summary(
@@ -322,12 +306,14 @@ def _session_gate_summary(
 
 def _gated_injection_for_preview(
     pruned_by_source: dict[str, list[dict[str, Any]]],
-    prune_results: dict[str, PruneResult],
+    prune_results: dict[str, Any],
     *,
     config: dict[str, Any],
     catalog: list[dict[str, Any]],
     payload: dict[str, Any],
 ) -> tuple[str, list[dict[str, Any]]]:
+    from cyt.tools.hook import gate_and_format_hook_tools
+
     pruned_tools = [tool for tools in pruned_by_source.values() for tool in tools]
     return gate_and_format_hook_tools(
         pruned_tools,
@@ -341,6 +327,9 @@ def _gated_injection_for_preview(
 
 def config_for_inject_preview(workspace: Path) -> dict[str, Any]:
     """Resolve hook config the same way the daemon does for a workspace root."""
+    from cyt.config import load_config
+    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+
     payload = {"cwd": str(workspace)}
     config, resolved_workspace = resolve_hook_request_config(
         payload,
@@ -350,46 +339,59 @@ def config_for_inject_preview(workspace: Path) -> dict[str, Any]:
     return set_hook_workspace_in_config(config, resolved_workspace or workspace)
 
 
-def _preview_prune_by_source(
-    grouped: dict[str, list[dict[str, Any]]],
+def _preview_prune_meta(result: PruneResult) -> dict[str, Any]:
+    return {
+        "status": result.status,
+        "tools_in": result.tools_in,
+        "tools_out": result.tools_out,
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+        "tokens_saved": result.tokens_saved,
+        "error": result.error,
+    }
+
+
+def _preview_coordinated_prune(
     *,
     query: str,
     config: dict[str, Any],
+    workspace: Path,
+    sources_filter: set[str] | None,
 ) -> tuple[
     dict[str, list[dict[str, Any]]],
     dict[str, Any],
-    dict[str, PruneResult],
+    dict[str, Any],
+    dict[str, Any],
 ]:
+    from cyt.config import skills_enabled
+    from cyt.pruning.hook_bridge import run_hook_coordinated_prune
+
+    payload = {
+        "prompt": query,
+        "cwd": str(workspace),
+        "workspace_roots": [str(workspace)],
+    }
+    _prune_result, _, _, prune_results, phase_timing = run_hook_coordinated_prune(
+        query,
+        config,
+        payload=payload,
+        skills_allowed=skills_enabled(config),
+        tools_allowed=True,
+        log_token_counts=False,
+    )
+
     pruned_by_source: dict[str, list[dict[str, Any]]] = {}
     prune_meta: dict[str, Any] = {}
-    prune_results: dict[str, PruneResult] = {}
-    for source, tools in grouped.items():
-        if not tools:
+    typed_results: dict[str, PruneResult] = {}
+    for source, result in prune_results.items():
+        if sources_filter is not None and source not in sources_filter:
             continue
-        result = filter_tools_for_query(
-            tools,
-            query,
-            config=config,
-            for_hook=True,
-            log_token_counts=False,
-        )
-        prune_meta[source] = {
-            "status": result.status,
-            "tools_in": result.tools_in,
-            "tools_out": result.tools_out,
-            "tokens_in": result.tokens_in,
-            "tokens_out": result.tokens_out,
-            "tokens_saved": result.tokens_saved,
-            "error": result.error,
-        }
-        prune_results[source] = _prune_result_from_filter(
-            result,
-            query=query,
-            tools=tools,
-        )
+        typed_results[source] = result
+        prune_meta[source] = _preview_prune_meta(result)
         if result.tools:
             pruned_by_source[source] = result.tools
-    return pruned_by_source, prune_meta, prune_results
+
+    return pruned_by_source, prune_meta, typed_results, phase_timing
 
 
 def _preview_injection_text(
@@ -399,12 +401,14 @@ def _preview_injection_text(
     config: dict[str, Any],
     catalog: list[dict[str, Any]],
     pruned_by_source: dict[str, list[dict[str, Any]]],
-    prune_results: dict[str, PruneResult],
+    prune_results: dict[str, Any],
     agent: str,
 ) -> tuple[str, Path | None, dict[str, Any] | None]:
     session_raw = getattr(args, "session", None)
     session_id = str(session_raw).strip() if session_raw else ""
     if not session_id:
+        from cyt.tools.source_inject import format_multi_source_agent_tools
+
         sections = _format_sections(pruned_by_source, workspace_path=workspace)
         return (
             format_multi_source_agent_tools(sections, workspace_paths=[str(workspace)]),
@@ -452,6 +456,8 @@ def _emit_preview_json(
     token_stats: dict[str, int | float],
     agent: str,
 ) -> None:
+    from cyt.config import tools_hook_sources
+
     payload: dict[str, Any] = {
         "query": args.query,
         "workspace": str(workspace),
@@ -478,6 +484,8 @@ def _emit_preview_json(
 
 
 def run_inject_preview(args: argparse.Namespace) -> int:
+    from cyt.tools.master_catalog import get_master_tool_catalog
+
     workspace = (args.workspace or Path.cwd()).resolve()
     config = config_for_inject_preview(workspace)
     catalog = get_master_tool_catalog(config, blocking=True) or []
@@ -496,11 +504,16 @@ def run_inject_preview(args: argparse.Namespace) -> int:
     sources_filter = set(args.source) if args.source else None
     grouped = _tools_for_sources(catalog, sources_filter)
     agent = str(config.get("agent") or "cursor")
-    pruned_by_source, prune_meta, prune_results = _preview_prune_by_source(
-        grouped,
+    pruned_by_source, prune_meta, prune_results, phase_timing = _preview_coordinated_prune(
         query=args.query,
         config=config,
+        workspace=workspace,
+        sources_filter=sources_filter,
     )
+    if getattr(args, "verbose", False) and phase_timing:
+        from cyt.common.phase_timing import format_phase_timing_verbose
+
+        print(format_phase_timing_verbose(phase_timing), file=sys.stderr)
 
     session_raw = getattr(args, "session", None)
     session_id = str(session_raw).strip() if session_raw else ""

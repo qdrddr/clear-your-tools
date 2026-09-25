@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import logging
 import threading
 import time
@@ -61,7 +62,10 @@ def _get_state(cache_key: _DefinitionsCacheKey) -> _DefinitionsCatalogState:
 def _definitions_fingerprint(path: Path) -> str:
     try:
         resolved = path.expanduser()
-        return f"{resolved}:{resolved.stat().st_mtime_ns}"
+        if not resolved.is_file():
+            return f"{resolved}:missing"
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        return f"{resolved}:{digest}"
     except OSError:
         return f"{path}:missing"
 
@@ -75,7 +79,7 @@ def definitions_catalog_fingerprint(config: dict[str, Any] | None = None) -> str
 
 def _snapshot_tools(state: _DefinitionsCatalogState) -> list[dict[str, Any]]:
     with _catalog_lock:
-        return copy.deepcopy(state.tools)
+        return [{**tool} for tool in state.tools]
 
 
 def _apply_catalog_to_state(

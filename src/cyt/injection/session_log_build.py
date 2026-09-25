@@ -72,7 +72,7 @@ def _sha256_json(value: object) -> str:
 
 
 def tool_definition_content_hash(definition: dict[str, Any]) -> str:
-    """Match ``tool_definition_content_hash`` in cyt-indexer (``~/.config/cyt/tools/entries/{hash}/``)."""
+    """Match ``tool_definition_content_hash`` in cyt-indexer (``~/.config/cyt/cache/tools/{hash}/``)."""
     canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(_TOOL_DEF_HASH_PREFIX + canonical.encode("utf-8")).hexdigest()
 
@@ -147,8 +147,10 @@ def _load_skill_hash_by_source() -> dict[str, str]:
     global _SKILL_HASH_BY_SOURCE
     if _SKILL_HASH_BY_SOURCE is not None:
         return _SKILL_HASH_BY_SOURCE
+    from cyt.config import cache_skills_dir, load_config
+
     index: dict[str, str] = {}
-    entries_root = Path("~/.config/cyt/skills/entries").expanduser()
+    entries_root = cache_skills_dir(load_config())
     if entries_root.is_dir():
         for entry_dir in entries_root.iterdir():
             if not entry_dir.is_dir():

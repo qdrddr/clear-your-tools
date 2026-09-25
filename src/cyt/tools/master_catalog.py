@@ -210,7 +210,7 @@ def _composite_fingerprint(fingerprints: dict[str, str]) -> str:
 
 def _snapshot_master_tools(state: _MasterCatalogState) -> list[dict[str, Any]]:
     with _catalog_lock:
-        return copy.deepcopy(state.tools)
+        return [{**tool} for tool in state.tools]
 
 
 def _apply_master_catalog_to_state(

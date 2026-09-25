@@ -29,6 +29,7 @@ class PruneContext:
     skills_allowed: bool = False
     tools_allowed: bool = False
     upstream_kind: str | None = None
+    log_token_counts: bool = True
 
 
 @dataclass(frozen=True)
