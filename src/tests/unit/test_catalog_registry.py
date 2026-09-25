@@ -14,6 +14,9 @@ from cyt.hook.catalog_registry import (
     RegisterStatus,
     catalog_for_hook,
     clear_catalog_registry,
+    deregister_catalog,
+    hydrate_catalog_registry_for_read,
+    list_catalog_registrations,
     load_catalog_registry_from_disk,
     merge_catalog_for_hook,
     prune_expired_registrations,
@@ -218,6 +221,39 @@ def test_touch_heartbeat_records_unchanged(tmp_path: Path) -> None:
     )
     assert result.status == RegisterStatus.UNCHANGED
     assert result.http_status == 204
+
+
+def test_deregister_flushes_snapshot_before_hydrate_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    snapshot_dir = tmp_path / "catalog-registry"
+    snapshot_dir.mkdir()
+    snapshot_file = snapshot_dir / "registrations.json"
+    monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_DIR", snapshot_dir)
+    monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE", snapshot_file)
+
+    tools = [{"name": "alpha", "input_schema": {}}]
+    _register_layer(ws_root, tools, instance_id="pid:99")
+    assert list_catalog_registrations() != []
+
+    removed = deregister_catalog(
+        {
+            "agent": "cursor",
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
+            "catalog_layer": "ws",
+            "instance_id": "pid:99",
+        },
+    )
+    assert removed is True
+    assert list_catalog_registrations() == []
+    assert json.loads(snapshot_file.read_text(encoding="utf-8")) == []
+
+    hydrate_catalog_registry_for_read()
+    assert list_catalog_registrations() == []
 
 
 def test_ttl_expiry_excludes_live_lookup_but_keeps_stale_snapshot(
