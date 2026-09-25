@@ -17,9 +17,9 @@ from cyt.hook.cli_invocation import (
 from tests.support.cursor_hook_shell_wrapper_fixtures import dev_repo_root
 from tests.support.hook_wrapper_mode_fixtures import (
     load_wrapper_mode_scenario,
+    wrapper_script_names,
     write_broken_hooks_json_dev_paths_prod_disk,
     write_cursor_hooks_for_mode,
-    wrapper_script_names,
 )
 
 
@@ -90,7 +90,9 @@ def test_install_cursor_hooks_respects_wrapper_mode_matrix(
 
     assert changed is scenario["expect_hooks_changed"]
     expected_mode = (
-        from_mode if not scenario["expect_hooks_changed"] else scenario["expect_wrapper_mode_on_disk"]
+        from_mode
+        if not scenario["expect_hooks_changed"]
+        else scenario["expect_wrapper_mode_on_disk"]
     )
     client_name, daemon_name = wrapper_script_names(expected_mode)
     assert (hooks_dir / client_name).is_file()

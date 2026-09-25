@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from cyt.skills.cli import run_hook_payload
 from cyt.skills.hook_payload import normalize_hook_payload
@@ -26,8 +29,6 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     register_ws_catalog,
     reset_catalog_state,
 )
-import shutil
-
 from tests.support.skills_helpers import isolated_skills_agents_block
 from tests.support.tier_behavior_fixtures import SKILLS_SOURCE_ROOT
 
@@ -194,7 +195,7 @@ def before_submit_payload(workspace: Path, prompt: str) -> dict[str, Any]:
 
 
 def patch_hook_environment(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
     workspace: Path,
     config: dict[str, Any],
     *,
@@ -212,6 +213,8 @@ def patch_hook_environment(
 
 
 __all__ = [
+    "RULES_REL_PATH",
+    "SCENARIOS_PATH",
     "LifecycleScenario",
     "assert_placeholder_body",
     "assert_placeholder_text",
@@ -227,9 +230,7 @@ __all__ = [
     "register_tools_catalog",
     "reset_catalog_state",
     "resolve_prompt_scenario",
-    "run_local_hook_inject",
     "rules_path_for",
+    "run_local_hook_inject",
     "write_substantive_rules",
-    "RULES_REL_PATH",
-    "SCENARIOS_PATH",
 ]

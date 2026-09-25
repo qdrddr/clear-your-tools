@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from cyt.skills.debug_log import (
     extract_hook_payload,
@@ -50,6 +51,31 @@ def test_payload_mutations_reports_server_changes() -> None:
         "from": "beforeSubmitPrompt",
         "to": "UserPromptSubmit",
     } in mutations
+
+
+def test_normal_mode_does_not_write_hook_debug_logs(tmp_path: Path) -> None:
+    from cyt.config import load_config
+    from cyt.hook.daemon import HookDaemonStartResult
+    from cyt.skills.cli import run_hook_payload
+    from cyt.skills.debug_log import _FALLBACK_DEBUG_DIR
+
+    payload = {
+        "hook_event_name": "SessionStart",
+        "session_id": "sess-normal-no-debug",
+        "cwd": str(tmp_path),
+    }
+    with patch("cyt.hook.daemon.daemon_start") as daemon_start:
+        daemon_start.return_value = HookDaemonStartResult(
+            outcome="reused",
+            port=8834,
+            hook_url="http://127.0.0.1:8834/hook/inject",
+            pid=None,
+            reused=True,
+        )
+        run_hook_payload(payload, load_config(), debug=False)
+
+    assert not (tmp_path / ".debug" / "hooks").exists()
+    assert not _FALLBACK_DEBUG_DIR.exists()
 
 
 def test_write_hook_debug_log_uses_hooks_dir_and_full_payload(tmp_path: Path) -> None:

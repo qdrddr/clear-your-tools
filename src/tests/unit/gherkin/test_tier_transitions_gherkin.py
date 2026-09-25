@@ -36,6 +36,15 @@ scenarios(str(FEATURES))
 pytestmark = pytest.mark.gherkin
 
 
+@pytest.fixture(autouse=True)
+def _isolate_master_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tier transition fixtures seed DB rows; live master catalog must not purge them."""
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: None,
+    )
+
+
 def _active_scenario(gherkin_context: GherkinContext) -> GherkinTransitionScenario:
     scenario_id = gherkin_context.payload.get("scenario_id")
     assert isinstance(scenario_id, str)

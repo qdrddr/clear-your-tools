@@ -105,7 +105,7 @@ def write_broken_hooks_json_dev_paths_prod_disk(
     hooks_dir: Path,
     *,
     repo_root: Path,
-) -> dict[str, Path]:
+) -> dict[str, dict[str, Path]]:
     """Reproduce hooks.json -> dev paths while only production wrapper files exist."""
     dev_paths = hook_shell_wrapper_paths(
         invocation=invocation_for_mode("dev", repo_root=repo_root),

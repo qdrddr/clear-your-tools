@@ -29,7 +29,6 @@ from tests.support.empty_home_cache_bootstrap_fixtures import (
     assert_empty_cyt_cache,
     clear_in_memory_hook_catalog_caches,
     disk_cache_hit,
-    isolated_empty_home_pack,
     registry_has_workspace_registration,
     scoped_hook_config,
     seed_fixture_skill,
@@ -212,7 +211,9 @@ def test_registry_wait_seconds_cold_start_vs_steady_state() -> None:
             "tools": {
                 "hook": {
                     "cyt_mcp": {
-                        "cache": {"registry_wait_seconds": DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS},
+                        "cache": {
+                            "registry_wait_seconds": DEFAULT_COLD_START_REGISTRY_WAIT_SECONDS,
+                        },
                     },
                 },
             },

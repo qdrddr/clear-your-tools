@@ -17,6 +17,7 @@ from tests.support.mcp_frontend_install_fixtures import (
     load_frontend_install_matrix,
 )
 
+
 @pytest.mark.parametrize(
     "case",
     load_frontend_install_matrix(),

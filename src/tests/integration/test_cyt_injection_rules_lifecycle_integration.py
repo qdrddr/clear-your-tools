@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,8 @@ class _LocalHookHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response)
 
-    def log_message(self, *_args: object) -> None:
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        _ = (format, args)
         return
 
 
@@ -68,7 +70,9 @@ def lifecycle_integration_workspace(
 
 
 @pytest.fixture
-def local_hook_server(lifecycle_integration_workspace: tuple[Path, dict[str, Any]]) -> str:
+def local_hook_server(
+    lifecycle_integration_workspace: tuple[Path, dict[str, Any]],
+) -> Iterator[str]:
     _workspace, config = lifecycle_integration_workspace
     handler = type("BoundLocalHookHandler", (_LocalHookHandler,), {"hook_config": config})
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)

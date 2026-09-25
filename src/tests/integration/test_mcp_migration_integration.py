@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+import cyt.hook.install_scope as install_scope
 from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import HookCliInvocation
 from cyt.hook.install_scope import CytInstallScope
@@ -150,7 +151,7 @@ def test_setup_cyt_mcp_rerun_strips_stale_workspace_backends(
     )
     scope = CytInstallScope(workspace_root=workspace_root.resolve())
     monkeypatch.setattr(
-        cyt_mcp_setup.CytInstallScope,
+        install_scope.CytInstallScope,
         "from_cwd",
         classmethod(lambda cls, *, cwd=None: scope),
     )

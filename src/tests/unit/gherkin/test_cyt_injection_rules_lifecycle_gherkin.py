@@ -25,9 +25,7 @@ from tests.support.cyt_injection_rules_lifecycle_fixtures import (
 )
 from tests.unit.gherkin.conftest import GherkinContext
 
-FEATURES = (
-    Path(__file__).resolve().parent / "features" / "cyt_injection_rules_lifecycle.feature"
-)
+FEATURES = Path(__file__).resolve().parent / "features" / "cyt_injection_rules_lifecycle.feature"
 scenarios(str(FEATURES))
 
 pytestmark = pytest.mark.gherkin
@@ -52,11 +50,16 @@ def _workspace(gherkin_context: GherkinContext) -> Path:
     return workspace
 
 
-def _run_cyt_client(payload: dict[str, object], *, hook_config: dict[str, object] | None = None) -> None:
+def _run_cyt_client(
+    payload: dict[str, object],
+    *,
+    hook_config: dict[str, object] | None = None,
+) -> None:
     from cyt_client.cli import main
 
     event = payload.get("hook_event_name")
     if event == "beforeSubmitPrompt" and hook_config is not None:
+
         def _post_hook(_url: str, body: bytes, **_kwargs: object) -> tuple[int, bytes]:
             hook_payload = json.loads(body)
             assert isinstance(hook_payload, dict)

@@ -8,7 +8,6 @@ from cyt.tools.inject_cli import main as inject_main
 from tests.support.empty_home_cache_bootstrap_fixtures import (
     EmptyHomeFixturePack,
     EmptyHomeScenario,
-    isolated_empty_home_pack,
     load_bootstrap_scenario,
     load_bootstrap_scenarios,
     simulate_cyt_mcp_push,

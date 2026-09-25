@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import cyt.hook.install_scope as install_scope
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
@@ -389,7 +390,7 @@ def test_setup_cyt_mcp_strips_workspace_backends_when_frontend_already_equivalen
     scope = CytInstallScope(workspace_root=workspace_root.resolve())
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     monkeypatch.setattr(
-        cyt_mcp_setup.CytInstallScope,
+        install_scope.CytInstallScope,
         "from_cwd",
         classmethod(lambda cls, *, cwd=None: scope),
     )

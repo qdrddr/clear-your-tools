@@ -39,6 +39,15 @@ def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_master_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tier transition fixtures seed DB rows; live master catalog must not purge them."""
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: None,
+    )
+
+
 @pytest.fixture
 def fixture_pack(tmp_path: Path) -> TierTransitionsFixturePack:
     return materialize_transitions_pack(tmp_path)

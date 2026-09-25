@@ -22,7 +22,6 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     register_ws_catalog,
     reset_catalog_state,
 )
-from tests.support.inject_preview_fixtures import GLOBAL_HOOK_CONFIG, load_catalog_tools
 from tests.support.permissions_gate_fixtures import patch_global_config_path
 from tests.support.tiers_stats_fixtures import SKILLS_SOURCE_ROOT, patch_cyt_mcp_paths
 
@@ -94,6 +93,8 @@ def load_bootstrap_fixture_meta(path: Path = SCENARIOS_PATH) -> dict[str, Any]:
 
 def compose_bm25_tools_catalog() -> list[dict[str, Any]]:
     """Workspace catalog: ws resilience tools plus fff_grep from inject preview fixtures."""
+    from tests.support.inject_preview_fixtures import load_catalog_tools
+
     ws_tools = load_ws_tools_catalog()
     _, inject_tools = load_catalog_tools()
     fff_tool = next(tool for tool in inject_tools if tool["name"] == "fff_grep")
@@ -127,6 +128,8 @@ def materialize_empty_home_workspace(tmp_path: Path) -> EmptyHomeFixturePack:
         encoding="utf-8",
     )
 
+    from tests.support.inject_preview_fixtures import GLOBAL_HOOK_CONFIG
+
     global_config_path = tmp_path / "global" / "config.yaml"
     global_config_path.parent.mkdir(parents=True)
     global_config_path.write_text(GLOBAL_HOOK_CONFIG, encoding="utf-8")
@@ -143,7 +146,9 @@ def materialize_empty_home_workspace(tmp_path: Path) -> EmptyHomeFixturePack:
     expected_raw = meta.get("expected_tool_names")
     markers_raw = meta.get("expected_injection_markers")
     if not isinstance(expected_raw, list) or not isinstance(markers_raw, list):
-        raise ValueError(f"{SCENARIOS_PATH}: expected_tool_names and expected_injection_markers required")
+        raise ValueError(
+            f"{SCENARIOS_PATH}: expected_tool_names and expected_injection_markers required",
+        )
 
     return EmptyHomeFixturePack(
         workspace=workspace,
@@ -209,7 +214,10 @@ def assert_empty_cyt_cache(pack: EmptyHomeFixturePack) -> None:
         assert payload == [] or payload == {}, "expected empty registry snapshot"
 
 
-def simulate_cyt_mcp_push(pack: EmptyHomeFixturePack, tools: list[dict[str, Any]] | None = None) -> None:
+def simulate_cyt_mcp_push(
+    pack: EmptyHomeFixturePack,
+    tools: list[dict[str, Any]] | None = None,
+) -> None:
     """Mirror cyt-mcp push: registry snapshot + disk envelope + master rebuild."""
     catalog_tools = list(tools if tools is not None else pack.tools)
     register_ws_catalog(pack.workspace, catalog_tools)

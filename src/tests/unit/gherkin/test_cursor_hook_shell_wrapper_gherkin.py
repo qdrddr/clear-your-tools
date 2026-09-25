@@ -21,10 +21,6 @@ from cyt_client.rules_file import (
     is_rules_placeholder_body,
     read_cursor_rules_injection,
 )
-from tests.support.hook_wrapper_mode_fixtures import (
-    assert_wrapper_mode_on_disk,
-    load_wrapper_mode_scenario,
-)
 from tests.support.cursor_hook_shell_wrapper_fixtures import (
     FISH_BREAKING_INLINE_PREFIX,
     SESSION_START_PAYLOAD,
@@ -33,6 +29,10 @@ from tests.support.cursor_hook_shell_wrapper_fixtures import (
     load_legacy_fish_breaking_hooks,
     run_hook_wrapper_via_fish,
     wrapper_suffix,
+)
+from tests.support.hook_wrapper_mode_fixtures import (
+    assert_wrapper_mode_on_disk,
+    load_wrapper_mode_scenario,
 )
 from tests.unit.gherkin.conftest import GherkinContext
 

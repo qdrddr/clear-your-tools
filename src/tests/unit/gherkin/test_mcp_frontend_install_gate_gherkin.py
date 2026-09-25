@@ -12,6 +12,7 @@ from cyt.tools import cyt_mcp_setup
 from tests.support.mcp_frontend_install_fixtures import (
     FrontendInstallMatrixCase,
     FrontendInstallTestbed,
+    InstallScopeKind,
     agent_mcp_has_frontend,
     frontend_server_key,
     load_frontend_install_matrix,
@@ -19,9 +20,7 @@ from tests.support.mcp_frontend_install_fixtures import (
 from tests.unit.gherkin.conftest import GherkinContext
 from tests.unit.gherkin.test_cyt_dev_injection_gherkin import given_dev_mode
 
-FEATURES = (
-    Path(__file__).resolve().parent / "features" / "mcp_frontend_install_gate.feature"
-)
+FEATURES = Path(__file__).resolve().parent / "features" / "mcp_frontend_install_gate.feature"
 scenarios(str(FEATURES))
 
 pytestmark = pytest.mark.gherkin
@@ -58,10 +57,12 @@ def _given_install_state(
     defs_state: str,
 ) -> None:
     case = _case_for(agent, scope, agent_mcp_state, defs_state)
+    assert scope in {"user", "workspace"}
+    scope_kind: InstallScopeKind = "user" if scope == "user" else "workspace"
     testbed = FrontendInstallTestbed.create(
         tmp_path,
         agent=agent,
-        scope=scope,  # type: ignore[arg-type]
+        scope=scope_kind,
         monkeypatch=monkeypatch,
     )
     testbed.apply_case(case)
@@ -158,18 +159,18 @@ def _assert_install_outcome(
     has_frontend = agent_mcp_has_frontend(
         testbed.agent_mcp_path,
         agent=agent,
-        scope=case.scope,  # type: ignore[arg-type]
+        scope=case.scope,
     )
     if expect_install:
         assert has_frontend
         if case.agent != "codex" and case.expect_agent_frontend_only_after:
             payload = json.loads(testbed.agent_mcp_path.read_text(encoding="utf-8"))
-            assert set(payload["mcpServers"]) == {frontend_server_key(case.scope)}  # type: ignore[arg-type]
+            assert set(payload["mcpServers"]) == {frontend_server_key(case.scope)}
     elif case.expect_frontend_unchanged:
         assert has_frontend
     elif case.agent != "codex" and testbed.agent_mcp_path.is_file():
         payload = json.loads(testbed.agent_mcp_path.read_text(encoding="utf-8"))
-        key = frontend_server_key(case.scope)  # type: ignore[arg-type]
+        key = frontend_server_key(case.scope)
         assert key not in payload.get("mcpServers", {})
 
 

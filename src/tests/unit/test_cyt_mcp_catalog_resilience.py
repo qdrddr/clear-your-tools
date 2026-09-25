@@ -28,7 +28,6 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     materialize_workspace,
     patch_daemon_catalog_status,
     register_dual_layer_catalog,
-    register_layer_catalog,
     register_ws_catalog,
     reset_catalog_state,
     write_registry_disk_snapshot,
@@ -254,7 +253,7 @@ def test_merge_missing_user_scope_catalog_tools_from_disk(
     register_ws_catalog(workspace, ws_tools)
 
     cache_dir = tmp_path / "cyt-mcp-catalog"
-    cache_dir.mkdir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir", lambda: cache_dir)
 
     global_agg, global_defs = _global_scope_paths("cursor")

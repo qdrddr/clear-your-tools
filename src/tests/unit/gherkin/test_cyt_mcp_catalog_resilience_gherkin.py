@@ -11,12 +11,16 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.tools.base import Tool
 from mcp.types import ListToolsRequest
-from pytest_bdd import given, parsers, scenarios, then, when
+from pytest_bdd import given, scenarios, then, when
 
+from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.hook.catalog_registry import catalog_for_hook, clear_catalog_registry
 from cyt.skills.cli import run_hook_payload
-from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
-from cyt.tools.master_catalog import clear_master_catalog_cache, get_master_tool_catalog
+from cyt.tools.master_catalog import (
+    clear_master_catalog_cache,
+    get_master_tool_catalog,
+    rebuild_master_catalog,
+)
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
@@ -38,9 +42,7 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
 )
 from tests.unit.gherkin.conftest import GherkinContext
 
-FEATURES = (
-    Path(__file__).resolve().parent / "features" / "cyt_mcp_catalog_resilience.feature"
-)
+FEATURES = Path(__file__).resolve().parent / "features" / "cyt_mcp_catalog_resilience.feature"
 scenarios(str(FEATURES))
 
 pytestmark = pytest.mark.gherkin
@@ -138,7 +140,10 @@ def given_registered_ws_catalog(gherkin_context: GherkinContext, tmp_path: Path)
 
 
 @given("the in-memory catalog registry was cleared like a CLI cold start")
-def given_registry_cleared(gherkin_context: GherkinContext, monkeypatch: pytest.MonkeyPatch) -> None:
+def given_registry_cleared(
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured = capture_registry_registrations()
     clear_catalog_registry(purge_disk_snapshot=False)
     clear_master_catalog_cache()
@@ -226,15 +231,27 @@ def when_master_catalog_blocking(
     config = cyt_mcp_hook_config(workspace, db_path=tmp_path / "tiers.db")
 
     if "disk_merge_scenario" in gherkin_context.payload:
+        workspace = gherkin_context.payload["workspace"]
         patch_daemon_catalog_status(monkeypatch, capture_registry_registrations())
+        monkeypatch.setattr(
+            "cyt.hook.catalog_registry._sync_live_registrations_from_daemon",
+            lambda: 0,
+        )
+        monkeypatch.setattr(
+            "cyt.tools.master_catalog._hydrate_master_from_disk_if_empty",
+            lambda *_args, **_kwargs: None,
+        )
         clear_master_catalog_cache()
         clear_cyt_mcp_catalog_cache()
+        register_ws_catalog(workspace, load_ws_tools_catalog())
+        patch_daemon_catalog_status(monkeypatch, capture_registry_registrations())
         write_usr_scope_disk_catalog(
             monkeypatch,
             tmp_path / "cyt-mcp-catalog",
             usr_tools=gherkin_context.payload.get("usr_disk_tools"),
         )
-        gherkin_context.payload["master_catalog"] = get_master_tool_catalog(config, blocking=True)
+        rebuild_master_catalog(config, blocking=True, cold_start=True)
+        gherkin_context.payload["master_catalog"] = get_master_tool_catalog(config, blocking=False)
         return
 
     if "daemon_registrations" in gherkin_context.payload:
@@ -354,9 +371,10 @@ def then_tiers_stats_union_count(gherkin_context: GherkinContext) -> None:
 
     assert troubleshooting["catalog_tool_count"] == expected_total
     assert troubleshooting["catalog_user_tool_count"] == scenario.raw["expected_user_tool_count"]
-    assert troubleshooting["catalog_workspace_tool_count"] == scenario.raw[
-        "expected_workspace_tool_count"
-    ]
+    assert (
+        troubleshooting["catalog_workspace_tool_count"]
+        == scenario.raw["expected_workspace_tool_count"]
+    )
     assert tier_total == expected_total
 
 

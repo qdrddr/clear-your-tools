@@ -11,8 +11,10 @@ from pytest_bdd import given, scenarios, then, when
 
 from cyt.tools.inject_cli import run_inject_preview
 from cyt.tools.master_catalog import get_master_tool_catalog
-from tests.support.cyt_mcp_catalog_resilience_fixtures import reset_catalog_state
-from tests.support.cyt_mcp_catalog_resilience_fixtures import register_ws_catalog
+from tests.support.cyt_mcp_catalog_resilience_fixtures import (
+    register_ws_catalog,
+    reset_catalog_state,
+)
 from tests.support.empty_home_cache_bootstrap_fixtures import (
     EmptyHomeFixturePack,
     clear_in_memory_hook_catalog_caches,
@@ -25,9 +27,7 @@ from tests.support.empty_home_cache_bootstrap_fixtures import (
 )
 from tests.unit.gherkin.conftest import GherkinContext
 
-FEATURES = (
-    Path(__file__).resolve().parent / "features" / "empty_home_cache_bootstrap.feature"
-)
+FEATURES = Path(__file__).resolve().parent / "features" / "empty_home_cache_bootstrap.feature"
 scenarios(str(FEATURES))
 
 pytestmark = pytest.mark.gherkin
@@ -125,9 +125,7 @@ def then_preview_includes_tools(gherkin_context: GherkinContext) -> None:
     out = str(gherkin_context.payload["preview_stdout"])
     pack: EmptyHomeFixturePack = gherkin_context.payload["pack"]
     injected_names = {
-        name
-        for name in pack.expected_tool_names
-        if f"name='{name}'" in out or name in out
+        name for name in pack.expected_tool_names if f"name='{name}'" in out or name in out
     }
     assert injected_names, "expected at least one BM25-relevant tool in injection output"
     assert injected_names.issubset(set(pack.expected_tool_names))

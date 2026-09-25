@@ -52,7 +52,10 @@ def _register_layer(
     assert result.status == RegisterStatus.STORED
 
 
-def test_register_catalog_hydrates_hook_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_catalog_hydrates_hook_caches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from cyt.hook.workspace_config import set_hook_workspace_in_config
     from cyt.tools.master_catalog import clear_master_catalog_cache, get_master_tool_catalog
 

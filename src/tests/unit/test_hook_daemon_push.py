@@ -158,7 +158,7 @@ async def test_retry_push_loop_uses_updated_push_context(tmp_path: Path) -> None
     with (
         patch.object(push_mod, "_push_once", side_effect=fake_push_once),
         patch.object(push_mod, "_maybe_reload_permissions", new=AsyncMock()),
-        patch.object(push_mod.asyncio, "sleep", side_effect=stop_after_success_sleep),
+        patch.object(asyncio, "sleep", side_effect=stop_after_success_sleep),
     ):
         with pytest.raises(asyncio.CancelledError):
             await push_mod._retry_push_loop(bootstrap_context)

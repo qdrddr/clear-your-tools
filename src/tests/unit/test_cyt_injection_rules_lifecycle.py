@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cyt_client.rules_file import build_rules_mdc_placeholder, reset_rules_file_rel_path
+from cyt_client.rules_file import reset_rules_file_rel_path
 from tests.support.cyt_injection_rules_lifecycle_fixtures import (
     assert_placeholder_body,
     assert_placeholder_text,
@@ -22,8 +22,8 @@ from tests.support.cyt_injection_rules_lifecycle_fixtures import (
     read_rules_text,
     reset_catalog_state,
     resolve_prompt_scenario,
-    run_local_hook_inject,
     rules_path_for,
+    run_local_hook_inject,
     write_substantive_rules,
 )
 

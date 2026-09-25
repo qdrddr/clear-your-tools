@@ -12,8 +12,8 @@ import pytest
 import cyt.hook.install_scope as install_scope
 from cyt.hook.install_scope import (
     GLOBAL_AGENT_MCP_PATHS,
-    CytInstallScope,
     WORKSPACE_AGENT_MCP_PATHS,
+    CytInstallScope,
 )
 from cyt.tools import cyt_mcp_setup
 from cyt_client.mcp_entry import (
@@ -110,11 +110,7 @@ def _write_codex_backend(path: Path, server_key: str, spec: dict[str, Any]) -> N
     path.parent.mkdir(parents=True, exist_ok=True)
     command = str(spec.get("command", ""))
     args = spec.get("args", [])
-    block = (
-        f'\n[mcp_servers.{server_key}]\n'
-        f'command = "{command}"\n'
-        f"args = {json.dumps(args)}\n"
-    )
+    block = f'\n[mcp_servers.{server_key}]\ncommand = "{command}"\nargs = {json.dumps(args)}\n'
     path.write_text(block, encoding="utf-8")
 
 
@@ -209,13 +205,25 @@ class FrontendInstallTestbed:
             cyt_scope = CytInstallScope(workspace_root=workspace_root.resolve())
 
         monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
-        monkeypatch.setattr(install_scope, "GLOBAL_MCP_CONFIG_PATH", home / "cyt" / "mcp-config.yaml")
+        monkeypatch.setattr(
+            install_scope,
+            "GLOBAL_MCP_CONFIG_PATH",
+            home / "cyt" / "mcp-config.yaml",
+        )
         monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
-        monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", home / "cyt" / "mcp-config.yaml")
-        monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", home / "cyt" / "mcp-config.yaml")
+        monkeypatch.setattr(
+            cyt_mcp_setup,
+            "DEFAULT_MCP_CONFIG_PATH",
+            home / "cyt" / "mcp-config.yaml",
+        )
+        monkeypatch.setattr(
+            cyt_mcp_setup,
+            "DEFAULT_AGGREGATOR_PATH",
+            home / "cyt" / "mcp-config.yaml",
+        )
         monkeypatch.setitem(install_scope.GLOBAL_AGENT_MCP_PATHS, agent, user_agent_mcp)
         monkeypatch.setattr(
-            cyt_mcp_setup.CytInstallScope,
+            install_scope.CytInstallScope,
             "from_cwd",
             classmethod(lambda cls, *, cwd=None: cyt_scope),
         )

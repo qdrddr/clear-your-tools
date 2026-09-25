@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -171,6 +172,16 @@ def _ci_credential_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _wire_integration_runtimes() -> None:
+    """Mirror cyt_core.bootstrap runtime wiring (tests set CYT_NO_AUTO_BOOTSTRAP=1)."""
+    from cyt.integrations.executor import wire_executor_runtime
+    from cyt.integrations.mcpc import wire_mcpc_runtime
+
+    wire_executor_runtime()
+    wire_mcpc_runtime()
+
+
+@pytest.fixture(autouse=True)
 def _deterministic_indexer_cache(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
     """Disable async cache writes and clear registry state between tests."""
     from cyt.indexer.bm25_search import configure_bm25_defaults
@@ -185,6 +196,15 @@ def _deterministic_indexer_cache(tmp_path_factory: pytest.TempPathFactory) -> It
     clear_registry_cache()
     yield
     clear_registry_cache()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_hook_debug_fallback_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep hook debug tests from writing to the developer's ~/.config/cyt/debug/hooks."""
+    import cyt.skills.debug_log as debug_log_module
+
+    isolated = tmp_path / "cyt-debug" / "hooks"
+    monkeypatch.setattr(debug_log_module, "_FALLBACK_DEBUG_DIR", isolated)
 
 
 @pytest.fixture(autouse=True)
@@ -496,6 +516,33 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def _prek_verbose_pytest_timing_enabled() -> bool:
+    return (
+        os.environ.get("CYT_PREK_VERBOSE_PYTEST") == "1"
+        or os.environ.get("CYT_PREK_PARALLEL_LOG") == "1"
+    )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[None]:
+    """Emit one [timing] line per test for prek-loop / parallel logs."""
+    outcome: object = yield
+    if not _prek_verbose_pytest_timing_enabled() or call.when != "call":
+        return
+    get_result = getattr(outcome, "get_result", None)
+    if get_result is None:
+        return
+    report = get_result()
+    if report.outcome not in ("passed", "failed", "skipped"):
+        return
+    line = f"\n[timing {report.duration:7.3f}s] {item.nodeid} {report.outcome.upper()}\n"
+    # Bypass pytest capture so lines reach prek-loop tee / parallel logs immediately.
+    err = sys.__stderr__
+    if err is not None:
+        err.write(line)
+        err.flush()
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if not _integration_tests_enabled(config):
         skip = pytest.mark.skip(reason=INTEGRATION_SKIP_REASON)
@@ -516,6 +563,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 pytest_plugins = [
     "tests.support.db_maintenance_fixtures",
+    "tests.support.empty_home_cache_bootstrap_fixtures",
     "tests.support.inject_preview_fixtures",
     "tests.support.tier_ephemeral_guard_fixtures",
     "tests.support.tier_skill_doc_fixtures",

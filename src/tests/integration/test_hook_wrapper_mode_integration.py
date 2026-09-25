@@ -14,9 +14,9 @@ from cyt.hook.cli_invocation import HookCliInvocation
 from tests.support.hook_wrapper_mode_fixtures import (
     assert_wrapper_mode_on_disk,
     load_wrapper_mode_scenario,
+    wrapper_script_names,
     write_broken_hooks_json_dev_paths_prod_disk,
     write_cursor_hooks_for_mode,
-    wrapper_script_names,
 )
 
 pytestmark = pytest.mark.integration

@@ -15,7 +15,6 @@ from cyt.tools.master_catalog import clear_master_catalog_cache, get_master_tool
 from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     capture_registry_registrations,
     load_resilience_scenario,
-    load_usr_tools_catalog,
     load_ws_tools_catalog,
     materialize_workspace,
     patch_daemon_catalog_status,
@@ -79,9 +78,10 @@ def test_tiers_stats_json_dual_layer_catalog_breakdown(
 
     assert payload.get("scope") == scenario.raw["expected_scope"]
     assert troubleshooting["catalog_user_tool_count"] == scenario.raw["expected_user_tool_count"]
-    assert troubleshooting["catalog_workspace_tool_count"] == scenario.raw[
-        "expected_workspace_tool_count"
-    ]
+    assert (
+        troubleshooting["catalog_workspace_tool_count"]
+        == scenario.raw["expected_workspace_tool_count"]
+    )
     assert troubleshooting["catalog_tool_count"] == scenario.raw["expected_total_tools"]
     assert tier_total == scenario.raw["expected_total_tools"]
 
@@ -167,6 +167,7 @@ def test_tiers_stats_after_registry_clear_hydrates_dual_layer_total(
     assert code == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["overview"]["troubleshooting"]["catalog_tool_count"] == scenario.raw[
-        "expected_total_tools"
-    ]
+    assert (
+        payload["overview"]["troubleshooting"]["catalog_tool_count"]
+        == scenario.raw["expected_total_tools"]
+    )

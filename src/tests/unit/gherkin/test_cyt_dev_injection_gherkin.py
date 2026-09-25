@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, scenarios, then, when
 
+import cyt.hook.install_scope as install_scope
 from cyt.hook import setup_wizard as hook_setup
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
@@ -307,7 +308,7 @@ def then_backends_include_stale_backend(gherkin_context: GherkinContext) -> None
 
 
 @given(
-    "the workspace .cursor/mcp.json contains equivalent cyt-mcp-ws and a stale backend server"
+    "the workspace .cursor/mcp.json contains equivalent cyt-mcp-ws and a stale backend server",
 )
 def given_workspace_mcp_with_equivalent_frontend_and_stale_backend(
     gherkin_context: GherkinContext,
@@ -334,7 +335,7 @@ def when_setup_migrates_workspace_backends(
     workspace_root = gherkin_context.payload["workspace_root"]
     scope = CytInstallScope(workspace_root=workspace_root.resolve())
     monkeypatch.setattr(
-        cyt_mcp_setup.CytInstallScope,
+        install_scope.CytInstallScope,
         "from_cwd",
         classmethod(lambda cls, *, cwd=None: scope),
     )
@@ -356,7 +357,7 @@ def then_workspace_mcp_frontend_only(gherkin_context: GherkinContext) -> None:
 
 
 @then(
-    "workspace backends at .agents/cyt/config/mcp/cursor.json should include the stale backend server"
+    "workspace backends at .agents/cyt/config/mcp/cursor.json should include the stale backend server",
 )
 def then_workspace_backends_include_stale_backend(gherkin_context: GherkinContext) -> None:
     backend_name = gherkin_context.payload["stale_backend_name"]

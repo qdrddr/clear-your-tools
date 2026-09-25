@@ -131,7 +131,7 @@ def materialize_bm25_tier_run(
 
     db_path = workspace / "tier_state.db"
     catalog_cache_dir = tmp_path / "cyt-mcp-catalog"
-    catalog_cache_dir.mkdir()
+    catalog_cache_dir.mkdir(parents=True, exist_ok=True)
     global_mcp_agg = tmp_path / "global-mcp-aggregator.yaml"
     global_mcp_defs = tmp_path / "global-mcp" / "cursor.json"
     global_mcp_defs.parent.mkdir(parents=True)

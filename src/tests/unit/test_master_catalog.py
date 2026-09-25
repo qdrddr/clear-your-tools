@@ -217,20 +217,21 @@ def test_blocking_get_master_waits_for_in_progress_rebuild() -> None:
         return [{"name": "mcpc-tool"}]
 
     def background_rebuild() -> None:
-        with (
-            patch(
-                "cyt.tools.master_catalog._load_source_tools",
-                side_effect=_slow_load_source_tools,
-            ),
-            patch("cyt.tools.catalog_cache.schedule_decomposed_catalog_refresh_for_sources"),
-        ):
-            rebuild_master_catalog(config, blocking=True)
+        rebuild_master_catalog(config, blocking=True)
 
-    thread = threading.Thread(target=background_rebuild)
-    thread.start()
-    time.sleep(0.01)
-    catalog = get_master_tool_catalog(config, blocking=True)
-    thread.join(timeout=2.0)
+    with (
+        patch(
+            "cyt.tools.master_catalog._load_source_tools",
+            side_effect=_slow_load_source_tools,
+        ),
+        patch("cyt.tools.catalog_cache.schedule_decomposed_catalog_refresh_for_sources"),
+        patch("cyt.tools.master_catalog._hydrate_master_from_disk_if_empty"),
+    ):
+        thread = threading.Thread(target=background_rebuild)
+        thread.start()
+        time.sleep(0.01)
+        catalog = get_master_tool_catalog(config, blocking=True)
+        thread.join(timeout=2.0)
 
     assert catalog is not None
     assert len(catalog) == 1

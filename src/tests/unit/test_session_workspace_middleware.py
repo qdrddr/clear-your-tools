@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastmcp.tools.base import Tool
@@ -16,7 +17,7 @@ from cyt_mcp.session_runtime import MultiWorkspaceCoordinator, WorkspaceSessionR
 from cyt_mcp.session_workspace_middleware import SessionWorkspaceMiddleware
 
 
-def test_on_list_tools_falls_back_to_call_next_when_cache_empty(tmp_path) -> None:
+def test_on_list_tools_falls_back_to_call_next_when_cache_empty(tmp_path: Path) -> None:
     """Reload must not return [] when only get-tool-definitions is registered."""
     from fastmcp import FastMCP
 
@@ -59,7 +60,7 @@ def test_on_list_tools_falls_back_to_call_next_when_cache_empty(tmp_path) -> Non
     call_next.assert_awaited_once_with(context)
 
 
-def test_on_list_tools_returns_stubs_when_cache_populated(tmp_path) -> None:
+def test_on_list_tools_returns_stubs_when_cache_populated(tmp_path: Path) -> None:
     """Workspace reload should serve stub projections from a populated runtime cache."""
     from fastmcp import FastMCP
 
@@ -112,7 +113,7 @@ def test_on_list_tools_returns_stubs_when_cache_populated(tmp_path) -> None:
     call_next.assert_not_awaited()
 
 
-def test_on_list_tools_user_scope_never_returns_empty_without_call_next(tmp_path) -> None:
+def test_on_list_tools_user_scope_never_returns_empty_without_call_next(tmp_path: Path) -> None:
     """Regression: cold user cache must not short-circuit to []."""
     from fastmcp import FastMCP
 

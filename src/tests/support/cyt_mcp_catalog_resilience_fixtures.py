@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash
 from cyt.hook.catalog_registry import RegisterStatus, clear_catalog_registry, register_catalog
 from cyt.hook.workspace_config import set_hook_workspace_in_config
@@ -156,7 +158,7 @@ def daemon_status_payload_from_registry(
 
 
 def patch_daemon_catalog_status(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
     registrations: list[dict[str, Any]],
 ) -> None:
     """Simulate hook daemon /hook/catalog/status for CLI-side registry hydration."""
@@ -176,7 +178,7 @@ def patch_daemon_catalog_status(
         def __exit__(self, *_args: object) -> None:
             return None
 
-    def fake_urlopen(url: str, timeout: float = 1.5) -> _FakeResponse:  # noqa: ARG001
+    def fake_urlopen(url: str, timeout: float = 1.5) -> _FakeResponse:
         if str(url).endswith("/hook/catalog/status"):
             return _FakeResponse(payload)
         raise OSError(f"unexpected urlopen in test: {url!r}")
@@ -233,7 +235,9 @@ def capture_registry_registrations() -> list[dict[str, Any]]:
     return list_catalog_registrations()
 
 
-def register_dual_layer_catalog(workspace: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def register_dual_layer_catalog(
+    workspace: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Register both ws and usr cyt-mcp catalog layers for one workspace."""
     ws_tools = load_ws_tools_catalog()
     usr_tools = load_usr_tools_catalog()
@@ -243,7 +247,7 @@ def register_dual_layer_catalog(workspace: Path) -> tuple[list[dict[str, Any]], 
 
 
 def write_usr_scope_disk_catalog(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
     cache_dir: Path,
     *,
     usr_tools: list[dict[str, Any]] | None = None,
@@ -267,7 +271,7 @@ def write_usr_scope_disk_catalog(
 
 
 def patch_tiers_stats_config(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
     workspace: Path,
     *,
     db_path: Path | None = None,

@@ -98,9 +98,10 @@ def test_build_status_overview_includes_dual_layer_catalog_breakdown(
     )
     troubleshooting = overview["troubleshooting"]
     assert troubleshooting["catalog_user_tool_count"] == scenario.raw["expected_user_tool_count"]
-    assert troubleshooting["catalog_workspace_tool_count"] == scenario.raw[
-        "expected_workspace_tool_count"
-    ]
+    assert (
+        troubleshooting["catalog_workspace_tool_count"]
+        == scenario.raw["expected_workspace_tool_count"]
+    )
     assert troubleshooting["catalog_tool_count"] == scenario.raw["expected_total_tools"]
 
 
