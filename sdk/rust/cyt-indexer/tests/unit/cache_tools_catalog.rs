@@ -17,6 +17,26 @@ fn tool_definition_hash_ignores_policy_and_is_stable() {
 }
 
 #[test]
+fn tool_definition_hash_is_independent_of_json_key_order() {
+    let def_a = json!({
+        "id": "mcp__test__foo",
+        "name": "mcp__test__foo",
+        "description": "A test tool",
+        "inputSchema": {"type": "object", "properties": {}}
+    });
+    let def_b = json!({
+        "description": "A test tool",
+        "inputSchema": {"properties": {}, "type": "object"},
+        "name": "mcp__test__foo",
+        "id": "mcp__test__foo",
+    });
+    assert_eq!(
+        tool_definition_content_hash(&def_a),
+        tool_definition_content_hash(&def_b)
+    );
+}
+
+#[test]
 fn catalog_entry_hashes_full_schema_not_wrapper() {
     let entry = json!({
         "id": "mcp__test__foo",

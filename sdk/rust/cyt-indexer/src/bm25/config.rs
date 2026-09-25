@@ -52,7 +52,7 @@ pub struct Bm25CacheSettings {
 impl Default for Bm25CacheSettings {
     fn default() -> Self {
         Self {
-            index_dir: PathBuf::from("~/.config/cyt/bm25"),
+            index_dir: PathBuf::from("~/.config/cyt/cache/bm25"),
             mmap: true,
         }
     }

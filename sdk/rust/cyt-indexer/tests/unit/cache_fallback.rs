@@ -79,7 +79,7 @@ fn tool_catalog_disk_hit_skips_rebuild() {
     let _ = std::fs::remove_dir_all(&tmp);
     let entry = sample_tool_entry("read_file");
     let content_hash = tool_definition_content_hash(&entry["full_schema"]);
-    let per_tool_dir = tmp.join("entries").join(&content_hash);
+    let per_tool_dir = tmp.join(&content_hash);
     let enums: Vec<serde_json::Value> = vec![];
 
     let first = ensure_tool_catalog_from_entries(
@@ -117,7 +117,7 @@ fn shared_tool_reuses_per_tool_cache_dir() {
     let _ = std::fs::remove_dir_all(&tmp);
     let entry = sample_tool_entry("shared_tool");
     let content_hash = tool_definition_content_hash(&entry["full_schema"]);
-    let per_tool_dir = tmp.join("entries").join(&content_hash);
+    let per_tool_dir = tmp.join(&content_hash);
     let enums: Vec<serde_json::Value> = vec![];
 
     ensure_tool_catalog_from_entries(

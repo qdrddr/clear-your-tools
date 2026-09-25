@@ -1,4 +1,4 @@
-//! Tool catalog disk cache under ``~/.config/cyt/tools/entries/{tool_content_hash}/``.
+//! Tool catalog disk cache under ``~/.config/cyt/cache/tools/{tool_content_hash}/``.
 //!
 //! Each MCP tool is cached independently; the directory name is a SHA-256 of the
 //! original (not-yet-decomposed) tool definition only — no policy fingerprint.
@@ -33,12 +33,30 @@ pub struct ToolCatalogHandle {
     pub cache_status: CacheStatus,
 }
 
+fn sort_json_keys(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<_> = map.keys().cloned().collect();
+            keys.sort();
+            let mut sorted = serde_json::Map::new();
+            for key in keys {
+                if let Some(entry) = map.get(&key) {
+                    sorted.insert(key, sort_json_keys(entry));
+                }
+            }
+            Value::Object(sorted)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(sort_json_keys).collect()),
+        _ => value.clone(),
+    }
+}
+
 /// SHA-256 hex digest of a single original tool definition (Anthropic API shape or catalog ``full_schema``).
 #[must_use]
 pub fn tool_definition_content_hash(definition: &Value) -> String {
     let mut hasher = Sha256::new();
     hasher.update(TOOL_DEF_HASH_PREFIX);
-    let canonical = serde_json::to_string(definition).unwrap_or_default();
+    let canonical = serde_json::to_string(&sort_json_keys(definition)).unwrap_or_default();
     hasher.update(canonical.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -207,7 +225,7 @@ fn ensure_single_tool_cached(
     let content_hash = tool_definition_content_hash(&definition);
     let tool_id = tool_id_from_entry(entry);
     let root = expand_tilde(tools_root);
-    let entry_dir = root.join("entries").join(&content_hash);
+    let entry_dir = root.join(&content_hash);
 
     if let Some(cached) = get_tool_catalog(&content_hash) {
         return Ok(SingleToolCacheOutcome {

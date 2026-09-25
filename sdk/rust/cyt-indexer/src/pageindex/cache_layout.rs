@@ -6,10 +6,10 @@ pub const PAGE_INDEX_FILE: &str = "page_index.json";
 pub const CHUNK_INDEX_FILE: &str = "chunk_index.json";
 pub const METADATA_FILE: &str = "metadata.json";
 
-/// Catalog entry root: `{catalog_root}/entries/{content_hash}/`.
+/// Catalog entry root: `{catalog_root}/{content_hash}/`.
 #[must_use]
 pub fn skill_entry_dir(catalog_root: &Path, content_hash: &str) -> PathBuf {
-    catalog_root.join("entries").join(content_hash)
+    catalog_root.join(content_hash)
 }
 
 #[must_use]
@@ -27,7 +27,7 @@ pub fn metadata_path(entry_dir: &Path) -> PathBuf {
     entry_dir.join(METADATA_FILE)
 }
 
-/// Content hash from `entries/{hash}/` directory name.
+/// Content hash from `{catalog_root}/{hash}/` directory name.
 #[must_use]
 pub fn entry_content_hash(entry_dir: &Path) -> Option<String> {
     entry_dir

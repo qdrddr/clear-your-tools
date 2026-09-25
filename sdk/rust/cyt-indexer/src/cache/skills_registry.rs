@@ -1,4 +1,4 @@
-//! BM25 skills registry ensure/build/load under ``entries/{content_sha256}/``.
+//! BM25 skills registry ensure/build/load under ``{catalog_root}/{content_sha256}/``.
 
 use std::fs;
 use std::path::{Path, PathBuf};
