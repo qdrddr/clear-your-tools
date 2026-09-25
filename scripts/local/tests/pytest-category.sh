@@ -20,7 +20,18 @@ fi
 
 PYTEST_XDIST_ARGS=()
 if [[ "${CYT_PYTEST_XDIST:-}" == 1 ]]; then
-	PYTEST_XDIST_ARGS=(-n auto)
+	_xdist_workers="${CYT_PYTEST_XDIST_WORKERS:-auto}"
+	if [[ -n ${PREK_PYTEST_UNIT_SHARDS:-} && ${_xdist_workers} == auto ]]; then
+		_cpus=4
+		if command -v nproc >/dev/null 2>&1; then
+			_cpus="$(nproc)"
+		elif command -v sysctl >/dev/null 2>&1; then
+			_cpus="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+		fi
+		_xdist_workers=$((_cpus / PREK_PYTEST_UNIT_SHARDS))
+		((_xdist_workers < 1)) && _xdist_workers=1
+	fi
+	PYTEST_XDIST_ARGS=(-n "${_xdist_workers}")
 fi
 
 ensure_native_import() {
@@ -36,10 +47,10 @@ _run_unit_pytest() {
 		echo "pytest unit shard has no test files" >&2
 		return 0
 	fi
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_QA_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_QA_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		"${targets[@]}" \
 		--ignore=src/tests/integration \
-		-m "not integration and not gherkin and not qa and not runtime" \
+		-m "not integration and not paid and not gherkin and not qa and not runtime" \
 		"${PYTEST_VERBOSE_ARGS[@]}" \
 		"${PYTEST_XDIST_ARGS[@]}"
 }
@@ -48,11 +59,11 @@ ensure_native_import
 
 case "${category}" in
 unit)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_QA_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_QA_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/unit \
 		--ignore=src/tests/unit/gherkin \
 		--ignore=src/tests/integration \
-		-m "not integration and not gherkin and not qa and not runtime" \
+		-m "not integration and not paid and not gherkin and not qa and not runtime" \
 		"${PYTEST_VERBOSE_ARGS[@]}" \
 		"${PYTEST_XDIST_ARGS[@]}" \
 		"${@:2}"
@@ -66,7 +77,7 @@ unit-shard)
 	_run_unit_pytest "${SHARD_FILES[@]}"
 	;;
 gherkin-unit)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/unit/gherkin \
 		--ignore=src/tests/integration \
 		-m "gherkin and not runtime" \
@@ -75,7 +86,7 @@ gherkin-unit)
 		"${@:2}"
 	;;
 quality_metrics)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/quality_metrics \
 		--ignore=src/tests/integration \
 		-m "not runtime" \
@@ -84,7 +95,7 @@ quality_metrics)
 		"${@:2}"
 	;;
 coverage)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/coverage \
 		--ignore=src/tests/integration \
 		-m "not runtime" \
@@ -93,7 +104,7 @@ coverage)
 		"${@:2}"
 	;;
 mutation)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/mutation \
 		--ignore=src/tests/integration \
 		-m "not runtime" \
@@ -102,7 +113,7 @@ mutation)
 		"${@:2}"
 	;;
 qa)
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 		src/tests/qa \
 		-m qa \
 		--run-qa \

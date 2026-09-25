@@ -35,7 +35,9 @@ ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 PREK_LOOP="${SCRIPT_DIR}/prek-loop.sh"
 LOG_DIR="${ROOT}/target/.prek-parallel-logs"
 FAILURES_LOG="${LOG_DIR}/failures.log"
+TIMINGS_LOG="${LOG_DIR}/timings.log"
 HEARTBEAT_SECS="${PREK_PARALLEL_HEARTBEAT_SECS:-15}"
+PARALLEL_RUN_START=0
 PREK_PYTEST_UNIT_SHARDS_MAX=8
 
 # shellcheck source=scripts/lib/chunk-worktree.sh
@@ -145,7 +147,14 @@ _cyt_prek_parallel_build_groups() {
 	for ((i = 0; i < PREK_PYTEST_UNIT_SHARDS; i++)); do
 		PARALLEL_GROUPS+=("py-test-unit-shard-${i}")
 	done
-	PARALLEL_GROUPS+=(py-test-gherkin py-test-heavy py-test-sdk)
+	PARALLEL_GROUPS+=(
+		py-test-gherkin
+		py-test-quality-metrics
+		py-test-coverage
+		py-test-mutation
+		py-test-qa
+		py-test-sdk
+	)
 }
 
 _cyt_prek_parallel_cleanup_stale_loop_locks() {
@@ -235,30 +244,49 @@ _cyt_prek_parallel_stop_watchers() {
 _cyt_prek_parallel_init_failures_log() {
 	mkdir -p "${LOG_DIR}"
 	: >"${FAILURES_LOG}"
+	: >"${TIMINGS_LOG}"
 	export PREK_PARALLEL_FAILURES_LOG="${FAILURES_LOG}"
+}
+
+_cyt_prek_parallel_record_timing() {
+	local group="$1"
+	local elapsed="$2"
+	local status="$3"
+	printf '%s %s %ss %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "${group}" "${elapsed}" "${status}" >>"${TIMINGS_LOG}"
 }
 
 _run_group() {
 	local group="$1"
 	local log="${LOG_DIR}/${group}.log"
 	local exit_code=0
+	local started finished elapsed
 	mkdir -p "${LOG_DIR}"
+	started=$(date +%s)
 	if $PARALLEL_SHORT; then
 		_cyt_prek_parallel_invoke_loop "${group}" >"${log}" 2>&1 || exit_code=$?
+		finished=$(date +%s)
+		elapsed=$((finished - started))
 		if ((exit_code != 0)); then
+			_cyt_prek_parallel_record_timing "${group}" "${elapsed}" "failed"
 			_cyt_prek_parallel_record_log_failures "${group}" "${log}" "${FAILURES_LOG}" true
 			_cyt_prek_parallel_report_failures_log "${FAILURES_LOG}"
 			return "${exit_code}"
 		fi
+		_cyt_prek_parallel_record_timing "${group}" "${elapsed}" "ok"
 		return 0
 	fi
 	echo "==> prek-loop -g ${group} (log: ${log})"
 	set +o pipefail
 	_cyt_prek_parallel_invoke_loop "${group}" 2>&1 | tee "${log}" || exit_code=$?
 	set -o pipefail
+	finished=$(date +%s)
+	elapsed=$((finished - started))
 	if ((exit_code != 0)); then
+		_cyt_prek_parallel_record_timing "${group}" "${elapsed}" "failed"
 		_cyt_prek_parallel_record_log_failures "${group}" "${log}" "${FAILURES_LOG}" false
 		_cyt_prek_parallel_report_failures_log "${FAILURES_LOG}"
+	else
+		_cyt_prek_parallel_record_timing "${group}" "${elapsed}" "ok"
 	fi
 	return "${exit_code}"
 }
@@ -285,29 +313,27 @@ _run_group_background() {
 	PARALLEL_GROUP_NAMES+=("${group}")
 	PARALLEL_PIDS+=("${pid}")
 	PARALLEL_LOGS+=("${log}")
+	PARALLEL_GROUP_STARTS+=("$(date +%s)")
 	if ! $PARALLEL_SHORT; then
 		_cyt_prek_parallel_start_log_watcher "${group}" "${log}" "${pid}"
 	fi
 }
 
 _cyt_prek_parallel_wait_jobs() {
-	local still_running=0 failed=0
+	local still_running=0 failed=0 running_count=0 total_count=0
 	local -a failed_groups=()
 	local now last_heartbeat=0
-	local i group pid log last_line
+	local i group pid log last_line started finished elapsed
 
+	total_count=${#PARALLEL_PIDS[@]}
 	if ! $PARALLEL_SHORT; then
-		echo "Parallel groups started (${#PARALLEL_GROUPS[@]} groups, ${PREK_PYTEST_UNIT_SHARDS} unit shards). Watch: tail -f ${LOG_DIR}/<group>.log"
+		echo "Parallel groups started (${total_count} groups, ${PREK_PYTEST_UNIT_SHARDS} unit shards). Watch: tail -f ${LOG_DIR}/<group>.log"
 	fi
 
 	while :; do
 		still_running=0
-		for pid in "${PARALLEL_PIDS[@]}"; do
-			if kill -0 "${pid}" 2>/dev/null; then
-				still_running=1
-				break
-			fi
-		done
+		running_count="$(_cyt_prek_parallel_count_running_pids "${PARALLEL_PIDS[@]}")"
+		((running_count > 0)) && still_running=1
 		((still_running == 0)) && break
 
 		if $PARALLEL_SHORT; then
@@ -318,23 +344,14 @@ _cyt_prek_parallel_wait_jobs() {
 		now=$(date +%s)
 		if ((now - last_heartbeat >= HEARTBEAT_SECS)); then
 			last_heartbeat=${now}
-			echo "[parallel] still running:"
+			echo "[parallel] still running (${running_count}/${total_count}):"
 			for i in "${!PARALLEL_PIDS[@]}"; do
 				pid="${PARALLEL_PIDS[$i]}"
 				if kill -0 "${pid}" 2>/dev/null; then
 					group="${PARALLEL_GROUP_NAMES[$i]}"
 					log="${PARALLEL_LOGS[$i]}"
-					last_line="$(grep -v '^\[watch ' "${log}" 2>/dev/null | tail -n 1 || true)"
-					if [[ -n ${last_line} ]]; then
-						echo "  - ${group} (pid ${pid}): ${last_line}"
-					else
-						last_line="$(grep '^\[watch ' "${log}" 2>/dev/null | tail -n 1 || true)"
-						if [[ -n ${last_line} ]]; then
-							echo "  - ${group} (pid ${pid}): ${last_line}"
-						else
-							echo "  - ${group} (pid ${pid}): (no output yet — see ${log})"
-						fi
-					fi
+					last_line="$(_cyt_prek_parallel_status_line_from_log "${log}")"
+					echo "  - ${group} (pid ${pid}): ${last_line}"
 				fi
 			done
 		fi
@@ -345,15 +362,22 @@ _cyt_prek_parallel_wait_jobs() {
 		pid="${PARALLEL_PIDS[$i]}"
 		group="${PARALLEL_GROUP_NAMES[$i]}"
 		log="${PARALLEL_LOGS[$i]}"
+		started="${PARALLEL_GROUP_STARTS[$i]}"
 		if wait "${pid}"; then
+			finished=$(date +%s)
+			elapsed=$((finished - started))
+			_cyt_prek_parallel_record_timing "${group}" "${elapsed}" "ok"
 			if ! $PARALLEL_SHORT; then
-				echo "[parallel] finished: ${group}"
+				echo "[parallel] finished: ${group} (${elapsed}s)"
 			fi
 		else
 			failed=1
 			failed_groups+=("${group}")
+			finished=$(date +%s)
+			elapsed=$((finished - started))
+			_cyt_prek_parallel_record_timing "${group}" "${elapsed}" "failed"
 			if ! $PARALLEL_SHORT; then
-				echo "[parallel] FAILED: ${group} (see ${log})" >&2
+				echo "[parallel] FAILED: ${group} (${elapsed}s, see ${log})" >&2
 			fi
 		fi
 	done
@@ -383,12 +407,17 @@ export PREK_GIT_STAGE_LOCK_PATH="${ROOT}/target/.prek-git-stage.lock.d"
 export PREK_HOOK_LOCK_MAX_WAIT=720000
 trap '_cyt_prek_parallel_stop_watchers; _cyt_prek_parallel_finish_staging' EXIT
 _cyt_prek_parallel_init_failures_log
+PARALLEL_RUN_START=$(date +%s)
 _cyt_prek_parallel_resolve_unit_shards
 _cyt_prek_parallel_cleanup_stale_loop_locks
 _cyt_prek_parallel_block_conflicting_loops
 
 if ! $PARALLEL_SHORT; then
-	echo "Using ${PREK_PYTEST_UNIT_SHARDS} pytest-unit shard(s)$($USE_XDIST && printf ' with xdist (-n auto)' || true)."
+	xdist_suffix=""
+	if $USE_XDIST; then
+		xdist_suffix=" with xdist (-n auto)"
+	fi
+	echo "Using ${PREK_PYTEST_UNIT_SHARDS} pytest-unit shard(s)${xdist_suffix}."
 fi
 
 _run_group py-sync
@@ -396,6 +425,7 @@ _run_group py-sync
 declare -a PARALLEL_GROUP_NAMES=()
 declare -a PARALLEL_PIDS=()
 declare -a PARALLEL_LOGS=()
+declare -a PARALLEL_GROUP_STARTS=()
 declare -a PARALLEL_GROUPS=()
 _cyt_prek_parallel_build_groups
 for group in "${PARALLEL_GROUPS[@]}"; do
@@ -408,6 +438,9 @@ _cyt_prek_parallel_stop_watchers
 _run_group py-build
 
 if ! $PARALLEL_SHORT; then
-	echo "All parallel Python subgroups passed."
+	_run_elapsed=$(($(date +%s) - PARALLEL_RUN_START))
+	_cyt_prek_parallel_record_timing "_total" "${_run_elapsed}" "ok"
+	echo "All parallel Python subgroups passed (${_run_elapsed}s wall)."
 	echo "Logs retained under: ${LOG_DIR}/"
+	echo "Per-group timings: ${TIMINGS_LOG}"
 fi

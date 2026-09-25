@@ -3,7 +3,10 @@
 # Automated pytest hooks run unit/gherkin/quality/coverage/mutation/qa categories only.
 # Integration tests (src/tests/integration) are manual-only:
 #   uv run pytest -m integration --run-integration
-# prek-loop.sh unsets CYT_RUN_INTEGRATION_TESTS; do not add integration pytest hooks here.
+# Paid LLM/reranking tests (@pytest.mark.paid) are manual-only:
+#   ./scripts/local/tests/pytest-paid.sh
+# prek-loop.sh unsets CYT_RUN_INTEGRATION_TESTS and CYT_RUN_PAID_TESTS;
+# do not add integration or paid pytest hooks here.
 # MCP restore/uninstall unit tests use autouse isolation in src/tests/conftest.py
 # (_isolate_agent_hook_paths + _isolate_cyt_mcp_user_config) so pre-commit never
 # touches ~/.cursor/mcp.json, ~/.config/cyt/mcp/, or workspace .agents/cyt/config/mcp/.
@@ -17,7 +20,8 @@
 #   py-test-unit-shard-* — pytest unit shards (parallel; use prek-loop-py-parallel.sh)
 #   py-test-gherkin      — pytest gherkin unit (parallel)
 #   py-test-core         — pytest unit + gherkin (serial backward compat)
-#   py-test-heavy        — quality, coverage, mutation, qa
+#   py-test-heavy        — quality, coverage, mutation, qa (serial alias)
+#   py-test-quality-metrics / py-test-coverage / py-test-mutation / py-test-qa — parallel split
 #   py-test-sdk          — sdk/python pytest
 #   py-build             — wheel build (run last, serial)
 #   py-dev               — fast dev iteration subset
@@ -43,7 +47,21 @@
 # Pre-push gate (same coverage, no duplicate local-dev-* hooks):
 #   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run -g py
 #
-# Parallel (separate terminals): -g py-lint, -g py-test-unit-shard-*, -g py-test-gherkin, -g rust, -g uni may run simultaneously.
+# Rust subgroups (parallel-friendly):
+#   rust-sync              — fmt/sort, C lib, warm test compile (run first, serial)
+#   rust-lint              — audit, deny, udeps, clippy (parallel)
+#   rust-header            — cbindgen drift + c header sync (parallel)
+#   rust-test-unit-shard-* — cargo unit shards (parallel; use prek-loop-rust-parallel.sh)
+#   rust-test-*            — integration/cucumber/ffi/coverage/mutation/quality/qa (parallel)
+#   rust-build             — SBOM, release build, maturin, verify-sdk (run last, serial)
+#   rust-dev               — fast dev iteration subset
+#   rust                   — full pre-push gate (ordered union, no duplicates)
+#
+# Parallel full Rust check (recommended):
+#   ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run
+#   PREK_RUST_UNIT_SHARDS=6 ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run --changed-only
+#
+# Parallel (separate terminals): -g py-lint, -g py-test-unit-shard-*, -g rust-lint, -g rust-test-unit-shard-*, -g uni may run simultaneously.
 #
 groups:
   py-sync:
@@ -109,6 +127,18 @@ groups:
     - pytest-mutation
     - pytest-qa
 
+  py-test-quality-metrics:
+    - pytest-quality-metrics
+
+  py-test-coverage:
+    - pytest-coverage
+
+  py-test-mutation:
+    - pytest-mutation
+
+  py-test-qa:
+    - pytest-qa
+
   py-test-sdk:
     - pytest-sdk-python
 
@@ -170,26 +200,128 @@ groups:
     - local-dev-app
     - local-dev-sdk-python
 
-  rust:
-    - build-c-lib-for-go
-    - cargo-audit
-    - cargo-build-sdk-release
-    - cargo-clippy-cyt-indexer
-    - cargo-deny
+  rust-sync:
     - cargo-fmt
+    - cargo-sort
+    - build-c-lib-for-go
+    - cargo-warm-build
+
+  rust-lint:
+    - cargo-audit
+    - cargo-deny
+    - cargo-udeps
+
+  rust-lint-audit:
+    - cargo-audit
+
+  rust-lint-deny:
+    - cargo-deny
+
+  rust-lint-udeps:
+    - cargo-udeps
+
+  rust-clippy:
+    - cargo-clippy-cyt-indexer-core
+    - cargo-clippy-cyt-indexer-cli
+
+  rust-clippy-core:
+    - cargo-clippy-cyt-indexer-core
+
+  rust-clippy-cli:
+    - cargo-clippy-cyt-indexer-cli
+
+  rust-header:
+    - cbindgen-header-drift
+    - c-header-sync
+
+  rust-test-unit-shard-0:
+    - cargo-test-unit-shard-0
+
+  rust-test-unit-shard-1:
+    - cargo-test-unit-shard-1
+
+  rust-test-unit-shard-2:
+    - cargo-test-unit-shard-2
+
+  rust-test-unit-shard-3:
+    - cargo-test-unit-shard-3
+
+  rust-test-unit-shard-4:
+    - cargo-test-unit-shard-4
+
+  rust-test-unit-shard-5:
+    - cargo-test-unit-shard-5
+
+  rust-test-unit-shard-6:
+    - cargo-test-unit-shard-6
+
+  rust-test-unit-shard-7:
+    - cargo-test-unit-shard-7
+
+  rust-test-integration:
+    - cargo-test-integration
+
+  rust-test-cucumber:
+    - cargo-test-cucumber
+
+  rust-test-ffi:
+    - cargo-test-ffi
+
+  rust-test-coverage:
     - cargo-test-coverage
+
+  rust-test-mutation:
+    - cargo-test-mutation
+
+  rust-test-quality-metrics:
+    - cargo-test-quality-metrics
+
+  rust-test-qa:
+    - cargo-test-qa
+
+  rust-build:
+    - export-rust-sbom
+    - cargo-build-sdk-release
+    - local-dev-core-rust
+    - maturin-develop
+    - verify-sdk
+
+  rust-dev:
+    - cargo-fmt
+    - cargo-sort
+    - cargo-clippy-cyt-indexer-core
+    - cargo-test-unit-shard-0
+
+  rust:
+    # Fail-fast order: fmt/sort → lint/audit → sync builds → clippy → tests → header → release/SDK
+    - cargo-fmt
+    - cargo-sort
+    - cargo-audit
+    - cargo-deny
+    - cargo-udeps
+    - build-c-lib-for-go
+    - cargo-warm-build
+    - cargo-clippy-cyt-indexer-core
+    - cargo-clippy-cyt-indexer-cli
+    - cargo-test-unit-shard-0
+    - cargo-test-unit-shard-1
+    - cargo-test-unit-shard-2
+    - cargo-test-unit-shard-3
+    - cargo-test-unit-shard-4
+    - cargo-test-unit-shard-5
+    - cargo-test-unit-shard-6
+    - cargo-test-unit-shard-7
+    - cargo-test-integration
     - cargo-test-cucumber
     - cargo-test-ffi
-    - cargo-test-integration
+    - cargo-test-coverage
     - cargo-test-mutation
-    - cargo-test-qa
     - cargo-test-quality-metrics
-    - cargo-test-unit
-    - cargo-sort
-    - cargo-udeps
+    - cargo-test-qa
     - cbindgen-header-drift
     - c-header-sync
     - export-rust-sbom
+    - cargo-build-sdk-release
     - local-dev-core-rust
     - maturin-develop
     - verify-sdk

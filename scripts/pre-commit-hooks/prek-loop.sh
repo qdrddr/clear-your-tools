@@ -8,12 +8,14 @@
 # Hook output streams live (cargo test hooks 87–94 can take many minutes each).
 # With --short, passing hooks are silent unless they fail (CYT_LOCAL_DEV_SHORT=1 for workflow.sh).
 # Groups are optional; see scripts/pre-commit-hooks/prek-hook-groups.yaml:
-#   py, py-dev, py-sync, py-lint, py-test-*, py-build, py-smoke, rust, go, c, ts, uni
+#   py, py-dev, py-sync, py-lint, py-test-*, py-build, py-smoke,
+#   rust, rust-dev, rust-sync, rust-lint, rust-header, rust-test-*, rust-build, go, c, ts, uni
 #
 # Examples:
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g py
 #   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --changed-only --fail-fast -g py-dev
 #   ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run
+#   ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run [--changed-only]
 #
 # Parallel runs (separate terminals — disjoint or overlapping groups are OK):
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g py
@@ -122,14 +124,16 @@ while (($#)); do
 		;;
 	-h | --help)
 		echo "Usage: $0 [--short] [--one-run] [--runtime] [--no-git-add] [--git-add MODE] [--changed-only] [--from-ref REF] [--to-ref REF] [--fail-fast] [-g|--group GROUP...]" >&2
-		echo "Groups: py py-dev py-sync py-lint py-test-core py-test-gherkin py-test-unit-shard-* py-test-heavy py-test-sdk py-build py-smoke" >&2
-		echo "         rust go c ts uni runtime release (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
+		echo "Groups: py py-dev py-sync py-lint py-test-core py-test-gherkin py-test-unit-shard-* py-test-heavy py-test-quality-metrics py-test-coverage py-test-mutation py-test-qa py-test-sdk py-build py-smoke" >&2
+		echo "         rust rust-dev rust-sync rust-lint rust-header rust-test-unit-shard-* rust-test-* rust-build go c ts uni runtime release" >&2
+		echo "         (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
 		echo "Multiple -g instances may run in parallel in separate terminals." >&2
 		echo "  --git-add MODE   When to stage auto-fixes: hook (default), group, none" >&2
 		echo "  --changed-only   Run hooks on changed files only (omit --all-files)" >&2
 		echo "  --from-ref REF   Diff REF..HEAD for --changed-only (default: merge-base with upstream)" >&2
 		echo "  --fail-fast      Stop after the first hook failure" >&2
 		echo "Parallel Python:  ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run [--xdist]" >&2
+		echo "Parallel Rust:    ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run [--changed-only]" >&2
 		exit 0
 		;;
 	-*)
@@ -282,7 +286,7 @@ _cyt_prek_finish_group_staging() {
 
 _cyt_prek_default_from_ref() {
 	local base=""
-	if base="$(git merge-base HEAD @{upstream} 2>/dev/null)"; then
+	if base="$(git merge-base HEAD '@{upstream}' 2>/dev/null)"; then
 		printf '%s\n' "${base}"
 		return 0
 	fi
@@ -322,6 +326,7 @@ _cyt_prek_build_prek_cmd() {
 
 # Integration tests call real external APIs; never run them in automated hook loops.
 unset CYT_RUN_INTEGRATION_TESTS
+unset CYT_RUN_PAID_TESTS
 unset CYT_RUN_QA_TESTS
 unset CYT_RUN_RUNTIME_TESTS
 
@@ -645,6 +650,30 @@ run_hook() {
 		fi
 	fi
 
+	if [[ "${hook}" == cargo-test-* || "${hook}" == "cargo-warm-build" ]]; then
+		if $SHORT; then
+			:
+		elif _cyt_prek_cargo_direct_cmd "${hook}" >/dev/null; then
+			local cargo_cmd=""
+			cargo_cmd="$(_cyt_prek_cargo_direct_cmd "${hook}")"
+			_cyt_prek_rust_verbose_env
+			_cyt_prek_echo_err "$(_cyt_prek_cargo_hook_summary "${hook}" "${ROOT}")"
+			_cyt_prek_echo_err "[progress] heartbeats every ${PREK_PROGRESS_HEARTBEAT_SECS}s list completed test binaries."
+			_run_hook_capture_progress "${hook}" bash -c "cd \"${ROOT}\" && ${cargo_cmd}" || exit_code=$?
+			output="${LAST_HOOK_RAW_OUTPUT}"
+			if ((exit_code == 0)); then
+				PREK_STATUSES="Passed"
+			else
+				PREK_STATUSES="Failed"
+			fi
+			PREK_DETAILS="${output}"
+			_cyt_prek_hook_unlock
+			return "${exit_code}"
+		else
+			_cyt_prek_echo_err "Note: ${hook} may take several minutes."
+		fi
+	fi
+
 	if [[ "${hook}" == "export-rust-sbom" ]]; then
 		output=$(_run_hook_capture "export-rust-sbom" rtk bash scripts/deps/export-rust-sbom-precommit.sh) || exit_code=$?
 		LAST_HOOK_RAW_OUTPUT="${output}"
@@ -803,7 +832,7 @@ while true; do
 		fi
 
 		if $SHORT && ! $hook_failed; then
-			_cyt_prek_stage_after_hook
+			[[ ${PREK_GIT_ADD_MODE} == hook ]] && _cyt_prek_stage_after_hook
 			continue
 		fi
 
@@ -823,7 +852,7 @@ while true; do
 			_short_failure_details "${hook}" | "$SCRIPT_DIR/../lib/shorten-paths.sh" |
 				while IFS= read -r line; do _cyt_prek_echo "${line}"; done
 		fi
-		_cyt_prek_stage_after_hook
+		[[ ${PREK_GIT_ADD_MODE} == hook ]] && _cyt_prek_stage_after_hook
 	done
 
 	if ((failed == 0)); then

@@ -713,12 +713,34 @@ repos:
         files: ^(src/|pyproject\.toml)$
         pass_filenames: false
 
-      - id: cargo-clippy-cyt-indexer
-        name: cargo clippy (cyt-indexer)
+      - id: cargo-clippy-cyt-indexer-core
+        name: cargo clippy (cyt-indexer core)
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/cargo-locked.sh clippy -p cyt-indexer --all-targets --all-features --locked -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -W clippy::perf -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::dbg_macro -W clippy::missing_const_for_fn -W clippy::missing_panics_doc -W clippy::missing_errors_doc -W clippy::missing_safety_doc -W clippy::wildcard_imports -W clippy::enum_glob_use -W clippy::module_name_repetitions -W clippy::pub_use -W clippy::bool_comparison -W clippy::match_bool -W clippy::match_same_arms -W clippy::match_wild_err_arm -W clippy::needless_borrow -W clippy::needless_lifetimes -W clippy::inefficient_to_string -W clippy::large_enum_variant -W clippy::large_stack_arrays -W clippy::map_clone -W unused -W dead_code',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/cargo-clippy-cyt-indexer.sh core',
+          ]
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|sdk/c/|sdk/go/)
+        pass_filenames: false
+
+      - id: cargo-clippy-cyt-indexer-cli
+        name: cargo clippy (cyt-indexer cli)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/cargo-clippy-cyt-indexer.sh cli',
+          ]
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|sdk/c/|sdk/go/)
+        pass_filenames: false
+
+      - id: cargo-clippy-cyt-indexer
+        name: cargo clippy (cyt-indexer all)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/cargo-clippy-cyt-indexer.sh all',
           ]
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|sdk/c/|sdk/go/)
@@ -796,6 +818,87 @@ repos:
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           - rtk bash scripts/local/tests/cargo-test-category.sh unit
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-warm-build
+        name: cargo warm build (cyt-indexer tests)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - rtk bash scripts/local/tests/cargo-warm-build.sh
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-0
+        name: cargo test (unit shard 0)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 0 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-1
+        name: cargo test (unit shard 1)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 1 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-2
+        name: cargo test (unit shard 2)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 2 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-3
+        name: cargo test (unit shard 3)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 3 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-4
+        name: cargo test (unit shard 4)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 4 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-5
+        name: cargo test (unit shard 5)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 5 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-6
+        name: cargo test (unit shard 6)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 6 "${PREK_RUST_UNIT_SHARDS:-4}"'
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-unit-shard-7
+        name: cargo test (unit shard 7)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          - 'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/cargo-test-category.sh unit-shard 7 "${PREK_RUST_UNIT_SHARDS:-4}"'
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
         pass_filenames: false

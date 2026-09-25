@@ -621,7 +621,9 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 			chunk_repair_cargo_advisory_db
 		fi
 		_chunk_cargo_exec_raw "${root}" "$@" || rc=$?
-		chunk_ensure_workspace_cargo_lock "${root}" || heal_rc=$?
+		if [[ "${CYT_DEFER_HEAL_CARGO_LOCK:-}" != 1 ]]; then
+			chunk_ensure_workspace_cargo_lock "${root}" || heal_rc=$?
+		fi
 
 		if ((rc != 0)); then
 			return "${rc}"

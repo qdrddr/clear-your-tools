@@ -234,6 +234,37 @@ def test_catalog_for_hook_ws_only_excludes_user_tools(tmp_path: Path) -> None:
     assert {tool["name"] for tool in merged} == {tool["name"] for tool in ws_tools}
 
 
+def test_register_ws_catalog_preserves_global_usr_disk_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.cyt_mcp.catalog import (
+        _CytMcpCacheKey,
+        _global_scope_paths,
+        _usr_scope_disk_catalog,
+        _write_catalog_disk,
+    )
+    from cyt.cyt_mcp.catalog_disk import scope_config_fingerprint
+
+    workspace = materialize_workspace(tmp_path)
+    config = cyt_mcp_hook_config(workspace)
+    usr_tools = load_usr_tools_catalog()
+
+    cache_dir = tmp_path / "cyt-mcp-catalog"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir", lambda: cache_dir)
+
+    global_agg, global_defs = _global_scope_paths("cursor")
+    global_fp = scope_config_fingerprint(global_agg, global_defs)
+    usr_key = _CytMcpCacheKey(agent="cursor", slug=global_fp, workspace="")
+    _write_catalog_disk(usr_key, usr_tools)
+
+    register_ws_catalog(workspace, load_ws_tools_catalog())
+
+    remaining = _usr_scope_disk_catalog(config)
+    assert {tool["name"] for tool in remaining} == {tool["name"] for tool in usr_tools}
+
+
 def test_merge_missing_user_scope_catalog_tools_from_disk(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

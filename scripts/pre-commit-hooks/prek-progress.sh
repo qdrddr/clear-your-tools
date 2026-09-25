@@ -61,7 +61,7 @@ _cyt_prek_pytest_progress_from_log() {
 		elif [[ ${line} =~ ^([^[:space:]]+\.py)[[:space:]] ]]; then
 			# pytest default progress: "src/tests/unit/test_foo.py .... [ 22%]"
 			current_file="${BASH_REMATCH[1]}"
-		elif [[ ${line} == "[timing "* ]]; then
+		elif [[ ${line} == "[timing "* ]] || [[ ${line} == "[timing] cargo-test "* ]]; then
 			timing_lines+=("${line}")
 			last_done="${line}"
 		fi
@@ -88,13 +88,13 @@ _cyt_prek_pytest_progress_from_log() {
 	fi
 
 	if ((${#timing_lines[@]})); then
-		local start=$(( ${#timing_lines[@]} > 5 ? ${#timing_lines[@]} - 5 : 0 ))
+		local start=$((${#timing_lines[@]} > 5 ? ${#timing_lines[@]} - 5 : 0))
 		local i
 		for ((i = start; i < ${#timing_lines[@]}; i++)); do
 			_out_lines+=("  ${timing_lines[i]}")
 		done
 	elif ((${#done_lines[@]})); then
-		local start=$(( ${#done_lines[@]} > 3 ? ${#done_lines[@]} - 3 : 0 ))
+		local start=$((${#done_lines[@]} > 3 ? ${#done_lines[@]} - 3 : 0))
 		local i
 		for ((i = start; i < ${#done_lines[@]}; i++)); do
 			_out_lines+=("  done: ${done_lines[i]}")
@@ -201,7 +201,10 @@ _cyt_prek_cargo_tree_needs_heal() {
 	local path
 	while IFS= read -r path; do
 		[[ ${path} == Cargo.toml || ${path} == Cargo.lock || ${path} == sdk/rust/cyt-indexer/Cargo.toml ]] && return 0
-	done < <(git diff --name-only --ignore-submodules 2>/dev/null; git diff --cached --name-only --ignore-submodules 2>/dev/null)
+	done < <(
+		git diff --name-only --ignore-submodules 2>/dev/null
+		git diff --cached --name-only --ignore-submodules 2>/dev/null
+	)
 	return 1
 }
 
@@ -216,7 +219,7 @@ _cyt_prek_stage_fixes() {
 		return 0
 	fi
 	_cyt_prek_git_stage_lock || return 1
-	if _cyt_prek_cargo_tree_needs_heal; then
+	if _cyt_prek_cargo_tree_needs_heal && [[ "${CYT_DEFER_HEAL_CARGO_LOCK:-}" != 1 ]]; then
 		rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
 	fi
 	rtk git add -A >/dev/null 2>&1 || true
@@ -226,6 +229,11 @@ _cyt_prek_stage_fixes() {
 _cyt_prek_pytest_verbose_env() {
 	export PYTHONUNBUFFERED=1
 	export CYT_PREK_VERBOSE_PYTEST=1
+	export CYT_PREK_PARALLEL_LOG=1
+}
+
+_cyt_prek_rust_verbose_env() {
+	export CYT_PREK_VERBOSE_RUST=1
 	export CYT_PREK_PARALLEL_LOG=1
 }
 
@@ -299,18 +307,100 @@ _cyt_prek_filter_hook_failure_output() {
 		fi
 	fi
 
+	_cyt_prek_filter_prek_loop_failure_output <<<"${text}"
+}
+
+# Strip optional "[group] " prefix from parallel prek-loop log lines.
+_cyt_prek_filter_prek_loop_failure_output() {
 	awk '
-		/^Failed \[/ { capture = 1; print; next }
-		/^Passed \[/ { capture = 0; next }
-		capture && !/ PASSED(\s|\]|$)/ && !/ SKIPPED(\s|\]|$)/ && !/^=+ [0-9]+ passed/ {
-			print
+		function strip_prefix(line) {
+			if (match(line, /^\[[^]]+\] /)) {
+				return substr(line, RSTART + RLENGTH)
+			}
+			return line
 		}
-	' <<<"${text}"
+		{
+			line = strip_prefix($0)
+			if (line ~ /^Failed \[/ || line ~ /^Failures:/) {
+				capture = 1
+				print line
+				next
+			}
+			if (line ~ /^Loop [0-9]+:/ && line ~ / [1-9][0-9]* failed/) {
+				print line
+				next
+			}
+			if (capture) {
+				if (line ~ /^Passed \[/ || line ~ /^Running \[/ || line ~ /^Hooks:/) {
+					capture = 0
+					next
+				}
+				if (length(line) > 0) {
+					print line
+				}
+				next
+			}
+		}
+	'
+}
+
+_cyt_prek_filter_cargo_failure_output() {
+	awk '
+		function strip_prefix(line) {
+			if (match(line, /^\[[^]]+\] /)) {
+				return substr(line, RSTART + RLENGTH)
+			}
+			return line
+		}
+		{
+			line = strip_prefix($0)
+			if (line ~ /^error(\[E[0-9]+\])?: / || line ~ /^error: /) {
+				print line
+				next
+			}
+			if (line ~ / test .* FAILED$/ || line ~ /: FAILED$/) {
+				print line
+				next
+			}
+			if (line ~ /^test result: FAILED/) {
+				print line
+				next
+			}
+			if (line ~ /^failures:$/) {
+				capture = 1
+				print line
+				next
+			}
+			if (capture) {
+				print line
+				next
+			}
+			if (line ~ /panicked at/ || line ~ /^thread .* panicked/) {
+				print line
+				next
+			}
+			if (line ~ /^(error|warning): .*clippy::/) {
+				print line
+				next
+			}
+		}
+	'
+}
+
+_cyt_prek_parallel_grep_failure_fallback() {
+	local log="$1"
+
+	grep -E '(^|\] )Failed \[|(^|\] )Failures:|^error(\[E[0-9]+\])?: |^error: | test .* FAILED$|: FAILED$|test result: FAILED|panicked at|^failures:$' \
+		"${log}" 2>/dev/null |
+		sed -E 's/^\[[^]]+\] //' |
+		tail -n 60
 }
 
 _cyt_prek_parallel_extract_log_failures() {
 	local group="$1"
 	local log="$2"
+	local filtered=""
+	local cargo_filtered=""
 
 	[[ -f ${log} ]] || {
 		printf '=== %s: no log at %s ===\n' "${group}" "${log}"
@@ -318,18 +408,31 @@ _cyt_prek_parallel_extract_log_failures() {
 	}
 
 	if grep -qE '= FAILURES =|= ERRORS =|= short test summary info =' "${log}"; then
-		_cyt_prek_filter_test_failure_output <"${log}"
+		filtered="$(_cyt_prek_filter_test_failure_output <"${log}")"
+	elif grep -qE '(^|\] )Failed \[|(^|\] )Failures:' "${log}"; then
+		filtered="$(_cyt_prek_filter_prek_loop_failure_output <"${log}")"
 	elif grep -q '^Failed \[' "${log}"; then
-		awk '
-			/^Failed \[/ { capture = 1; print; next }
-			/^Passed \[/ { capture = 0; next }
-			/^Loop [0-9]+:/ { capture = 0; next }
-			/^Failures:/ { capture = 0; next }
-			capture { print }
-		' "${log}"
-	else
-		tail -n 80 "${log}"
+		filtered="$(_cyt_prek_filter_prek_loop_failure_output <"${log}")"
 	fi
+
+	if grep -qE '(^|\] )error(\[E[0-9]+\])?: |(^|\] )error: | test .* FAILED|test result: FAILED|panicked at|^failures:$' "${log}"; then
+		cargo_filtered="$(_cyt_prek_filter_cargo_failure_output <"${log}")"
+		if [[ -n ${filtered} && -n ${cargo_filtered} ]]; then
+			filtered="${filtered}"$'\n'"${cargo_filtered}"
+		elif [[ -n ${cargo_filtered} ]]; then
+			filtered="${cargo_filtered}"
+		fi
+	fi
+
+	if [[ -z ${filtered//[$'\t\r\n ']/} ]]; then
+		filtered="$(_cyt_prek_parallel_grep_failure_fallback "${log}")"
+	fi
+
+	if [[ -n ${filtered} ]]; then
+		filtered="$(printf '%s\n' "${filtered}" | awk 'NF && !seen[$0]++')"
+	fi
+
+	printf '%s\n' "${filtered}"
 }
 
 _cyt_prek_parallel_record_log_failures() {
@@ -340,6 +443,7 @@ _cyt_prek_parallel_record_log_failures() {
 	local filtered=""
 
 	filtered="$(_cyt_prek_parallel_extract_log_failures "${group}" "${log}")"
+	[[ -n ${filtered//[$'\t\r\n ']/} ]] || return 0
 
 	if [[ -n ${failures_log} ]]; then
 		{
@@ -355,6 +459,39 @@ _cyt_prek_parallel_record_log_failures() {
 	fi
 }
 
+# Rewrite failures.log from timings entries marked failed (parallel orchestrators).
+_cyt_prek_parallel_consolidate_failures_log() {
+	local failures_log="${1:-${PREK_PARALLEL_FAILURES_LOG:-}}"
+	local timings_log="${2:-}"
+	local log_dir="${3:-}"
+	local tmp=""
+	local -a failed_groups=()
+	local group timing_status log filtered
+
+	[[ -n ${failures_log} && -n ${timings_log} && -f ${timings_log} && -n ${log_dir} ]] || return 0
+
+	while read -r _ group _ timing_status; do
+		[[ ${timing_status} == failed ]] || continue
+		[[ ${group} == _total ]] && continue
+		failed_groups+=("${group}")
+	done <"${timings_log}"
+
+	tmp="$(mktemp "${failures_log}.XXXXXX")"
+	: >"${tmp}"
+	for group in "${failed_groups[@]}"; do
+		log="${log_dir}/${group}.log"
+		[[ -f ${log} ]] || continue
+		filtered="$(_cyt_prek_parallel_extract_log_failures "${group}" "${log}")"
+		[[ -n ${filtered//[$'\t\r\n ']/} ]] || continue
+		{
+			echo "=== ${group} ==="
+			printf '%s\n' "${filtered}"
+			echo ""
+		} >>"${tmp}"
+	done
+	mv "${tmp}" "${failures_log}"
+}
+
 _cyt_prek_parallel_emit_log_failures() {
 	_cyt_prek_parallel_record_log_failures "$1" "$2" "${PREK_PARALLEL_FAILURES_LOG:-}" true
 }
@@ -364,6 +501,52 @@ _cyt_prek_parallel_report_failures_log() {
 	[[ -n ${failures_log} ]] || return 0
 	[[ -s ${failures_log} ]] || return 0
 	echo "Failures: ${failures_log}" >&2
+}
+
+_cyt_prek_parallel_count_running_pids() {
+	local running=0 pid
+	for pid in "$@"; do
+		kill -0 "${pid}" 2>/dev/null && running=$((running + 1))
+	done
+	printf '%s\n' "${running}"
+}
+
+_cyt_prek_parallel_status_line_from_log() {
+	local log="$1"
+	local line=""
+
+	[[ -f ${log} ]] || {
+		printf '%s\n' "(no log yet)"
+		return 0
+	}
+
+	line="$(
+		grep -v '^\[watch ' "${log}" 2>/dev/null |
+			grep -v 'Blocking waiting for file lock on build directory' |
+			tail -n 1 || true
+	)"
+	while [[ ${line} == "  now: "* || ${line} == "now: "* ]]; do
+		line="${line#  now: }"
+		line="${line#now: }"
+	done
+
+	if [[ -n ${line} ]]; then
+		printf '%s\n' "${line}"
+		return 0
+	fi
+
+	line="$(grep '^\[watch ' "${log}" 2>/dev/null | tail -n 1 || true)"
+	if [[ -n ${line} ]]; then
+		printf '%s\n' "${line}"
+		return 0
+	fi
+
+	if grep -q 'Blocking waiting for file lock on build directory' "${log}" 2>/dev/null; then
+		printf '%s\n' "(waiting for shared target/ cargo lock)"
+		return 0
+	fi
+
+	printf '%s\n' "(no output yet)"
 }
 
 _cyt_prek_pytest_direct_cmd() {
@@ -383,6 +566,56 @@ _cyt_prek_pytest_direct_cmd() {
 	pytest-qa) printf '%s\n' "bash scripts/local/tests/pytest-category.sh qa" ;;
 	pytest-runtime) printf '%s\n' "CYT_RUN_RUNTIME_TESTS=1 bash scripts/local/tests/pytest-category.sh runtime" ;;
 	pytest-sdk-python) printf '%s\n' "bash scripts/local/tests/pytest-sdk-python.sh" ;;
+	*) return 1 ;;
+	esac
+}
+
+_cyt_prek_cargo_hook_summary() {
+	local hook="$1"
+	local root="$2"
+	local shard_index="" shards="" count=""
+
+	case "${hook}" in
+	cargo-test-unit)
+		count="$(grep -cE '^name = \"unit_' "${root}/sdk/rust/cyt-indexer/Cargo.toml" || true)"
+		echo "Scope: cyt-indexer unit (~${count} test binaries). Mode: [timing] cargo-test per binary."
+		;;
+	cargo-test-unit-shard-*)
+		shard_index="${hook#cargo-test-unit-shard-}"
+		shards="${PREK_RUST_UNIT_SHARDS:-4}"
+		count="$(uv run python "${root}/scripts/local/tests/cargo-unit-shard.py" --shard "${shard_index}" --shards "${shards}" --root "${root}" 2>/dev/null | wc -l | tr -d ' ')"
+		echo "Scope: unit shard ${shard_index}/${shards} (~${count} test binaries). Mode: [timing] cargo-test per binary."
+		;;
+	cargo-test-integration) echo "Scope: cyt-indexer integration tests." ;;
+	cargo-test-cucumber) echo "Scope: cyt-indexer cucumber tests." ;;
+	cargo-test-ffi) echo "Scope: cyt-indexer ffi tests." ;;
+	cargo-test-coverage) echo "Scope: cyt-indexer coverage tests." ;;
+	cargo-test-mutation) echo "Scope: cyt-indexer mutation tests." ;;
+	cargo-test-quality-metrics) echo "Scope: cyt-indexer quality_metrics tests." ;;
+	cargo-test-qa) echo "Scope: cyt-indexer qa tests." ;;
+	cargo-warm-build) echo "Scope: pre-compile cyt-indexer test binaries (--no-run)." ;;
+	*) echo "Mode: cargo test with live [timing] lines when verbose." ;;
+	esac
+}
+
+_cyt_prek_cargo_direct_cmd() {
+	local hook="$1"
+	local shard_index shards
+	case "${hook}" in
+	cargo-test-unit) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh unit" ;;
+	cargo-test-unit-shard-*)
+		shard_index="${hook#cargo-test-unit-shard-}"
+		shards="${PREK_RUST_UNIT_SHARDS:-4}"
+		printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh unit-shard ${shard_index} ${shards}"
+		;;
+	cargo-test-integration) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh integration" ;;
+	cargo-test-cucumber) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh cucumber" ;;
+	cargo-test-ffi) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh ffi" ;;
+	cargo-test-coverage) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh coverage" ;;
+	cargo-test-mutation) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh mutation" ;;
+	cargo-test-quality-metrics) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh quality_metrics" ;;
+	cargo-test-qa) printf '%s\n' "bash scripts/local/tests/cargo-test-category.sh qa" ;;
+	cargo-warm-build) printf '%s\n' "bash scripts/local/tests/cargo-warm-build.sh" ;;
 	*) return 1 ;;
 	esac
 }

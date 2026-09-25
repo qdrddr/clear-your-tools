@@ -372,24 +372,30 @@ def _register_hash_only(
     return RegisterResult(RegisterStatus.UNCHANGED, 204, permissions_revision=revision)
 
 
-def _hydrate_hook_caches_from_registration(tools: list[dict[str, Any]]) -> None:
+def _hydrate_hook_caches_from_registration(
+    tools: list[dict[str, Any]],
+    *,
+    agent: str,
+    workspace_root: str,
+) -> None:
     """Populate hook-side cyt-mcp and master caches after a registry push."""
     if not tools:
         return
     try:
-        from cyt.config import load_config, tools_hook_cyt_mcp_agent, uses_cyt_mcp_tool_catalog
+        from cyt.config import load_config, uses_cyt_mcp_tool_catalog
         from cyt.cyt_mcp.catalog import apply_fetched_catalog
-        from cyt.hook.workspace_config import hook_workspace_from_config
+        from cyt.hook.workspace_config import set_hook_workspace_in_config
         from cyt.tools.master_catalog import rebuild_master_catalog
 
         cfg = load_config()
         if not uses_cyt_mcp_tool_catalog(cfg):
             return
-        agent = tools_hook_cyt_mcp_agent(cfg)
-        workspace = hook_workspace_from_config(cfg)
-        merged = catalog_for_hook(agent, workspace, allow_stale=True)
+        cfg = set_hook_workspace_in_config(cfg, Path(workspace_root))
+        merged = catalog_for_hook(agent, workspace_root, allow_stale=True)
         apply_fetched_catalog(cfg, merged if merged else tools)
-        rebuild_master_catalog(cfg, blocking=False)
+        # Blocking: dual-layer pushes (ws then usr) must not lose the second layer when
+        # a prior non-blocking rebuild is still in flight (common under pytest-xdist).
+        rebuild_master_catalog(cfg, blocking=True)
     except Exception as exc:
         logger.warning("hook cache hydration after catalog register failed: %s", exc)
 
@@ -491,7 +497,11 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
         from cyt.hook.active_workspace import touch_active_workspace
 
         touch_active_workspace(agent, workspace_root)
-        _hydrate_hook_caches_from_registration(tools)
+        _hydrate_hook_caches_from_registration(
+            tools,
+            agent=agent,
+            workspace_root=workspace_root,
+        )
     return result
 
 

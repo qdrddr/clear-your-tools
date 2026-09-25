@@ -19,7 +19,7 @@ ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 cd "${ROOT}"
 
 if [ "$#" -gt 0 ]; then
-	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest -m "not integration and not qa and not runtime" "$@"
+	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_PAID_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest -m "not integration and not paid and not qa and not runtime" "$@"
 fi
 
 bash "${SCRIPT_DIR}/pytest-category.sh" unit
