@@ -48,11 +48,21 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		local label="$2"
 		local lock_wait=0
 		local max_wait="${3:-1200}"
+		local heartbeat_secs="${4:-0}"
+		local holder_pid=""
 
 		while ! mkdir "${lock_dir}" 2>/dev/null; do
 			if _cyt_lock_dir_is_stale "${lock_dir}"; then
 				rm -rf "${lock_dir}"
 				continue
+			fi
+			if ((heartbeat_secs > 0)) && ((lock_wait == 0 || lock_wait % (heartbeat_secs * 20) == 0)); then
+				holder_pid="$(cat "${lock_dir}/pid" 2>/dev/null || true)"
+				if [[ -n ${holder_pid} ]] && kill -0 "${holder_pid}" 2>/dev/null; then
+					echo "Waiting for ${label} lock (held by pid ${holder_pid}, still running). Stop it with: kill ${holder_pid}" >&2
+				else
+					echo "Waiting for ${label} lock (reclaiming stale lock for pid ${holder_pid:-unknown})..." >&2
+				fi
 			fi
 			sleep 0.05
 			lock_wait=$((lock_wait + 1))

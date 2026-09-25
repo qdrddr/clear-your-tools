@@ -11,29 +11,152 @@
 # Hooks may appear in more than one group. The `suggestion` hook is omitted
 # intentionally (informational only).
 #
+# Python subgroups (parallel-friendly):
+#   py-sync              — deps/native setup (run first, serial)
+#   py-lint              — formatters, linters, type checkers
+#   py-test-unit-shard-* — pytest unit shards (parallel; use prek-loop-py-parallel.sh)
+#   py-test-gherkin      — pytest gherkin unit (parallel)
+#   py-test-core         — pytest unit + gherkin (serial backward compat)
+#   py-test-heavy        — quality, coverage, mutation, qa
+#   py-test-sdk          — sdk/python pytest
+#   py-build             — wheel build (run last, serial)
+#   py-dev               — fast dev iteration subset
+#   py                   — full pre-push gate (ordered union, no duplicates)
+#   py-smoke             — optional end-to-end workflow.sh smoke (local-dev-*)
+#
 # Usage:
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g py
 #   ./scripts/pre-commit-hooks/prek-loop.sh --group py ts
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g release   # pre-publish simulate-registry only
 #
-# Parallel (separate terminals): -g py, -g rust, -g uni may run simultaneously.
+# Fast iteration (single terminal, changed files only):
+#   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --changed-only --fail-fast -g py-dev
+#
+# Parallel full Python check (recommended):
+#   ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run
+#   PREK_PYTEST_UNIT_SHARDS=6 ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run --xdist
+#
+# Manual parallel (separate terminals):
+#   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run -g py-test-unit-shard-0
+#   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run -g py-test-gherkin
+#
+# Pre-push gate (same coverage, no duplicate local-dev-* hooks):
+#   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run -g py
+#
+# Parallel (separate terminals): -g py-lint, -g py-test-unit-shard-*, -g py-test-gherkin, -g rust, -g uni may run simultaneously.
 #
 groups:
-  py:
+  py-sync:
+    - uv-lock
+    - uv-sync
+    - export-requirements
+    - verify-pins
+    - maturin-develop
+    - verify-sdk
+    - verify-app-python
+
+  py-lint:
+    - ruff-format
     - add-trailing-comma
-    - basedpyright
+    - pyupgrade
+    - ruff
+    - flake8
+    - debug-statements
     - check-builtin-literals
     - check-docstring-first
-    - debug-statements
-    - flake8
-    - local-dev-app
-    - local-dev-sdk-python
-    - mypy
     - name-tests-test
     - python-check-blanket-noqa
     - python-check-blanket-type-ignore
     - python-check-mock-methods
+    - ty-check
+    - mypy
+    - basedpyright
+
+  py-test-core:
+    - pytest-unit
+    - pytest-gherkin-unit
+
+  py-test-gherkin:
+    - pytest-gherkin-unit
+
+  py-test-unit-shard-0:
+    - pytest-unit-shard-0
+
+  py-test-unit-shard-1:
+    - pytest-unit-shard-1
+
+  py-test-unit-shard-2:
+    - pytest-unit-shard-2
+
+  py-test-unit-shard-3:
+    - pytest-unit-shard-3
+
+  py-test-unit-shard-4:
+    - pytest-unit-shard-4
+
+  py-test-unit-shard-5:
+    - pytest-unit-shard-5
+
+  py-test-unit-shard-6:
+    - pytest-unit-shard-6
+
+  py-test-unit-shard-7:
+    - pytest-unit-shard-7
+
+  py-test-heavy:
+    - pytest-quality-metrics
+    - pytest-coverage
+    - pytest-mutation
+    - pytest-qa
+
+  py-test-sdk:
+    - pytest-sdk-python
+
+  py-build:
+    - uv-build
+
+  py-dev:
+    - ruff-format
+    - add-trailing-comma
     - pyupgrade
+    - ruff
+    - flake8
+    - debug-statements
+    - check-builtin-literals
+    - check-docstring-first
+    - name-tests-test
+    - python-check-blanket-noqa
+    - python-check-blanket-type-ignore
+    - python-check-mock-methods
+    - ty-check
+    - mypy
+    - basedpyright
+    - pytest-unit
+
+  py:
+    # Fail-fast order: cheap format/lint → deps/sync → native → types → tests → build
+    - ruff-format
+    - add-trailing-comma
+    - pyupgrade
+    - ruff
+    - flake8
+    - debug-statements
+    - check-builtin-literals
+    - check-docstring-first
+    - name-tests-test
+    - python-check-blanket-noqa
+    - python-check-blanket-type-ignore
+    - python-check-mock-methods
+    - uv-lock
+    - uv-sync
+    - export-requirements
+    - verify-pins
+    - maturin-develop
+    - verify-sdk
+    - verify-app-python
+    - ty-check
+    - mypy
+    - basedpyright
     - pytest-unit
     - pytest-gherkin-unit
     - pytest-quality-metrics
@@ -41,16 +164,11 @@ groups:
     - pytest-mutation
     - pytest-qa
     - pytest-sdk-python
-    - ruff
-    - ruff-format
-    - ty-check
     - uv-build
-    - export-requirements
-    - verify-pins
-    - uv-lock
-    - uv-sync
-    - maturin-develop
-    - verify-sdk
+
+  py-smoke:
+    - local-dev-app
+    - local-dev-sdk-python
 
   rust:
     - build-c-lib-for-go

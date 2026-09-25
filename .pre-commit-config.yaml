@@ -395,7 +395,7 @@ repos:
       #      - id: double-quote-string-fixer
       - id: name-tests-test
         args: [--pytest-test-first]
-        exclude: ^(sdk/e2e/python/tests/(.*)\.py$|src/tests/support/.*\.py$|src/tests/qa/.*\.py$)
+        exclude: ^(sdk/e2e/python/tests/(.*)\.py$|src/tests/support/.*\.py$|src/tests/qa/.*\.py$|scripts/local/tests/.*\.py$)
 
   - repo: local
     hooks:
@@ -489,6 +489,94 @@ repos:
         args:
           [
             'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-0
+        name: pytest (unit shard 0)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 0 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-1
+        name: pytest (unit shard 1)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 1 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-2
+        name: pytest (unit shard 2)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 2 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-3
+        name: pytest (unit shard 3)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 3 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-4
+        name: pytest (unit shard 4)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 4 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-5
+        name: pytest (unit shard 5)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 5 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-6
+        name: pytest (unit shard 6)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 6 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-unit-shard-7
+        name: pytest (unit shard 7)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit-shard 7 "${PREK_PYTEST_UNIT_SHARDS:-4}"',
           ]
         pass_filenames: false
         language: system
@@ -612,6 +700,17 @@ repos:
           ]
         language: system
         files: ^(sdk/(rust|python)/|pyproject\.toml)
+        pass_filenames: false
+
+      - id: verify-app-python
+        name: Verify app re-exports local cyt-indexer-sdk
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh app-verify',
+          ]
+        language: system
+        files: ^(src/|pyproject\.toml)$
         pass_filenames: false
 
       - id: cargo-clippy-cyt-indexer

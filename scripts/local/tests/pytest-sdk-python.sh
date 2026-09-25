@@ -25,4 +25,10 @@ ensure_native_import() {
 
 ensure_native_import
 cd "${SDK}"
-exec env -u CARGO_TARGET_DIR uv run --no-sync --with pytest pytest tests/unit "$@"
+PYTEST_VERBOSE_ARGS=()
+if [[ "${CYT_PREK_VERBOSE_PYTEST:-}${CYT_PREK_PARALLEL_LOG:-}" == *1* ]]; then
+	PYTEST_VERBOSE_ARGS=(-v --capture=tee-sys --durations=25 --durations-min=0.1)
+fi
+# SDK tests run in an isolated uv project without pytest-xdist; parallel sharding
+# is handled by prek-loop-py-parallel.sh groups, not in-process -n auto here.
+exec env -u CARGO_TARGET_DIR uv run --no-sync --with pytest pytest tests/unit "${PYTEST_VERBOSE_ARGS[@]}" "$@"

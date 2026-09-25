@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--runtime] [--no-git-add] [-g|--group GROUP...]
+# Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--runtime] [--no-git-add]
+#          [--changed-only] [--from-ref REF] [--fail-fast] [-g|--group GROUP...]
 #
-# Run prek hooks one at a time, staging fixes after each, until all pass.
+# Run prek hooks one at a time, staging fixes until all pass.
+# Git staging: --git-add hook (default), group (once per group), or none (orchestrator handles it).
 # Without --short, each hook prints a one-line Passed/Failed summary; details on failure only.
 # Hook output streams live (cargo test hooks 87–94 can take many minutes each).
 # With --short, passing hooks are silent unless they fail (CYT_LOCAL_DEV_SHORT=1 for workflow.sh).
 # Groups are optional; see scripts/pre-commit-hooks/prek-hook-groups.yaml:
-#   py, rust, go, c, ts, uni
+#   py, py-dev, py-sync, py-lint, py-test-*, py-build, py-smoke, rust, go, c, ts, uni
 #
 # Examples:
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g py
-#   ./scripts/pre-commit-hooks/prek-loop.sh --group py ts
+#   ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --changed-only --fail-fast -g py-dev
+#   ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run
 #
 # Parallel runs (separate terminals — disjoint or overlapping groups are OK):
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g py
@@ -35,6 +38,12 @@ SHORT=false
 ONE_RUN=false
 NO_GIT_ADD=false
 RUN_RUNTIME=false
+CHANGED_ONLY=false
+FAIL_FAST=false
+PREK_ALL_FILES=true
+PREK_FROM_REF=""
+PREK_TO_REF="HEAD"
+PREK_GIT_ADD_MODE="${PREK_GIT_ADD_MODE:-hook}"
 SELECTED_GROUPS=()
 while (($#)); do
 	case "$1" in
@@ -52,13 +61,58 @@ while (($#)); do
 		;;
 	--no-git-add)
 		NO_GIT_ADD=true
+		PREK_GIT_ADD_MODE=none
+		shift
+		;;
+	--git-add)
+		shift
+		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
+			echo "--git-add requires hook, group, or none." >&2
+			exit 1
+		fi
+		case "$1" in
+		hook | group | none) PREK_GIT_ADD_MODE="$1" ;;
+		*)
+			echo "--git-add must be hook, group, or none (got: $1)." >&2
+			exit 1
+			;;
+		esac
+		shift
+		;;
+	--changed-only)
+		CHANGED_ONLY=true
+		PREK_ALL_FILES=false
+		shift
+		;;
+	--from-ref)
+		shift
+		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
+			echo "--from-ref requires a git ref." >&2
+			exit 1
+		fi
+		PREK_FROM_REF="$1"
+		CHANGED_ONLY=true
+		PREK_ALL_FILES=false
+		shift
+		;;
+	--to-ref)
+		shift
+		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
+			echo "--to-ref requires a git ref." >&2
+			exit 1
+		fi
+		PREK_TO_REF="$1"
+		shift
+		;;
+	--fail-fast)
+		FAIL_FAST=true
 		shift
 		;;
 	-g | --group)
 		shift
 		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
 			echo "--group requires at least one group name." >&2
-			echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
+			echo "Usage: $0 [--short] [--one-run] [--changed-only] [--fail-fast] [-g|--group GROUP...]" >&2
 			exit 1
 		fi
 		while (($#)) && [[ $1 != -* ]]; do
@@ -67,19 +121,25 @@ while (($#)); do
 		done
 		;;
 	-h | --help)
-		echo "Usage: $0 [--short] [--one-run] [--runtime] [--no-git-add] [-g|--group GROUP...]" >&2
-		echo "Groups: py rust go c ts uni runtime (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
+		echo "Usage: $0 [--short] [--one-run] [--runtime] [--no-git-add] [--git-add MODE] [--changed-only] [--from-ref REF] [--to-ref REF] [--fail-fast] [-g|--group GROUP...]" >&2
+		echo "Groups: py py-dev py-sync py-lint py-test-core py-test-gherkin py-test-unit-shard-* py-test-heavy py-test-sdk py-build py-smoke" >&2
+		echo "         rust go c ts uni runtime release (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
 		echo "Multiple -g instances may run in parallel in separate terminals." >&2
+		echo "  --git-add MODE   When to stage auto-fixes: hook (default), group, none" >&2
+		echo "  --changed-only   Run hooks on changed files only (omit --all-files)" >&2
+		echo "  --from-ref REF   Diff REF..HEAD for --changed-only (default: merge-base with upstream)" >&2
+		echo "  --fail-fast      Stop after the first hook failure" >&2
+		echo "Parallel Python:  ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run [--xdist]" >&2
 		exit 0
 		;;
 	-*)
 		echo "Unknown option: $1" >&2
-		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
+		echo "Usage: $0 [--short] [--one-run] [--changed-only] [--fail-fast] [-g|--group GROUP...]" >&2
 		exit 1
 		;;
 	*)
 		echo "Unexpected argument: $1" >&2
-		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
+		echo "Usage: $0 [--short] [--one-run] [--changed-only] [--fail-fast] [-g|--group GROUP...]" >&2
 		exit 1
 		;;
 	esac
@@ -92,6 +152,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=scripts/lib/chunk-worktree.sh
 source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
+# shellcheck source=scripts/pre-commit-hooks/prek-progress.sh
+source "${SCRIPT_DIR}/prek-progress.sh"
 
 PREK_LOCK_BASE="${ROOT}/target/.prek-loop.lock.d"
 PREK_HOOK_LOCK_BASE="${ROOT}/target/.prek-hook.lock.d"
@@ -100,11 +162,12 @@ PREK_GIT_STAGE_LOCK_PATH="${ROOT}/target/.prek-git-stage.lock.d"
 PREK_HOOK_LOCK_MAX_WAIT=720000
 # Shorter wait: duplicate same group key in another terminal.
 PREK_LOOP_DUP_MAX_WAIT=14400
+# Print lock-wait heartbeats so duplicate group runs do not look hung.
+PREK_LOCK_HEARTBEAT_SECS=5
 
 PREK_LOOP_LOCK_DIR=""
 PREK_LOOP_LOCK_KEY=""
 PREK_HOOK_LOCK_DIR=""
-PREK_GIT_STAGE_LOCK_HELD=""
 
 _cyt_prek_loop_lock_key() {
 	if ((${#SELECTED_GROUPS[@]} == 0)); then
@@ -148,12 +211,26 @@ _cyt_prek_echo() {
 	fi
 }
 
+_cyt_prek_cleanup_stale_locks() {
+	local lock_root="$1"
+	local d
+	[[ -d "${lock_root}" ]] || return 0
+	for d in "${lock_root}"/*; do
+		[[ -d "${d}" ]] || continue
+		if _cyt_lock_dir_is_stale "${d}"; then
+			rm -rf "${d}"
+		fi
+	done
+}
+
 _cyt_prek_loop_lock() {
 	local key="$1"
 	local lock_dir="${PREK_LOCK_BASE}/${key}"
 	local -a active=() other=()
 
 	mkdir -p "${PREK_LOCK_BASE}" "${PREK_HOOK_LOCK_BASE}"
+	_cyt_prek_cleanup_stale_locks "${PREK_LOCK_BASE}"
+	_cyt_prek_cleanup_stale_locks "${PREK_HOOK_LOCK_BASE}"
 
 	mapfile -t active < <(_cyt_prek_active_loop_lock_names "${PREK_LOCK_BASE}")
 
@@ -171,7 +248,7 @@ _cyt_prek_loop_lock() {
 		done
 	fi
 
-	PREK_LOOP_LOCK_DIR="$(_cyt_acquire_lock_dir "${lock_dir}" "prek-loop:${key}" "${PREK_LOOP_DUP_MAX_WAIT}")" || exit 1
+	PREK_LOOP_LOCK_DIR="$(_cyt_acquire_lock_dir "${lock_dir}" "prek-loop:${key}" "${PREK_LOOP_DUP_MAX_WAIT}" "${PREK_LOCK_HEARTBEAT_SECS}")" || exit 1
 	PREK_LOOP_LOCK_KEY="${key}"
 	export CYT_PREK_LOOP_LOCK_KEY="${key}"
 	echo "${key}" >"${PREK_LOOP_LOCK_DIR}/groups"
@@ -185,7 +262,7 @@ _cyt_prek_loop_unlock() {
 
 _cyt_prek_hook_lock() {
 	local hook="$1"
-	PREK_HOOK_LOCK_DIR="$(_cyt_acquire_lock_dir "${PREK_HOOK_LOCK_BASE}/${hook}" "prek-hook:${hook}" "${PREK_HOOK_LOCK_MAX_WAIT}")" || return 1
+	PREK_HOOK_LOCK_DIR="$(_cyt_acquire_lock_dir "${PREK_HOOK_LOCK_BASE}/${hook}" "prek-hook:${hook}" "${PREK_HOOK_LOCK_MAX_WAIT}" "${PREK_LOCK_HEARTBEAT_SECS}")" || return 1
 }
 
 _cyt_prek_hook_unlock() {
@@ -193,23 +270,54 @@ _cyt_prek_hook_unlock() {
 	PREK_HOOK_LOCK_DIR=""
 }
 
-_cyt_prek_git_stage_lock() {
-	PREK_GIT_STAGE_LOCK_HELD="$(_cyt_acquire_lock_dir "${PREK_GIT_STAGE_LOCK_PATH}" "prek-git-stage" "${PREK_HOOK_LOCK_MAX_WAIT}")" || return 1
+_cyt_prek_stage_after_hook() {
+	[[ ${PREK_GIT_ADD_MODE} == hook ]] || return 0
+	_cyt_prek_stage_fixes false || true
 }
 
-_cyt_prek_git_stage_unlock() {
-	_cyt_release_lock_dir "${PREK_GIT_STAGE_LOCK_HELD:-}"
-	PREK_GIT_STAGE_LOCK_HELD=""
+_cyt_prek_finish_group_staging() {
+	[[ ${PREK_GIT_ADD_MODE} == group ]] || return 0
+	_cyt_prek_stage_fixes false || true
 }
 
-_cyt_prek_stage_fixes() {
-	if $NO_GIT_ADD; then
+_cyt_prek_default_from_ref() {
+	local base=""
+	if base="$(git merge-base HEAD @{upstream} 2>/dev/null)"; then
+		printf '%s\n' "${base}"
 		return 0
 	fi
-	_cyt_prek_git_stage_lock || return 1
-	rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
-	rtk git add -A >/dev/null 2>&1 || true
-	_cyt_prek_git_stage_unlock
+	if base="$(git merge-base HEAD origin/main 2>/dev/null)"; then
+		printf '%s\n' "${base}"
+		return 0
+	fi
+	if base="$(git merge-base HEAD main 2>/dev/null)"; then
+		printf '%s\n' "${base}"
+		return 0
+	fi
+	return 1
+}
+
+_cyt_prek_resolve_from_ref() {
+	if $PREK_ALL_FILES || [[ -n ${PREK_FROM_REF} ]]; then
+		return 0
+	fi
+	if $CHANGED_ONLY; then
+		PREK_FROM_REF="$(_cyt_prek_default_from_ref || true)"
+	fi
+}
+
+_cyt_prek_hook_skipped() {
+	[[ "${PREK_STATUSES}" == Skipped* ]]
+}
+
+_cyt_prek_build_prek_cmd() {
+	local hook="$1"
+	PREK_RUN_CMD=(uv run prek run "${hook}")
+	if $PREK_ALL_FILES; then
+		PREK_RUN_CMD+=(--all-files)
+	elif [[ -n ${PREK_FROM_REF} ]]; then
+		PREK_RUN_CMD+=(--from-ref "${PREK_FROM_REF}" --to-ref "${PREK_TO_REF}")
+	fi
 }
 
 # Integration tests call real external APIs; never run them in automated hook loops.
@@ -239,6 +347,9 @@ mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | tr -d '\r' | awk '!
 	echo "No prek hooks found." >&2
 	exit 1
 }
+if ! $SHORT; then
+	echo "Discovered ${#ALL_HOOKS[@]} prek hooks." >&2
+fi
 
 declare -A ALL_HOOK_SET=()
 for hook in "${ALL_HOOKS[@]}"; do
@@ -334,12 +445,22 @@ resolve_hooks() {
 
 resolve_hooks
 
+_cyt_prek_resolve_from_ref
+
+if ! $SHORT; then
+	if ((${#SELECTED_GROUPS[@]})); then
+		echo "Acquiring loop lock for group(s): ${SELECTED_GROUPS[*]} (${#HOOKS[@]} hooks)..." >&2
+	else
+		echo "Acquiring full prek loop lock (${#HOOKS[@]} hooks)..." >&2
+	fi
+fi
+
 PREK_LOOP_LOCK_KEY="$(_cyt_prek_loop_lock_key)"
 _cyt_prek_loop_lock "${PREK_LOOP_LOCK_KEY}"
 printf '%s\n' "${HOOKS[@]}" >"${PREK_LOOP_LOCK_DIR}/hooks"
 
-trap '_cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock' EXIT
-trap '_cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock; echo; _cyt_prek_echo "Interrupted."; exit 130' INT TERM
+trap '_cyt_prek_stop_progress_watchers; _cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock' EXIT
+trap '_cyt_prek_stop_progress_watchers; _cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock; echo; _cyt_prek_echo "Interrupted."; exit 130' INT TERM
 
 if ! $SHORT; then
 	mapfile -t _prek_other_loops < <(_cyt_prek_active_loop_lock_names "${PREK_LOCK_BASE}")
@@ -355,8 +476,13 @@ mode="Prek loop"
 $SHORT && mode+=" (short)"
 $ONE_RUN && mode+=" (one run)"
 $RUN_RUNTIME && mode+=" (runtime)"
+$CHANGED_ONLY && mode+=" (changed-only)"
+$FAIL_FAST && mode+=" (fail-fast)"
 if ((${#SELECTED_GROUPS[@]})); then
 	mode+=" [${SELECTED_GROUPS[*]}]"
+fi
+if $CHANGED_ONLY && [[ -n ${PREK_FROM_REF} ]] && ! $SHORT; then
+	_cyt_prek_echo "Changed-only diff: ${PREK_FROM_REF}..${PREK_TO_REF}"
 fi
 if ! $SHORT; then
 	if $ONE_RUN; then
@@ -459,6 +585,33 @@ _run_hook_capture() {
 	return "${exit_code}"
 }
 
+_run_hook_capture_progress() {
+	local label="$1"
+	shift
+	local tmp output exit_code=0 runner_pid
+
+	# Do not wrap this function in $(...) — that captures stdout and hides live pytest lines.
+	tmp="$(mktemp "${TMPDIR:-/tmp}/prek-hook.${label}.XXXXXX")"
+	(
+		set +o pipefail
+		if command -v stdbuf >/dev/null 2>&1; then
+			stdbuf -oL -eL "$@" 2>&1 | stdbuf -oL -eL tee "${tmp}"
+		else
+			"$@" 2>&1 | tee "${tmp}"
+		fi
+		exit "${PIPESTATUS[0]}"
+	) &
+	runner_pid=$!
+	_cyt_prek_start_progress_watcher "${label}" "${runner_pid}" "" "progress" "${tmp}"
+	wait "${runner_pid}" || exit_code=$?
+	_cyt_prek_stop_progress_watchers
+	output="$(cat "${tmp}")"
+	rm -f "${tmp}"
+	PREK_HOOK_STREAMED=true
+	LAST_HOOK_RAW_OUTPUT="${output}"
+	return "${exit_code}"
+}
+
 run_hook() {
 	local hook="$1"
 	local output exit_code=0
@@ -466,6 +619,30 @@ run_hook() {
 	if ! _cyt_prek_hook_lock "${hook}"; then
 		_cyt_prek_echo_err "Timed out waiting for hook lock: ${hook}"
 		return 1
+	fi
+
+	if [[ "${hook}" == pytest-* ]]; then
+		if $SHORT; then
+			:
+		elif _cyt_prek_pytest_direct_cmd "${hook}" >/dev/null; then
+			local pytest_cmd=""
+			pytest_cmd="$(_cyt_prek_pytest_direct_cmd "${hook}")"
+			_cyt_prek_pytest_verbose_env
+			_cyt_prek_echo_err "$(_cyt_prek_pytest_hook_summary "${hook}" "${ROOT}")"
+			_cyt_prek_echo_err "[progress] heartbeats every ${PREK_PROGRESS_HEARTBEAT_SECS}s list completed tests."
+			_run_hook_capture_progress "${hook}" bash -c "cd \"${ROOT}\" && ${pytest_cmd}" || exit_code=$?
+			output="${LAST_HOOK_RAW_OUTPUT}"
+			if ((exit_code == 0)); then
+				PREK_STATUSES="Passed"
+			else
+				PREK_STATUSES="Failed"
+			fi
+			PREK_DETAILS="${output}"
+			_cyt_prek_hook_unlock
+			return "${exit_code}"
+		else
+			_cyt_prek_echo_err "Note: ${hook} may take several minutes."
+		fi
 	fi
 
 	if [[ "${hook}" == "export-rust-sbom" ]]; then
@@ -486,7 +663,8 @@ run_hook() {
 		return "${exit_code}"
 	fi
 
-	output=$(_run_hook_capture "${hook}" rtk uv run prek run "${hook}" --all-files) || exit_code=$?
+	_cyt_prek_build_prek_cmd "${hook}"
+	output=$(_run_hook_capture "${hook}" rtk "${PREK_RUN_CMD[@]}") || exit_code=$?
 	LAST_HOOK_RAW_OUTPUT="${output}"
 	if $SHORT; then
 		PREK_HOOK_STREAMED=false
@@ -494,8 +672,21 @@ run_hook() {
 		PREK_HOOK_STREAMED=true
 	fi
 	parse_prek_output "$output"
+	if $CHANGED_ONLY && _cyt_prek_hook_skipped && ((exit_code == 0)); then
+		_cyt_prek_hook_unlock
+		return 0
+	fi
 	_cyt_prek_hook_unlock
 	return "$exit_code"
+}
+
+_short_failure_details() {
+	local hook="$1"
+	local text="${PREK_DETAILS}"
+	if [[ ${hook} == pytest-* ]]; then
+		text="$(_cyt_prek_filter_hook_failure_output "${hook}" "${PREK_DETAILS}")"
+	fi
+	printf '%s\n' "${text}"
 }
 
 _hook_output_text() {
@@ -538,7 +729,7 @@ run_hook_with_retry() {
 	fi
 
 	first_details="${PREK_DETAILS}"
-	_cyt_prek_stage_fixes || true
+	_cyt_prek_stage_fixes true || true
 	if run_hook "$hook"; then
 		return 0
 	fi
@@ -576,7 +767,11 @@ while true; do
 		fi
 		if run_hook_with_retry "$hook"; then
 			passed=$((passed + 1))
-			result="Passed"
+			if $CHANGED_ONLY && _cyt_prek_hook_skipped; then
+				result="Skipped"
+			else
+				result="Passed"
+			fi
 		else
 			hook_failed=true
 			failed=$((failed + 1))
@@ -584,13 +779,38 @@ while true; do
 			result="Failed"
 		fi
 
+		if $FAIL_FAST && $hook_failed; then
+			if $SHORT && ! $loop_header_printed; then
+				if [[ -z ${CYT_PREK_QUIET_LOOP:-} ]]; then
+					_cyt_prek_echo "# LOOP $iteration"
+				fi
+				loop_header_printed=true
+			fi
+			if [[ -n $PREK_STATUSES ]]; then
+				_cyt_prek_echo "$PREK_STATUSES [$n/$total] $hook ($passed passed, $failed failed)"
+			else
+				_cyt_prek_echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
+			fi
+			if [[ -n $PREK_DETAILS ]] && ! $PREK_HOOK_STREAMED; then
+				_short_failure_details "${hook}" | "$SCRIPT_DIR/../lib/shorten-paths.sh" |
+					while IFS= read -r line; do _cyt_prek_echo "${line}"; done
+			fi
+			if [[ -z ${CYT_PREK_QUIET_LOOP:-} ]]; then
+				_cyt_prek_echo "Fail-fast: stopping after ${hook}"
+			fi
+			_cyt_prek_finish_group_staging
+			exit 1
+		fi
+
 		if $SHORT && ! $hook_failed; then
-			_cyt_prek_stage_fixes || true
+			_cyt_prek_stage_after_hook
 			continue
 		fi
 
 		if $SHORT && ! $loop_header_printed; then
-			_cyt_prek_echo "# LOOP $iteration"
+			if [[ -z ${CYT_PREK_QUIET_LOOP:-} ]]; then
+				_cyt_prek_echo "# LOOP $iteration"
+			fi
 			loop_header_printed=true
 		fi
 
@@ -600,13 +820,14 @@ while true; do
 			_cyt_prek_echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
 		fi
 		if [[ -n $PREK_DETAILS ]] && ! $PREK_HOOK_STREAMED; then
-			printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh" |
+			_short_failure_details "${hook}" | "$SCRIPT_DIR/../lib/shorten-paths.sh" |
 				while IFS= read -r line; do _cyt_prek_echo "${line}"; done
 		fi
-		_cyt_prek_stage_fixes || true
+		_cyt_prek_stage_after_hook
 	done
 
 	if ((failed == 0)); then
+		_cyt_prek_finish_group_staging
 		if ! $SHORT; then
 			_cyt_prek_echo
 			_cyt_prek_echo "Loop $iteration: $passed passed, $failed failed."
@@ -614,9 +835,12 @@ while true; do
 		fi
 		exit 0
 	fi
-	_cyt_prek_echo
-	_cyt_prek_echo "Loop $iteration: $passed passed, $failed failed."
-	_cyt_prek_echo "Failures: ${failed_hooks[*]}"
+	if [[ -z ${CYT_PREK_QUIET_LOOP:-} ]]; then
+		_cyt_prek_echo
+		_cyt_prek_echo "Loop $iteration: $passed passed, $failed failed."
+		_cyt_prek_echo "Failures: ${failed_hooks[*]}"
+	fi
+	_cyt_prek_finish_group_staging
 	if $ONE_RUN; then
 		exit 1
 	fi
