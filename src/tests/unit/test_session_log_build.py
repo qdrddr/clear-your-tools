@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from cyt.injection.session_log_build import (
     build_skill_log_entry,
@@ -424,6 +427,28 @@ def test_search_persisted_tool_entry_round_trip() -> None:
     fragment = format_entry_fragment(tool_entry)
     assert "codebase-memory-mcp_search_graph" in fragment
     assert "project" in fragment
+
+
+def test_load_skill_hash_by_source_uses_cache_skills_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import cyt.injection.session_log_build as session_log_build
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    skills_root = tmp_path / ".config" / "cyt" / "cache" / "skills"
+    skill_path = "/tmp/demo-skill/SKILL.md"
+    content_hash = "test-skill-cache-hash"
+    entry_dir = skills_root / content_hash
+    entry_dir.mkdir(parents=True)
+    (entry_dir / "metadata.json").write_text(
+        json.dumps({"source_path": skill_path}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(session_log_build, "_SKILL_HASH_BY_SOURCE", None)
+
+    index = session_log_build._load_skill_hash_by_source()
+    assert index[skill_path] == content_hash
 
 
 def test_build_verify_session_log_entries_skips_unchanged_catalog_hash() -> None:

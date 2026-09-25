@@ -561,7 +561,6 @@ def test_cli_enriches_transcript_before_post(capsys: pytest.CaptureFixture[str])
         payload = {
             "hook_event_name": "beforeSubmitPrompt",
             "transcript_path": str(transcript),
-            "prompt": "hello",
             "conversation_id": "conv-1",
             "workspace_roots": [str(workspace)],
         }

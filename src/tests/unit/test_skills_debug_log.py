@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from cyt.skills.debug_log import (
     extract_hook_payload,
-    hooks_debug_dirs,
     payload_mutations,
     split_hook_and_cyt_client,
     write_hook_debug_log,
@@ -76,6 +75,7 @@ def test_normal_mode_does_not_write_hook_debug_logs(tmp_path: Path) -> None:
 
     assert not (tmp_path / ".debug" / "hooks").exists()
     assert not _FALLBACK_DEBUG_DIR.exists()
+    assert list(_FALLBACK_DEBUG_DIR.glob("*.json")) == []
 
 
 def test_write_hook_debug_log_uses_hooks_dir_and_full_payload(tmp_path: Path) -> None:
@@ -104,7 +104,10 @@ def test_write_hook_debug_log_uses_hooks_dir_and_full_payload(tmp_path: Path) ->
         details={"stdout": {"additional_context_len": 42}},
     )
 
-    assert path.parent == hooks_debug_dirs(str(tmp_path))[0]
+    import cyt.skills.debug_log as debug_log_module
+
+    assert path.parent == debug_log_module.hooks_debug_dirs(str(tmp_path))[0]
+    assert path.parent.name == "hooks"
     entry = json.loads(path.read_text(encoding="utf-8"))
     assert entry["stdin_raw"] == hook
     assert entry["cyt_client"]["payload"] == request_payload

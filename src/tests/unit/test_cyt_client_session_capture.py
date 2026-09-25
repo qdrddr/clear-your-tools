@@ -17,6 +17,7 @@ from cyt_client.session_capture import (
     persist_cyt_mcp_search_result,
     persist_turn_to_session_log,
 )
+from cyt_client.sessions import read_session_log_file
 from cyt_client.tool_examples_capture import notify_tool_examples_capture
 from cyt_client.tool_gate import extract_post_tool_example_capture
 
@@ -76,8 +77,9 @@ def test_persist_search_result_dedupes(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr("cyt_client.session_capture.session_log_path", lambda _payload: log_path)
     assert persist_cyt_mcp_search_result(payload) is True
     assert persist_cyt_mcp_search_result(payload) is False
-    lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    assert len(lines) == 1
+    _agent, entries = read_session_log_file(log_path)
+    assert len(entries) == 1
+    assert entries[0]["kind"] == "tool_catalog"
 
 
 def _write_cyt_mcp_session(

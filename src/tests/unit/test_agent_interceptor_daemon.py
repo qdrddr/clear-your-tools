@@ -46,6 +46,7 @@ def test_run_skill_read_intercept_prunes_skill(
         },
     }
     payload = {
+        "cyt_agent": "cursor",
         "cyt_intercept_read_path": str(skill_path),
         "cyt_intercept_query": "User_Asks: Two section",
         "workspace_roots": [str(tmp_path)],

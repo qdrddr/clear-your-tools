@@ -38,6 +38,9 @@ DEFAULT_LLM_PRUNE_AGENT = "cursor"
 INTEGRATION_SKIP_REASON = (
     "integration tests are manual-only (pytest -m integration --run-integration)"
 )
+PAID_SKIP_REASON = (
+    "paid tests are manual-only (pytest -m paid --run-paid or ./scripts/local/tests/pytest-paid.sh)"
+)
 QA_SKIP_REASON = "qa tests are manual-only (pytest -m qa --run-qa or ./scripts/local/tests/pytest-category.sh qa)"
 RUNTIME_SKIP_REASON = (
     "runtime tests are manual-only (pytest -m runtime --run-runtime or "
@@ -61,6 +64,32 @@ _SKIP_TXT_TEST_MARKERS = (
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REPO_SKIP_TXT = _REPO_ROOT / ".cursor" / "cyt" / "skip.txt"
+_HOOK_DEBUG_ARTIFACT_DIRS = (
+    _REPO_ROOT / ".debug" / "hooks",
+    Path.home() / ".config" / "cyt" / "debug" / "hooks",
+)
+
+
+def _snapshot_hook_debug_files() -> dict[Path, set[Path]]:
+    snapshot: dict[Path, set[Path]] = {}
+    for directory in _HOOK_DEBUG_ARTIFACT_DIRS:
+        snapshot[directory] = set(directory.glob("*.json")) if directory.is_dir() else set()
+    return snapshot
+
+
+def _cleanup_new_hook_debug_files(before: dict[Path, set[Path]]) -> None:
+    """Remove hook debug JSON files created during a test run."""
+    for directory in _HOOK_DEBUG_ARTIFACT_DIRS:
+        if not directory.is_dir():
+            continue
+        for path in directory.glob("*.json"):
+            if path not in before.get(directory, set()):
+                path.unlink(missing_ok=True)
+        if directory.is_dir() and not any(directory.iterdir()):
+            directory.rmdir()
+            parent = directory.parent
+            if parent.name in {".debug", "debug"} and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
 
 
 def isolate_user_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
@@ -155,6 +184,29 @@ def _isolate_workspace_resolution_env(
 
 
 @pytest.fixture(autouse=True)
+def _isolate_harness_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep developer shell and prior-test CYT_LAUNCH_AGENT / harness env out of unit tests."""
+    from cyt.skills.agents import CYT_LAUNCH_AGENT_ENV
+    from cyt_client.agent import (
+        CLAUDE_CODE_ENTRYPOINT_ENV,
+        CLAUDE_PROJECT_DIR_ENV,
+        CLAUDECODE_ENV,
+        CODEX_HOME_ENV,
+        CURSOR_VERSION_ENV,
+    )
+
+    for key in (
+        CYT_LAUNCH_AGENT_ENV,
+        CODEX_HOME_ENV,
+        CURSOR_VERSION_ENV,
+        CLAUDE_PROJECT_DIR_ENV,
+        CLAUDECODE_ENV,
+        CLAUDE_CODE_ENTRYPOINT_ENV,
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _reset_cyt_client_pairing_sessions() -> Iterator[None]:
     """Pairing repair is session-scoped; clear module state between tests."""
     from cyt_client import pairing as cyt_client_pairing
@@ -199,12 +251,24 @@ def _deterministic_indexer_cache(tmp_path_factory: pytest.TempPathFactory) -> It
 
 
 @pytest.fixture(autouse=True)
-def _isolate_hook_debug_fallback_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep hook debug tests from writing to the developer's ~/.config/cyt/debug/hooks."""
+def _isolate_hook_debug_dirs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Route hook debug logs to tmp and remove any real-path test artifacts afterward."""
     import cyt.skills.debug_log as debug_log_module
 
+    before = _snapshot_hook_debug_files()
     isolated = tmp_path / "cyt-debug" / "hooks"
     monkeypatch.setattr(debug_log_module, "_FALLBACK_DEBUG_DIR", isolated)
+
+    def _isolated_hooks_debug_dirs(cwd: str | None = None) -> list[Path]:
+        del cwd
+        return [isolated]
+
+    monkeypatch.setattr(debug_log_module, "hooks_debug_dirs", _isolated_hooks_debug_dirs)
+    yield
+    _cleanup_new_hook_debug_files(before)
 
 
 @pytest.fixture(autouse=True)
@@ -462,6 +526,13 @@ def _integration_tests_enabled(config: pytest.Config) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _paid_tests_enabled(config: pytest.Config) -> bool:
+    if config.getoption("--run-paid", default=False):
+        return True
+    value = os.environ.get("CYT_RUN_PAID_TESTS", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _qa_tests_enabled(config: pytest.Config) -> bool:
     if config.getoption("--run-qa", default=False):
         return True
@@ -495,6 +566,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="run tests marked integration that call real external APIs",
+    )
+    parser.addoption(
+        "--run-paid",
+        action="store_true",
+        default=False,
+        help="run tests marked paid that call billable LLM/reranking APIs",
     )
     parser.addoption(
         "--run-qa",
@@ -543,25 +620,50 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
         err.flush()
 
 
+def _skip_marked_items(
+    items: list[pytest.Item],
+    *,
+    marker: str,
+    reason: str,
+    enabled: bool,
+) -> None:
+    if enabled:
+        return
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if item.get_closest_marker(marker):
+            item.add_marker(skip)
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    if not _integration_tests_enabled(config):
-        skip = pytest.mark.skip(reason=INTEGRATION_SKIP_REASON)
-        for item in items:
-            if item.get_closest_marker("integration"):
-                item.add_marker(skip)
-    if not _qa_tests_enabled(config):
-        skip = pytest.mark.skip(reason=QA_SKIP_REASON)
-        for item in items:
-            if item.get_closest_marker("qa"):
-                item.add_marker(skip)
-    if not _runtime_tests_enabled(config):
-        skip = pytest.mark.skip(reason=RUNTIME_SKIP_REASON)
-        for item in items:
-            if item.get_closest_marker("runtime"):
-                item.add_marker(skip)
+    _skip_marked_items(
+        items,
+        marker="integration",
+        reason=INTEGRATION_SKIP_REASON,
+        enabled=_integration_tests_enabled(config),
+    )
+    _skip_marked_items(
+        items,
+        marker="paid",
+        reason=PAID_SKIP_REASON,
+        enabled=_paid_tests_enabled(config),
+    )
+    _skip_marked_items(
+        items,
+        marker="qa",
+        reason=QA_SKIP_REASON,
+        enabled=_qa_tests_enabled(config),
+    )
+    _skip_marked_items(
+        items,
+        marker="runtime",
+        reason=RUNTIME_SKIP_REASON,
+        enabled=_runtime_tests_enabled(config),
+    )
 
 
 pytest_plugins = [
+    "tests.support.cache_layout_consolidation_fixtures",
     "tests.support.db_maintenance_fixtures",
     "tests.support.empty_home_cache_bootstrap_fixtures",
     "tests.support.inject_preview_fixtures",

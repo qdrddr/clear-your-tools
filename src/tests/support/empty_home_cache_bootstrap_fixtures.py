@@ -22,6 +22,7 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     register_ws_catalog,
     reset_catalog_state,
 )
+from tests.support.hook_fixture_packs import HookCatalogPack, HookWorkspacePack
 from tests.support.permissions_gate_fixtures import patch_global_config_path
 from tests.support.tiers_stats_fixtures import SKILLS_SOURCE_ROOT, patch_cyt_mcp_paths
 
@@ -172,7 +173,7 @@ def _fast_registry_wait_hook_config(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def scoped_hook_config(pack: EmptyHomeFixturePack) -> dict[str, Any]:
+def scoped_hook_config(pack: HookWorkspacePack) -> dict[str, Any]:
     config = load_config(pack.global_config_path)
     return _fast_registry_wait_hook_config(set_hook_workspace_in_config(config, pack.workspace))
 
@@ -215,7 +216,7 @@ def assert_empty_cyt_cache(pack: EmptyHomeFixturePack) -> None:
 
 
 def simulate_cyt_mcp_push(
-    pack: EmptyHomeFixturePack,
+    pack: HookCatalogPack,
     tools: list[dict[str, Any]] | None = None,
 ) -> None:
     """Mirror cyt-mcp push: registry snapshot + disk envelope + master rebuild."""
@@ -235,7 +236,7 @@ def clear_in_memory_hook_catalog_caches() -> None:
         _catalog_states.clear()
 
 
-def simulate_daemon_warm(pack: EmptyHomeFixturePack) -> None:
+def simulate_daemon_warm(pack: HookCatalogPack) -> None:
     """Clear in-memory caches then run the same warm path as hook daemon/proxy startup."""
     from cyt.cache import warm_caches
 

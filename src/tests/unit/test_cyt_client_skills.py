@@ -354,7 +354,6 @@ def test_enrich_hook_payload_adds_transcript_and_skills(monkeypatch: pytest.Monk
             "hook_event_name": "UserPromptSubmit",
             "cwd": str(project),
             "transcript_path": str(transcript),
-            "prompt": "hello",
         }
         enriched = json.loads(enrich_hook_payload(json.dumps(payload).encode()))
         assert enriched["cyt_transcript"] == [{"id": 1}]

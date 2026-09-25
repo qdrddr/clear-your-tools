@@ -11,13 +11,13 @@ Two paths, both without a running hook daemon or ``cyt-client`` HTTP:
 
 Gherkin equivalents: ``src/tests/integration/gherkin/features/llm_prune.feature``.
 
-Run integration scenarios (requires configured pruning LLM + API keys):
+Run paid LLM scenarios (requires configured pruning LLM + API keys):
     OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+    ./scripts/local/tests/pytest-paid.sh -s
 
-    uv run pytest src/tests/integration/test_llm_prune_integration.py --run-integration -s
-
-Normal ``pytest`` runs skip integration tests by default. Opt in with ``--run-integration``
-or ``CYT_RUN_INTEGRATION_TESTS=1``.
+Normal ``pytest`` / prek-loop runs skip ``@pytest.mark.paid`` tests. Opt in with
+``--run-paid`` and ``--run-integration`` (or ``CYT_RUN_PAID_TESTS=1``).
+``--run-integration`` alone does **not** run paid tests.
 
 Run one scenario from the CLI:
 
@@ -125,12 +125,12 @@ _HARNESS_ENV_VARS = (
 )
 
 DEFAULT_TOOL_JSON = Path(
-    "~/.config/cyt/tools/entries/"
+    "~/.config/cyt/cache/tools/"
     "f913b7ff3274a796c120a5259cee62001e23d268411b923a77d203a3a837bd10/"  # pragma: allowlist secret
     "schemas/decomposed/tools.context7_mcp.org.localcontext7mcp.resolve_library_id.json",
 )
 DEFAULT_SKILL_ENTRY_DIR = Path(
-    "~/.config/cyt/skills/entries/"
+    "~/.config/cyt/cache/skills/"
     "4b4fecc8233152c00af6da0278fd66ed0c00f5d380ca7148cbcd3861f27723a3",  # pragma: allowlist secret
 )
 DEFAULT_SKILL_NODE_ID = 7
@@ -1187,6 +1187,7 @@ def test_plan_selector_bulks_reports_budget_per_bulk() -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.paid
 @pytest.mark.parametrize("mode", ["tools", "skills", "combined"])
 def test_llm_prune_integration(
     mode: ScenarioMode,
@@ -1254,6 +1255,7 @@ def test_llm_prune_integration(
 
 
 @pytest.mark.integration
+@pytest.mark.paid
 def test_llm_prune_integration_real(
     tmp_path: Path,
     request: pytest.FixtureRequest,

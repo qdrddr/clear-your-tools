@@ -166,7 +166,9 @@ def test_anthropic_user_prompt_resolves_model_from_transcript(
         finally:
             db.close()
 
-        assert not (root / ".debug" / "skills").exists()
+        import cyt.skills.debug_log as debug_log_module
+
+        assert list(debug_log_module.hooks_debug_dirs()[0].glob("*.json"))
 
 
 def test_nested_payload_user_prompt_submit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -236,7 +238,9 @@ def test_session_start_is_ignored_without_output(monkeypatch: pytest.MonkeyPatch
             skills_cli.run(debug=True)
 
         assert stdout.getvalue() == ""
-        assert not (root / ".debug" / "skills").exists()
+        import cyt.skills.debug_log as debug_log_module
+
+        assert list(debug_log_module.hooks_debug_dirs()[0].glob("*.json"))
 
 
 def test_user_prompt_emits_json_hook_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -318,7 +322,9 @@ def test_codex_user_prompt_uses_payload_model_without_session_start(
         finally:
             db.close()
 
-        assert not (root / ".debug" / "skills").exists()
+        import cyt.skills.debug_log as debug_log_module
+
+        assert list(debug_log_module.hooks_debug_dirs()[0].glob("*.json"))
 
         output = json.loads(stdout.getvalue())
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
@@ -492,7 +498,10 @@ def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) 
         stdout = StringIO()
         monkeypatch.setattr("sys.stdout", stdout)
 
-        config = {"skills": {"enabled": False}}
+        config = {
+            "skills": {"enabled": False},
+            "pruning": {"tools": {"enabled": False}},
+        }
         from cyt.hook.daemon import HookDaemonStartResult
 
         with (
@@ -510,7 +519,9 @@ def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) 
         ):
             skills_cli.run(debug=True)
 
-        assert not (root / ".debug" / "skills").exists()
+        import cyt.skills.debug_log as debug_log_module
+
+        assert not list(debug_log_module.hooks_debug_dirs()[0].glob("*.json"))
 
 
 def test_hook_stdin_debug_writes_db_without_terminal_logs(
@@ -550,7 +561,9 @@ def test_hook_stdin_debug_writes_db_without_terminal_logs(
             json.loads(stdout.getvalue())["hookSpecificOutput"]["hookEventName"]
             == "UserPromptSubmit"
         )
-        assert not (root / ".debug" / "skills").exists()
+        import cyt.skills.debug_log as debug_log_module
+
+        assert list(debug_log_module.hooks_debug_dirs()[0].glob("*.json"))
 
         from cyt.proxy.stats import StatsDB
 

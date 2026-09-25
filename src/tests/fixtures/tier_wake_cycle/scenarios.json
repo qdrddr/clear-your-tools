@@ -176,7 +176,7 @@
       "id": "persist_after_increment",
       "initial_wake_cycle_id": 41,
       "expected_after_begin": 42,
-      "persisted_to_disk": true
+      "persisted_to_disk": false
     },
     {
       "id": "sleep_idle_t1_before_increment",

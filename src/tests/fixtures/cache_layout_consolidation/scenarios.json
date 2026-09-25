@@ -1,0 +1,38 @@
+{
+  "expected_cache_paths": {
+    "tools_dir": "~/.config/cyt/cache/tools",
+    "skills_dir": "~/.config/cyt/cache/skills",
+    "bm25_dir": "~/.config/cyt/cache/bm25"
+  },
+  "legacy_path_fragments": [
+    "/entries/"
+  ],
+  "phase_timing_marker": "cyt: phase timing total=",
+  "skill_fixture_name": "create-hook.md",
+  "scenarios": [
+    {
+      "id": "flat_tool_cache_on_disk",
+      "description": "decomposed tool catalog writes content-hash dirs directly under cache/tools"
+    },
+    {
+      "id": "flat_skills_cache_on_disk",
+      "description": "skills registry writes content-hash dirs directly under cache/skills"
+    },
+    {
+      "id": "legacy_registry_snapshot_compacted",
+      "description": "loading legacy registry snapshot rewrites registrations.json to valid entries only"
+    },
+    {
+      "id": "inject_preview_verbose_phase_timing",
+      "description": "inject preview --verbose prints phase timing breakdown on stderr"
+    },
+    {
+      "id": "cache_clear_tools_removes_disk",
+      "description": "cyt cache clear --tools removes consolidated tools cache directory"
+    },
+    {
+      "id": "warm_after_push_uses_consolidated_paths",
+      "description": "daemon warm after cyt-mcp push hydrates catalog without legacy entries layout"
+    }
+  ]
+}

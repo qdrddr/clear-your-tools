@@ -324,7 +324,7 @@ def test_disk_snapshot_drops_legacy_global_entries(
     monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE", snapshot_file)
 
     assert load_catalog_registry_from_disk(mark_stale=True) == 0
-    assert not snapshot_file.is_file()
+    assert json.loads(snapshot_file.read_text(encoding="utf-8")) == []
 
 
 def test_disk_snapshot_purges_entries_missing_catalog_layer(
@@ -360,4 +360,56 @@ def test_disk_snapshot_purges_entries_missing_catalog_layer(
     monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE", snapshot_file)
 
     assert load_catalog_registry_from_disk(mark_stale=True) == 0
-    assert not snapshot_file.is_file()
+    assert json.loads(snapshot_file.read_text(encoding="utf-8")) == []
+
+
+def test_disk_snapshot_compaction_preserves_valid_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    snapshot_dir = tmp_path / "catalog-registry"
+    snapshot_dir.mkdir()
+    snapshot_file = snapshot_dir / "registrations.json"
+    tools = [{"name": "current_tool", "input_schema": {}}]
+    content_hash = raw_catalog_content_hash(tools)
+    valid_entry = {
+        "agent": "cursor",
+        "scope": "workspace",
+        "workspace_root": str(ws_root.resolve()),
+        "catalog_layer": "ws",
+        "tools": tools,
+        "content_hash": content_hash,
+        "instance_id": "pid:current",
+        "registered_at": 1.0,
+        "last_seen_at": 1.0,
+        "stale": False,
+    }
+    snapshot_file.write_text(
+        json.dumps(
+            [
+                valid_entry,
+                {
+                    "agent": "cursor",
+                    "scope": "global",
+                    "workspace_root": None,
+                    "tools": [{"name": "legacy_tool", "input_schema": {}}],
+                    "content_hash": "deadbeef",
+                    "instance_id": "pid:old",
+                    "registered_at": 1.0,
+                    "last_seen_at": 1.0,
+                    "stale": False,
+                },
+            ],
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_DIR", snapshot_dir)
+    monkeypatch.setattr("cyt.hook.catalog_registry.REGISTRY_SNAPSHOT_FILE", snapshot_file)
+
+    assert load_catalog_registry_from_disk(mark_stale=True) == 1
+    compact = json.loads(snapshot_file.read_text(encoding="utf-8"))
+    assert len(compact) == 1
+    assert compact[0]["catalog_layer"] == "ws"
+    assert {tool["name"] for tool in compact[0]["tools"]} == {"current_tool"}

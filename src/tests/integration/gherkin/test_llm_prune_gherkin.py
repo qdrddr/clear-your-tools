@@ -24,7 +24,7 @@ from tests.unit.gherkin.conftest import GherkinContext
 FEATURES = Path(__file__).resolve().parent / "features" / "llm_prune.feature"
 scenarios(str(FEATURES))
 
-pytestmark = [pytest.mark.integration, pytest.mark.gherkin]
+pytestmark = [pytest.mark.integration, pytest.mark.paid, pytest.mark.gherkin]
 
 
 def _parse_scenario_mode(raw: str) -> ScenarioMode:

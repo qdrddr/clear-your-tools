@@ -16,12 +16,14 @@ from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.injection.session_log_build import build_tool_log_entry
 from cyt.tools.master_catalog import clear_master_catalog_cache, rebuild_master_catalog
 from cyt_core.types.prune import PruneResult
+from tests.support.hook_fixture_packs import HookCatalogPack, HookWorkspacePack
 from tests.support.permissions_gate_fixtures import patch_global_config_path
 from tests.support.tiers_stats_fixtures import patch_cyt_mcp_paths
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "inject_preview"
 CATALOG_TOOLS_PATH = FIXTURES_ROOT / "catalog_tools.json"
 SCENARIOS_PATH = FIXTURES_ROOT / "scenarios.json"
+
 
 GLOBAL_HOOK_CONFIG = """\
 pruning:
@@ -160,12 +162,12 @@ def materialize_fixture_pack(tmp_path: Path) -> InjectPreviewFixturePack:
     )
 
 
-def scoped_hook_config(pack: InjectPreviewFixturePack) -> dict[str, Any]:
+def scoped_hook_config(pack: HookWorkspacePack) -> dict[str, Any]:
     config = load_config(pack.global_config_path)
     return set_hook_workspace_in_config(config, pack.workspace)
 
 
-def seed_workspace_disk_catalog(pack: InjectPreviewFixturePack) -> None:
+def seed_workspace_disk_catalog(pack: HookCatalogPack) -> None:
     apply_fetched_catalog(scoped_hook_config(pack), pack.tools)
     rebuild_master_catalog(scoped_hook_config(pack), blocking=True)
 
@@ -198,23 +200,51 @@ def patch_preview_prune_all_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return every catalog tool from preview prune so session gating is isolated."""
     from tests.support.injection_tier import stamp_tools_tier
 
-    def _all_tools(
-        tools: list[dict[str, Any]],
+    def _all_tools_coordinated(
         query: str,
+        config: dict[str, Any],
+        *,
+        payload: dict[str, Any] | None = None,
+        skills_allowed: bool = True,
+        tools_allowed: bool = True,
+        skills_max_tokens: int | None = None,
+        io_guarded: bool = False,
+        pruner_settings: object | None = None,
+        log_token_counts: bool = True,
         **kwargs: object,
-    ) -> PruneResult:
-        count = len(tools)
-        return PruneResult(
-            tools=stamp_tools_tier(list(tools)),
-            status="applied",
-            query=query,
-            tools_in=count,
-            mcp_tools_in=count,
-            tools_out=count,
-            error=None,
-        )
+    ) -> tuple[
+        PruneResult | None,
+        list[Any] | None,
+        list[dict[str, Any]] | None,
+        dict[str, PruneResult],
+        dict[str, Any],
+    ]:
+        from cyt.tools.master_catalog import get_master_tool_catalog
 
-    monkeypatch.setattr("cyt.tools.inject_cli.filter_tools_for_query", _all_tools)
+        catalog = get_master_tool_catalog(config, blocking=True) or []
+        prune_results: dict[str, PruneResult] = {}
+        for source in ("cyt_mcp", "mcpc", "cloudflare", "executor", "definitions"):
+            tools = [
+                tool for tool in catalog if str(tool.get("cyt_catalog_source") or "") == source
+            ]
+            if not tools:
+                continue
+            count = len(tools)
+            prune_results[source] = PruneResult(
+                tools=stamp_tools_tier(list(tools)),
+                status="applied",
+                query=query,
+                tools_in=count,
+                mcp_tools_in=count,
+                tools_out=count,
+                error=None,
+            )
+        return None, None, catalog, prune_results, {"total_ms": 0, "phases": []}
+
+    monkeypatch.setattr(
+        "cyt.pruning.hook_bridge.run_hook_coordinated_prune",
+        _all_tools_coordinated,
+    )
 
 
 def json_payload_from_stdout(text: str) -> dict[str, Any]:
@@ -230,7 +260,7 @@ def json_payload_from_stdout(text: str) -> dict[str, Any]:
 
 def patch_inject_preview_environment(
     monkeypatch: pytest.MonkeyPatch,
-    pack: InjectPreviewFixturePack,
+    pack: HookCatalogPack,
 ) -> None:
     patch_cyt_mcp_paths(monkeypatch, pack)
     patch_global_config_path(monkeypatch, pack)
