@@ -215,9 +215,9 @@ if [[ -z "${branch}" ]]; then
 fi
 
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"
-"${ROOT}/scripts/local/dev/heal-cargo-lock.sh"
 bash "${ROOT}/scripts/deps/export-requirements.sh"
 bash "${ROOT}/scripts/deps/export-rust-sbom.sh"
+"${ROOT}/scripts/local/dev/heal-cargo-lock.sh"
 
 stage_version_files
 if git diff --cached --quiet; then
