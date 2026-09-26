@@ -184,14 +184,29 @@ def _upsert_entry(entry: _CatalogRegistration) -> None:
 
 
 def _remove_entry(key: tuple[str, str, str, str], *, instance_id: str | None = None) -> bool:
-    with _registry_lock:
-        existing = _registrations.get(key)
-        if existing is None:
-            return False
-        if instance_id and existing.instance_id != instance_id:
-            return False
-        del _registrations[key]
-    _persist_registry_snapshot_blocking()
+    global _snapshot_generation
+    if not _snapshot_idle.wait(timeout=5.0):
+        logger.warning(
+            "catalog registry snapshot flush timed out waiting for async write",
+        )
+    with _snapshot_write_lock:
+        _snapshot_generation += 1
+        generation = _snapshot_generation
+    with _snapshot_file_lock:
+        with _registry_lock:
+            existing = _registrations.get(key)
+            if existing is None:
+                return False
+            if instance_id and existing.instance_id != instance_id:
+                return False
+            del _registrations[key]
+            payload = [_registration_to_dict(entry) for entry in _registrations.values()]
+        with _snapshot_write_lock:
+            if generation == _snapshot_generation:
+                try:
+                    _write_registry_snapshot_file(payload)
+                except OSError as exc:
+                    logger.warning("catalog registry snapshot write failed: %s", exc)
     return True
 
 
@@ -230,6 +245,20 @@ def _registry_snapshot_payload_locked() -> list[dict[str, Any]]:
         return [_registration_to_dict(entry) for entry in _registrations.values()]
 
 
+def _try_write_registry_snapshot(payload: list[dict[str, Any]], *, generation: int) -> bool:
+    """Persist snapshot when ``generation`` is still current (check spans the write)."""
+    with _snapshot_file_lock:
+        with _snapshot_write_lock:
+            if generation != _snapshot_generation:
+                return False
+            try:
+                _write_registry_snapshot_file(payload)
+            except OSError as exc:
+                logger.warning("catalog registry snapshot write failed: %s", exc)
+                return False
+    return True
+
+
 def _write_snapshot_async() -> None:
     global _snapshot_pending
     _snapshot_idle.clear()
@@ -238,15 +267,8 @@ def _write_snapshot_async() -> None:
             with _snapshot_write_lock:
                 generation = _snapshot_generation
             payload = _registry_snapshot_payload_locked()
-            with _snapshot_file_lock:
-                with _snapshot_write_lock:
-                    if generation != _snapshot_generation:
-                        continue
-                try:
-                    _write_registry_snapshot_file(payload)
-                except OSError as exc:
-                    logger.warning("catalog registry snapshot write failed: %s", exc)
-                    return
+            if not _try_write_registry_snapshot(payload, generation=generation):
+                continue
             with _snapshot_write_lock:
                 if generation == _snapshot_generation:
                     break
@@ -256,8 +278,12 @@ def _write_snapshot_async() -> None:
         _snapshot_idle.set()
 
 
-def _persist_registry_snapshot_blocking(*, wait_timeout: float = 5.0) -> None:
-    """Write the current registry snapshot, waiting for in-flight async writers."""
+def _persist_registry_snapshot_payload(
+    payload: list[dict[str, Any]],
+    *,
+    wait_timeout: float = 5.0,
+) -> None:
+    """Write an exact registry snapshot, waiting for in-flight async writers."""
     global _snapshot_generation
     if not _snapshot_idle.wait(timeout=wait_timeout):
         logger.warning(
@@ -266,16 +292,18 @@ def _persist_registry_snapshot_blocking(*, wait_timeout: float = 5.0) -> None:
     with _snapshot_write_lock:
         _snapshot_generation += 1
         generation = _snapshot_generation
-    payload = _registry_snapshot_payload_locked()
-    with _snapshot_file_lock:
+    while not _try_write_registry_snapshot(payload, generation=generation):
         with _snapshot_write_lock:
-            if generation != _snapshot_generation:
-                generation = _snapshot_generation
-                payload = _registry_snapshot_payload_locked()
-        try:
-            _write_registry_snapshot_file(payload)
-        except OSError as exc:
-            logger.warning("catalog registry snapshot write failed: %s", exc)
+            _snapshot_generation += 1
+            generation = _snapshot_generation
+
+
+def _persist_registry_snapshot_blocking(*, wait_timeout: float = 5.0) -> None:
+    """Write the current registry snapshot, waiting for in-flight async writers."""
+    _persist_registry_snapshot_payload(
+        _registry_snapshot_payload_locked(),
+        wait_timeout=wait_timeout,
+    )
 
 
 def _compact_registry_snapshot_entries(raw: list[Any]) -> list[dict[str, Any]]:
@@ -324,35 +352,36 @@ def _migrate_registry_snapshot_file(raw: list[Any]) -> list[dict[str, Any]]:
 
 def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
     """Load registry snapshot; return count loaded. Compacts legacy rows on first read."""
-    if not REGISTRY_SNAPSHOT_FILE.is_file():
-        return 0
-    try:
-        raw = json.loads(REGISTRY_SNAPSHOT_FILE.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        logger.warning("catalog registry snapshot read failed: %s", exc)
-        return 0
-    if not isinstance(raw, list):
-        return 0
-    compact = _migrate_registry_snapshot_file(raw)
-    loaded = 0
-    now = time.monotonic()
-    for item in compact:
-        entry = _entry_from_dict(item)
-        if entry is None:
-            continue
-        if mark_stale:
-            entry.stale = True
-        entry.last_seen_at = now
-        key = _registry_key(entry.agent, entry.workspace_root or None, entry.catalog_layer)
-        with _registry_lock:
-            existing = _registrations.get(key)
-            # Disk snapshots are stale fallbacks; never clobber a live in-process push.
-            if existing is not None and not existing.stale:
+    with _snapshot_file_lock:
+        if not REGISTRY_SNAPSHOT_FILE.is_file():
+            return 0
+        try:
+            raw = json.loads(REGISTRY_SNAPSHOT_FILE.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            logger.warning("catalog registry snapshot read failed: %s", exc)
+            return 0
+        if not isinstance(raw, list):
+            return 0
+        compact = _migrate_registry_snapshot_file(raw)
+        loaded = 0
+        now = time.monotonic()
+        for item in compact:
+            entry = _entry_from_dict(item)
+            if entry is None:
                 continue
-            _registrations[key] = entry
-        loaded += 1
-    logger.info("catalog registry loaded %d entries from disk (stale=%s)", loaded, mark_stale)
-    return loaded
+            if mark_stale:
+                entry.stale = True
+            entry.last_seen_at = now
+            key = _registry_key(entry.agent, entry.workspace_root or None, entry.catalog_layer)
+            with _registry_lock:
+                existing = _registrations.get(key)
+                # Disk snapshots are stale fallbacks; never clobber a live in-process push.
+                if existing is not None and not existing.stale:
+                    continue
+                _registrations[key] = entry
+            loaded += 1
+        logger.info("catalog registry loaded %d entries from disk (stale=%s)", loaded, mark_stale)
+        return loaded
 
 
 def clear_catalog_registry(*, purge_disk_snapshot: bool = True) -> None:
@@ -713,15 +742,32 @@ def merge_catalog_for_hook(
 
 def prune_expired_registrations() -> int:
     """Remove entries that exceeded TTL and are not stale fallbacks."""
+    global _snapshot_generation
     now = time.monotonic()
-    removed = 0
-    with _registry_lock:
-        keys_to_remove = [
-            key
-            for key, entry in _registrations.items()
-            if not entry.stale and now - entry.last_seen_at > REGISTRY_TTL_SECONDS
-        ]
-        for key in keys_to_remove:
-            del _registrations[key]
-            removed += 1
+    if not _snapshot_idle.wait(timeout=5.0):
+        logger.warning(
+            "catalog registry snapshot flush timed out waiting for async write",
+        )
+    with _snapshot_write_lock:
+        _snapshot_generation += 1
+        generation = _snapshot_generation
+    with _snapshot_file_lock:
+        with _registry_lock:
+            keys_to_remove = [
+                key
+                for key, entry in _registrations.items()
+                if not entry.stale and now - entry.last_seen_at > REGISTRY_TTL_SECONDS
+            ]
+            removed = len(keys_to_remove)
+            if not removed:
+                return 0
+            for key in keys_to_remove:
+                del _registrations[key]
+            payload = [_registration_to_dict(entry) for entry in _registrations.values()]
+        with _snapshot_write_lock:
+            if generation == _snapshot_generation:
+                try:
+                    _write_registry_snapshot_file(payload)
+                except OSError as exc:
+                    logger.warning("catalog registry snapshot write failed: %s", exc)
     return removed
