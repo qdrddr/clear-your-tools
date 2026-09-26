@@ -21,10 +21,7 @@ def _stdio_config() -> AggregatorConfig:
 
 
 def _mock_coordinator() -> MagicMock:
-    coordinator = MagicMock()
-    coordinator.offerings_cache.get.return_value = None
-    coordinator.offerings_cache.schedule_refresh_once.return_value = None
-    return coordinator
+    return MagicMock()
 
 
 def test_run_server_stdio_uses_run_async() -> None:
@@ -42,8 +39,6 @@ def test_run_server_stdio_uses_run_async() -> None:
     with (
         patch("cyt_mcp.cli.build_aggregator") as build,
         patch("cyt_mcp.catalog_build.hydrate_runtime_cache", return_value=False),
-        patch("cyt_mcp.catalog_build.hydrate_offerings_cache", return_value=False),
-        patch("cyt_mcp.catalog_build.offerings_runtime_key", return_value="usr-key"),
         patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=_refresh),
         patch("cyt_mcp.hook_daemon_push.register_push_context"),
         patch("cyt_mcp.hook_daemon_push.deregister_catalog_push"),
@@ -60,7 +55,6 @@ def test_run_server_stdio_uses_run_async() -> None:
 def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
     config = _stdio_config()
     refresh_calls: list[str] = []
-    offerings_scheduled: list[str] = []
 
     def _hydrate_warm(cache: RuntimeToolCache, _config: object) -> None:
         cache.replace([{"name": "tool-a"}])
@@ -72,27 +66,19 @@ def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
     async def _run_async(*_args: object, **_kwargs: object) -> None:
         await asyncio.sleep(0.01)
 
-    coordinator = _mock_coordinator()
-    coordinator.offerings_cache.schedule_refresh_once.side_effect = lambda **kwargs: (
-        offerings_scheduled.append(str(kwargs.get("runtime_key")))
-    )
-
     with (
         patch("cyt_mcp.cli.build_aggregator") as build,
         patch("cyt_mcp.catalog_build.hydrate_runtime_cache", side_effect=_hydrate_warm),
-        patch("cyt_mcp.catalog_build.hydrate_offerings_cache", return_value=False),
-        patch("cyt_mcp.catalog_build.offerings_runtime_key", return_value="usr-key"),
         patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=_refresh),
         patch("cyt_mcp.hook_daemon_push.register_push_context"),
         patch("cyt_mcp.hook_daemon_push.deregister_catalog_push"),
     ):
         server = AsyncMock()
-        build.return_value = (server, None, coordinator)
+        build.return_value = (server, None, _mock_coordinator())
         server.run_async = AsyncMock(side_effect=_run_async)
         result = asyncio.run(_run_server(config))
     assert result == 0
     assert refresh_calls == []
-    assert offerings_scheduled == ["usr-key"]
 
 
 def test_run_search_wires_refresh_and_lookup(
@@ -286,8 +272,6 @@ def test_run_server_skips_pairing_when_skip_txt_present(
 
     with (
         patch("cyt_mcp.cli.build_aggregator") as build,
-        patch("cyt_mcp.catalog_build.hydrate_offerings_cache", return_value=False),
-        patch("cyt_mcp.catalog_build.offerings_runtime_key", return_value="usr-key"),
         patch("cyt_mcp.cli.refresh_runtime_cache", new_callable=AsyncMock),
         patch("cyt_client.pairing.repair_pairing_from_mcp_runtime") as repair,
     ):

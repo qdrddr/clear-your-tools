@@ -159,17 +159,6 @@ class ToolListChangedMiddleware(Middleware):
             except Exception as exc:
                 logger.warning("cyt-mcp: failed to send tools/list_changed: %s", exc)
 
-    async def notify_all_sessions_offerings_changed(self) -> None:
-        """Notify every live MCP session that prompts/resources changed."""
-        sessions = list(self._sessions.values())
-        for session in sessions:
-            try:
-                await session.send_resource_list_changed()
-                await session.send_prompt_list_changed()
-                logger.info("cyt-mcp: sent notifications/resources+prompts/list_changed")
-            except Exception as exc:
-                logger.warning("cyt-mcp: failed to send offerings list_changed: %s", exc)
-
 
 async def notify_all_sessions_list_changed(middleware: ToolListChangedMiddleware) -> None:
     """Notify every live MCP session that the tool list changed."""

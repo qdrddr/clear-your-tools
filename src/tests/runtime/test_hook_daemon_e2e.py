@@ -88,7 +88,9 @@ def test_hook_daemon_live_tiers(
         prompt="run javascript in sandbox execute code summarize output",
     )
     with hook_daemon(workspace.config_path) as daemon:
-        response = daemon.post_hook(payload)
+        # Live-tier promotion runs BM25 + background tier work; allow extra headroom
+        # beyond the default hook client timeout used by lighter daemon scenarios.
+        response = daemon.post_hook(payload, timeout=90.0)
 
     assert response.status_code == 200
     text = response.text

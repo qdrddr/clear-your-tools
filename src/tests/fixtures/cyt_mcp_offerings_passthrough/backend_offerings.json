@@ -1,0 +1,23 @@
+{
+  "server_key": "gitnexus",
+  "prompts": [
+    {
+      "name": "review",
+      "description": "Review code changes"
+    }
+  ],
+  "resources": [
+    {
+      "uri": "gitnexus://repo/demo",
+      "name": "demo",
+      "description": "Demo process graph"
+    }
+  ],
+  "resource_templates": [
+    {
+      "uri_template": "gitnexus://repo/{name}",
+      "name": "repo-template",
+      "description": "Repo-scoped resource template"
+    }
+  ]
+}

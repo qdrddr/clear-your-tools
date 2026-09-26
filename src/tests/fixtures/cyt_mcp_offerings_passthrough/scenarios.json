@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    {
+      "id": "cold_start_list_prompts",
+      "method": "prompts/list",
+      "expected_prompt_names": ["gitnexus_review"]
+    },
+    {
+      "id": "cold_start_list_resources",
+      "method": "resources/list",
+      "expected_resource_uris": ["gitnexus://gitnexus/repo/demo"]
+    },
+    {
+      "id": "cold_start_list_resource_templates",
+      "method": "resources/templates/list",
+      "expected_template_names": ["repo-template"]
+    },
+    {
+      "id": "tools_list_still_stubbed",
+      "method": "tools/list",
+      "cached_tool_name": "gitnexus_cypher",
+      "expects_call_next": false
+    }
+  ]
+}

@@ -18,7 +18,6 @@ from cyt_mcp.backends import ensure_backend_servers_mounted, mounted_backend_ser
 from cyt_mcp.catalog_build import hydrate_runtime_cache, refresh_catalog_cache
 from cyt_mcp.config import AggregatorConfig, load_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
-from cyt_mcp.offerings_cache import OfferingsCache
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.tool_identity import tool_name_allowed_for_servers
 
@@ -122,7 +121,6 @@ class MultiWorkspaceCoordinator:
         self._session_bindings: dict[str, str] = {}
         self._mounted_servers: set[str] = set()
         self._background_tasks: set[asyncio.Task[None]] = set()
-        self._offerings_cache = OfferingsCache()
         bootstrap_key = self._runtime_key(bootstrap.workspace_root)
         if bootstrap_key is not None:
             self._runtimes[bootstrap_key] = bootstrap
@@ -134,10 +132,6 @@ class MultiWorkspaceCoordinator:
     @property
     def server(self) -> FastMCP:
         return self._server
-
-    @property
-    def offerings_cache(self) -> OfferingsCache:
-        return self._offerings_cache
 
     @staticmethod
     def _runtime_key(workspace_root: Path | None) -> str | None:
@@ -227,28 +221,6 @@ class MultiWorkspaceCoordinator:
         async def _background_runtime_refresh() -> None:
             try:
                 await refresh_catalog_cache(self._server, cache, config)
-                from cyt_mcp.catalog_build import (
-                    disk_catalog_slug_for_config,
-                    offerings_runtime_key,
-                )
-
-                offerings_key = offerings_runtime_key(config)
-                if offerings_key is not None:
-
-                    async def _refresh_offerings() -> None:
-                        await self._offerings_cache.refresh_from_server(
-                            self._server,
-                            runtime_key=offerings_key,
-                            mcp_servers=config.mcp_servers,
-                            ensure_mounted=self.ensure_backends_mounted,
-                            disk_slug=disk_catalog_slug_for_config(config),
-                        )
-
-                    self._offerings_cache.schedule_refresh_once(
-                        runtime_key=offerings_key,
-                        delay_s=0.0,
-                        coro_factory=_refresh_offerings,
-                    )
                 from cyt_mcp.hook_daemon_push import _instance_key, _push_contexts
                 from cyt_mcp.tool_list_notify import notify_all_sessions_list_changed
 

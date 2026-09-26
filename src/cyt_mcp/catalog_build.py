@@ -11,7 +11,6 @@ from fastmcp.tools.base import Tool
 from mcp.types import Tool as McpWireTool
 
 from cyt_mcp.config import AggregatorConfig
-from cyt_mcp.offerings_cache import OfferingsCache
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
 from cyt_mcp.tool_identity import enrich_tool_identity, tool_name_allowed_for_servers
@@ -131,38 +130,6 @@ async def wait_for_catalog_cache_ready(
         return len(cache.snapshot())
     finally:
         lock.release()
-
-
-def offerings_runtime_key(config: AggregatorConfig) -> str | None:
-    """Stable per-frontend cache key for usr/ws offerings (resources, prompts, templates)."""
-    slug = disk_catalog_slug_for_config(config)
-    if slug:
-        return slug
-    from cyt_mcp.config import catalog_layer_for_scope
-
-    layer = catalog_layer_for_scope(config.catalog_scope)
-    agent = config.agent.strip() or "cursor"
-    return f"{layer}:{agent}"
-
-
-def hydrate_offerings_cache(
-    offerings_cache: OfferingsCache,
-    config: AggregatorConfig,
-    *,
-    runtime_key: str | None = None,
-) -> bool:
-    """Warm offerings snapshot from disk (same slug as tool catalog)."""
-    from cyt_mcp.offerings_cache import hydrate_offerings_snapshot
-
-    slug = disk_catalog_slug_for_config(config)
-    if not slug:
-        return False
-    key = runtime_key or offerings_runtime_key(config) or slug
-    snapshot = hydrate_offerings_snapshot(slug)
-    if snapshot is None:
-        return False
-    offerings_cache.replace(key, snapshot)
-    return True
 
 
 def persist_runtime_cache_to_disk(cache: RuntimeToolCache, config: AggregatorConfig) -> bool:
