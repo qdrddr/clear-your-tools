@@ -808,7 +808,7 @@ PY
 		cyt_run bash scripts/deps/verify-pins.sh --short --no-report
 	}
 
-	cyt_run_all() {
+	cyt_run_all_serial() {
 		cyt_section "Dependency pins"
 		cyt_verify_dependency_pins
 
@@ -832,6 +832,49 @@ PY
 
 		cyt_section "Main app"
 		cyt_build_all_app
+	}
+
+	# Parallel monorepo gate (rust → sdk c/go/ts → py). Modes: full | publish | rust-only | py-only.
+	cyt_prek_parallel_gate() {
+		local mode="${1:-full}"
+		local gate_script="${CYT_REPO_ROOT}/scripts/pre-commit-hooks/prek-loop-all-parallel.sh"
+		local -a args=(--mode "${mode}")
+
+		if [[ "${CYT_WORKFLOW_SERIAL:-}" == 1 ]]; then
+			case "${mode}" in
+			full | publish)
+				cyt_run_all_serial
+				if [[ ${mode} == publish ]]; then
+					cyt_section "Publish extras"
+					cyt_run bash "${CYT_REPO_ROOT}/scripts/pre-commit-hooks/prek-loop.sh" \
+						--one-run --no-git-add --git-add none \
+						$([[ -n ${CYT_LOCAL_DEV_SHORT:-} ]] && printf '%s' --short) \
+						-g uni release
+				fi
+				;;
+			rust-only)
+				cyt_build_rust
+				;;
+			py-only)
+				cyt_verify_app_python
+				cyt_test_app_python
+				;;
+			*)
+				die "unknown parallel gate mode: ${mode}"
+				;;
+			esac
+			return 0
+		fi
+
+		[[ -f ${gate_script} ]] || die "missing parallel gate script: ${gate_script}"
+		[[ -n ${CYT_LOCAL_DEV_SHORT:-} ]] && args+=(--short)
+		[[ ${CYT_WORKFLOW_XDIST:-} == 1 ]] && args+=(--xdist)
+		args+=(--one-run --no-git-add)
+		cyt_run bash "${gate_script}" "${args[@]}"
+	}
+
+	cyt_run_all() {
+		cyt_prek_parallel_gate full
 	}
 
 	# Expected .env locations (same order as src/cyt/config load_proxy_env):

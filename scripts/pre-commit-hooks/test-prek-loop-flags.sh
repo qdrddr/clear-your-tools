@@ -46,6 +46,7 @@ assert_contains "${help_text}" "--fail-fast" "help mentions --fail-fast"
 assert_contains "${help_text}" "py-dev" "help mentions py-dev"
 assert_contains "${help_text}" "prek-loop-py-parallel.sh" "help mentions parallel script"
 assert_contains "${help_text}" "prek-loop-rust-parallel.sh" "help mentions rust parallel script"
+assert_contains "${help_text}" "prek-loop-all-parallel.sh" "help mentions monorepo parallel script"
 
 echo "==> py-dev group hook count"
 py_dev_hooks="$(
@@ -453,6 +454,34 @@ PY
 )"
 assert_contains "${sample_parse}" "count=2" "update-weights parses sample timing lines"
 assert_contains "${sample_parse}" "paths=1.23" "update-weights extracts target seconds"
+
+echo "==> all-parallel orchestrator modes and wiring"
+all_parallel_src="$(cat "${SCRIPT_DIR}/prek-loop-all-parallel.sh")"
+all_parallel_help="$(bash "${SCRIPT_DIR}/prek-loop-all-parallel.sh" --help 2>&1 || true)"
+helpers_src="$(cat "${ROOT}/scripts/local/dev/helpers.sh")"
+workflow_src="$(cat "${ROOT}/scripts/local/dev/workflow.sh")"
+publish_src="$(cat "${ROOT}/scripts/publish/publish-git.sh")"
+pytest_ci_src="$(cat "${ROOT}/scripts/local/tests/pytest-app-ci.sh")"
+
+assert_contains "${all_parallel_help}" "--mode full" "all-parallel help lists modes"
+assert_contains "${all_parallel_help}" "rust-only" "all-parallel help lists rust-only mode"
+assert_contains "${all_parallel_help}" "publish" "all-parallel help lists publish mode"
+assert_contains "${all_parallel_src}" "prek-loop-rust-parallel.sh" "all-parallel invokes rust parallel"
+assert_contains "${all_parallel_src}" "prek-loop-py-parallel.sh" "all-parallel invokes py parallel"
+assert_contains "${all_parallel_src}" "cyt_build_sdk_c" "all-parallel runs sdk c build"
+assert_contains "${all_parallel_src}" "cyt_build_sdk_go" "all-parallel runs sdk go build"
+assert_contains "${all_parallel_src}" "cyt_build_sdk_typescript" "all-parallel runs sdk typescript build"
+assert_contains "${all_parallel_src}" "prek-loop.sh" "all-parallel invokes prek-loop for publish extras"
+assert_contains "${all_parallel_src}" "-g uni release" "all-parallel publish mode runs uni and release"
+assert_contains "${helpers_src}" "cyt_prek_parallel_gate" "helpers define parallel gate wrapper"
+assert_contains "${helpers_src}" "cyt_run_all_serial" "helpers keep serial fallback"
+assert_contains "${workflow_src}" "CYT_WORKFLOW_SERIAL" "workflow parses --serial"
+assert_contains "${workflow_src}" "CYT_WORKFLOW_XDIST" "workflow parses --xdist"
+assert_contains "${workflow_src}" "cyt_prek_parallel_gate rust-only" "workflow core-rust uses rust parallel gate"
+assert_contains "${workflow_src}" "cyt_prek_parallel_gate py-only" "workflow app-test uses py parallel gate"
+assert_contains "${publish_src}" "prek-loop-all-parallel.sh" "publish-git runs parallel gate"
+assert_contains "${publish_src}" "--skip-tests" "publish-git supports --skip-tests"
+assert_contains "${pytest_ci_src}" "qa" "pytest-app-ci includes qa category"
 
 if ((failures > 0)); then
 	echo "${failures} test(s) failed." >&2

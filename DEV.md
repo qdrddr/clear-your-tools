@@ -210,8 +210,26 @@ Enforcement:
 
 Local workflow: [`scripts/local/dev/workflow.sh`](scripts/local/dev/workflow.sh) (`app-setup`, `sdk-python`, `app-verify`).
 
+Parallel monorepo gate (recommended — sharded Rust/Python tests, same coverage as prek-loop):
+
+```bash
+./scripts/local/dev/workflow.sh --short all
+# legacy serial path: ./scripts/local/dev/workflow.sh --serial all
+# optional pytest xdist per shard: ./scripts/local/dev/workflow.sh --short --xdist all
+```
+
+Release flow (parallel gate runs automatically before version bump):
+
+```bash
+./scripts/publish/publish-git.sh bump-minor
+# emergency skip: ./scripts/publish/publish-git.sh --skip-tests bump-minor
+```
+
+On failure: `target/.prek-parallel-logs/failures.log`. Shard tuning: `PREK_RUST_UNIT_SHARDS`, `PREK_PYTEST_UNIT_SHARDS`.
+
 Pre-publish smoke: `prek run simulate-registry --stage manual --all-files` or
 `./scripts/local/dev/workflow.sh simulate-registry` (builds wheels, isolated venv install).
+`publish-git.sh` also runs the `release` group (includes simulate-registry) via `--mode publish`.
 
 Published-package E2E: [`sdk/e2e/README.md`](sdk/e2e/README.md) (post-publish registry isolation only;
 the name **e2e** is reserved for that tree).

@@ -134,6 +134,7 @@ while (($#)); do
 		echo "  --fail-fast      Stop after the first hook failure" >&2
 		echo "Parallel Python:  ./scripts/pre-commit-hooks/prek-loop-py-parallel.sh --short --one-run [--xdist]" >&2
 		echo "Parallel Rust:    ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run [--changed-only]" >&2
+		echo "Parallel monorepo: ./scripts/pre-commit-hooks/prek-loop-all-parallel.sh --short --one-run [--mode full|publish]" >&2
 		exit 0
 		;;
 	-*)

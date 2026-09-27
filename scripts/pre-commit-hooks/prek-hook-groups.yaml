@@ -61,6 +61,10 @@
 #   ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run
 #   PREK_RUST_UNIT_SHARDS=6 ./scripts/pre-commit-hooks/prek-loop-rust-parallel.sh --short --one-run --changed-only
 #
+# Parallel monorepo gate (workflow.sh all, publish-git.sh):
+#   ./scripts/pre-commit-hooks/prek-loop-all-parallel.sh --short --one-run
+#   ./scripts/pre-commit-hooks/prek-loop-all-parallel.sh --short --one-run --mode publish
+#
 # Parallel (separate terminals): -g py-lint, -g py-test-unit-shard-*, -g rust-lint, -g rust-test-unit-shard-*, -g uni may run simultaneously.
 #
 groups:

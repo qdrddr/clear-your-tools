@@ -7,15 +7,17 @@
 # Production installs (pip install clear-your-tools) pull cyt-indexer-sdk from PyPI instead.
 #
 # Usage:
-#   ./scripts/local/dev/workflow.sh [--short|--silent] [--runtime] <command> [args...]
+#   ./scripts/local/dev/workflow.sh [--short|--silent] [--serial] [--xdist] [--runtime] <command> [args...]
 #
 # Options:
 #   --short | --silent   Only print error/warning lines (hide info/success noise)
+#   --serial             Force legacy serial test path (debug / low-RAM machines)
+#   --xdist              Enable pytest -n auto inside each Python unit shard (parallel gate only)
 #   --runtime            Enable runtime tests that may spawn cyt hook daemon or launch proxy
 #
 # Commands:
 #   Core (Rust):
-#     core-rust | rust     cargo test -p cyt-indexer --features testing,ffi + release CLI catalog build
+#     core-rust | rust     parallel rust gate (or serial cargo test with --serial)
 #     indexer [subcmd]     cyt-indexer build tools|skills / retrieve (see help)
 #
 #   SDKs:
@@ -30,7 +32,7 @@
 #   Main app (src/):
 #     app-setup | setup    uv sync workspace (editable sdk/python via pyproject.toml)
 #     app-verify           verify main app (src/) re-exports local cyt-indexer-sdk
-#     app-test | test      app-verify + pytest categories (integration/qa/runtime excluded)
+#     app-test | test      parallel python gate (or serial pytest with --serial)
 #     app-test-runtime     pytest runtime category (may spawn hook daemon / launch proxy)
 #     app-build | build-wheels
 #                          uv build clear-your-tools wheel/sdist
@@ -40,7 +42,7 @@
 #     proxy [args...]      verify + uv run src/cyt/cli/app.py proxy ...
 #     simulate-registry    isolated venv: install built wheels + cargo/npm dry-run checks
 #     ci                   app-setup → app-verify → ast-grep → import checks → ruff → pytest categories → app-build
-#     all                  core-rust → all SDKs → app-all (full monorepo check)
+#     all                  parallel monorepo gate (rust → sdk c/go/ts → py; use --serial for legacy)
 #
 # Examples:
 #   ./scripts/local/dev/workflow.sh all
@@ -58,11 +60,21 @@ export SHORTEN_ROOT="${CYT_REPO_ROOT}"
 
 CYT_LOCAL_DEV_SHORT="${CYT_LOCAL_DEV_SHORT:-}"
 CYT_LOCAL_DEV_RUNTIME="${CYT_LOCAL_DEV_RUNTIME:-}"
+CYT_WORKFLOW_SERIAL="${CYT_WORKFLOW_SERIAL:-}"
+CYT_WORKFLOW_XDIST="${CYT_WORKFLOW_XDIST:-}"
 LOCAL_DEV_ARGS=()
 while (($#)); do
 	case "$1" in
 	--short | --silent)
 		CYT_LOCAL_DEV_SHORT=1
+		shift
+		;;
+	--serial)
+		CYT_WORKFLOW_SERIAL=1
+		shift
+		;;
+	--xdist)
+		CYT_WORKFLOW_XDIST=1
 		shift
 		;;
 	--runtime)
@@ -76,6 +88,8 @@ while (($#)); do
 	esac
 done
 export CYT_LOCAL_DEV_SHORT
+export CYT_WORKFLOW_SERIAL
+export CYT_WORKFLOW_XDIST
 if [[ -n "${CYT_LOCAL_DEV_RUNTIME}" ]]; then
 	export CYT_RUN_RUNTIME_TESTS=1
 else
@@ -93,7 +107,7 @@ _cyt_local_dev_main() {
 	case "${cmd}" in
 	core-rust | rust)
 		require_repo_root
-		cyt_build_rust
+		cyt_prek_parallel_gate rust-only
 		;;
 	indexer)
 		require_repo_root
@@ -227,7 +241,11 @@ EOF
 		;;
 	app-test | test)
 		require_repo_root
-		cyt_test_app
+		if [[ "${CYT_WORKFLOW_SERIAL:-}" == 1 ]]; then
+			cyt_test_app
+		else
+			cyt_prek_parallel_gate py-only
+		fi
 		;;
 	app-test-runtime)
 		require_repo_root
@@ -369,8 +387,12 @@ PY
 		else
 			info "skip ruff (not on PATH)"
 		fi
-		cyt_test_app_python
-		cyt_build_app_wheel
+		if [[ "${CYT_WORKFLOW_SERIAL:-}" == 1 ]]; then
+			cyt_test_app_python
+			cyt_build_app_wheel
+		else
+			cyt_prek_parallel_gate py-only
+		fi
 		;;
 	"" | -h | --help | help)
 		usage

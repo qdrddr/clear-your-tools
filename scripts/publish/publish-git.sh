@@ -6,6 +6,7 @@
 #   ./scripts/publish/publish-git.sh bump-patch
 #   ./scripts/publish/publish-git.sh bump-minor
 #   ./scripts/publish/publish-git.sh bump-major
+#   ./scripts/publish/publish-git.sh --skip-tests bump-patch
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,13 +18,22 @@ export SHORTEN_ROOT="${ROOT}"
 
 usage() {
 	cat <<EOF
-Usage: $(basename "$0") TAG | bump-patch | bump-minor | bump-major
+Usage: $(basename "$0") [--skip-tests] TAG | bump-patch | bump-minor | bump-major
 
 Examples:
   $(basename "$0") v1.0.8
   $(basename "$0") bump-patch
   $(basename "$0") bump-minor
   $(basename "$0") bump-major
+  $(basename "$0") --skip-tests bump-patch
+
+Options:
+  --skip-tests  Skip the parallel pre-publish gate (unsafe; emergency use only)
+
+Pre-publish gate (default):
+  Runs scripts/pre-commit-hooks/prek-loop-all-parallel.sh --mode publish
+  (parallel rust + sdk c/go/ts + py + uni/release smoke).
+  On failure see: target/.prek-parallel-logs/failures.log
 
 Auto-bump (bump-patch / bump-minor / bump-major):
   - Fetch the latest git tags and GitHub releases matching vMAJOR.MINOR.PATCH
@@ -33,6 +43,7 @@ Auto-bump (bump-patch / bump-minor / bump-major):
   - bump-major: increment MAJOR and reset MINOR and PATCH to 0, e.g. v1.2.3 -> v2.0.0
 
 Steps:
+  0. Parallel pre-publish gate (unless --skip-tests)
   1. Run scripts/publish/sync-version.sh with the semver (without the leading v)
   2. Commit only the version manifest files
   3. Push the current branch
@@ -174,12 +185,31 @@ release_notes() {
 	fi
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-	usage
-	exit 0
-fi
+PUBLISH_SKIP_TESTS=0
+PUBLISH_ARGS=()
+while (($#)); do
+	case "$1" in
+	--skip-tests)
+		PUBLISH_SKIP_TESTS=1
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	-*)
+		echo "error: unknown option: $1" >&2
+		usage >&2
+		exit 1
+		;;
+	*)
+		PUBLISH_ARGS+=("$1")
+		shift
+		;;
+	esac
+done
 
-if [[ $# -ne 1 ]]; then
+if ((${#PUBLISH_ARGS[@]} != 1)); then
 	usage >&2
 	exit 1
 fi
@@ -187,7 +217,7 @@ fi
 require_command git
 require_command gh
 
-arg="$1"
+arg="${PUBLISH_ARGS[0]}"
 case "${arg}" in
 bump-patch | bump-minor | bump-major)
 	tag="$(resolve_bump_tag "${arg}")"
@@ -212,6 +242,15 @@ branch="$(git branch --show-current)"
 if [[ -z "${branch}" ]]; then
 	echo "error: detached HEAD; checkout a branch before publishing" >&2
 	exit 1
+fi
+
+if [[ ${PUBLISH_SKIP_TESTS} != 1 && ${CYT_PUBLISH_SKIP_TESTS:-} != 1 ]]; then
+	echo "Running parallel pre-publish gate (mode: publish)..."
+	if ! CYT_LOCAL_DEV_SHORT=1 bash "${ROOT}/scripts/pre-commit-hooks/prek-loop-all-parallel.sh" \
+		--one-run --short --no-git-add --mode publish; then
+		echo "error: pre-publish gate failed; see ${ROOT}/target/.prek-parallel-logs/failures.log" >&2
+		exit 1
+	fi
 fi
 
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"

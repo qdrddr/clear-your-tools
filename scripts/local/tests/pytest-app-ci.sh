@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-categories=(unit gherkin-unit quality_metrics coverage mutation)
+categories=(unit gherkin-unit quality_metrics coverage mutation qa)
 for category in "${categories[@]}"; do
 	bash "${SCRIPT_DIR}/pytest-category.sh" "${category}" "$@"
 done
