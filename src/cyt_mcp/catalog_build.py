@@ -12,7 +12,7 @@ from mcp.types import Tool as McpWireTool
 
 from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
+from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, is_meta_tool, refresh_search_tool_schema
 from cyt_mcp.tool_identity import enrich_tool_identity, tool_name_allowed_for_servers
 
 JsonScalar = str | int | float | bool | None
@@ -86,7 +86,7 @@ def build_catalog_from_tools(
     for tool in tools:
         mcp_tool = tool.to_mcp_tool()
         name = str(mcp_tool.name)
-        if name == MCP_WIRE_SEARCH_TOOL_NAME:
+        if is_meta_tool(name):
             continue
         if server_keys and not tool_name_allowed_for_servers(name, server_keys):
             continue
@@ -244,7 +244,7 @@ def _catalog_entries_from_dicts(
     search_index: dict[str, dict[str, Any]] = {}
     for raw in tools:
         name = str(raw.get("name") or "").strip()
-        if not name or name == MCP_WIRE_SEARCH_TOOL_NAME:
+        if not name or is_meta_tool(name):
             continue
         if server_keys and not tool_name_allowed_for_servers(name, server_keys):
             continue

@@ -58,8 +58,13 @@ def filter_tools_for_tier_tracking(
     effective = resolve_effective_permissions(config=config)
     deny_entries = effective.mcp.deny
     tracked: list[dict[str, Any]] = []
+    from cyt_mcp.search import is_meta_tool
+
     for tool in tools:
         if not isinstance(tool, dict):
+            continue
+        catalog_name = str(tool.get("name") or "").strip()
+        if catalog_name and is_meta_tool(catalog_name):
             continue
         stamped = stamp_tool_catalog_source(tool)
         if resolve_tool_catalog_source(stamped) not in allowed:

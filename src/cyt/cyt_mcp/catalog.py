@@ -192,8 +192,12 @@ def _normalize_catalog_scope(raw: object) -> str | None:
 
 
 def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
+    from cyt_mcp.search import is_meta_tool
+
     name = str(tool.get("name") or "").strip()
     if not name:
+        return None
+    if is_meta_tool(name):
         return None
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):

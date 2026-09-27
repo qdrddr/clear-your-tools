@@ -111,10 +111,16 @@ def _registry_key(
 def _normalize_tools(raw: object) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
+    from cyt_mcp.search import is_meta_tool
+
     tools: list[dict[str, Any]] = []
     for item in raw:
-        if isinstance(item, dict):
-            tools.append(copy.deepcopy(item))
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and is_meta_tool(name):
+            continue
+        tools.append(copy.deepcopy(item))
     return tools
 
 

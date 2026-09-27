@@ -14,30 +14,12 @@ from cyt_mcp.catalog import catalog_tools_content_hash
 from cyt_mcp.config import AggregatorConfig, load_known_mcp_server_keys
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
+from cyt_mcp.search import is_meta_tool
 from cyt_mcp.session_context import get_current_session_runtime
 from cyt_mcp.tier_feedback_push import schedule_tool_use_feedback
 from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_identity
 
 logger = logging.getLogger(__name__)
-
-_META_TOOL_NAMES = frozenset(
-    {
-        SEARCH_TOOL_NAME,
-        MCP_WIRE_SEARCH_TOOL_NAME,
-        "cyt-mcp_get-tool-definitions",
-    },
-)
-
-
-def _is_meta_tool(tool_name: str) -> bool:
-    normalized = tool_name.strip()
-    if not normalized:
-        return True
-    if normalized in _META_TOOL_NAMES:
-        return True
-    return normalized.endswith(("_get-tool-definitions", "__get-tool-definitions"))
-
 
 def _tool_call_succeeded(result: ToolResult) -> bool:
     if getattr(result, "is_error", False):
@@ -105,7 +87,7 @@ class ToolUseFeedbackMiddleware(Middleware):
         arguments = getattr(params, "arguments", None)
         args = dict(arguments) if isinstance(arguments, dict) else {}
 
-        if _is_meta_tool(tool_name):
+        if is_meta_tool(tool_name):
             return await call_next(context)
 
         success = False

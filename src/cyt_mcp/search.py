@@ -29,6 +29,16 @@ _CURSOR_SEARCH_NOTE = (
 _EXCLUDED_LOOKUP_NAMES = frozenset({SEARCH_TOOL_NAME, MCP_WIRE_SEARCH_TOOL_NAME})
 
 
+def is_meta_tool(tool_name: str) -> bool:
+    """True for cyt-mcp frontend meta tools that must not enter hook/tier catalogs."""
+    normalized = str(tool_name or "").strip()
+    if not normalized:
+        return True
+    if normalized in _EXCLUDED_LOOKUP_NAMES:
+        return True
+    return normalized.endswith(("_get-tool-definitions", "__get-tool-definitions"))
+
+
 def search_tool_description(*, agent: str | None) -> str:
     description = _SEARCH_TOOL_BASE_DESCRIPTION
     if agent == "cursor":

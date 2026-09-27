@@ -66,11 +66,17 @@ def record_tool_attempt_feedback(
             tool_tracked_for_config,
         )
 
+        from cyt_mcp.search import is_meta_tool
+
+        if is_meta_tool(tool_name):
+            return
         canonical_name = resolve_canonical_tool_name_for_tiers(
             tool_name,
             config=cfg,
             catalog=catalog,
         )
+        if is_meta_tool(canonical_name):
+            return
         tool = stamp_tool_catalog_source(
             {
                 "name": canonical_name,
