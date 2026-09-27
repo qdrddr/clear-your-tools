@@ -1,0 +1,75 @@
+{
+  "projects": {
+    "repo_a": {
+      "slug": "clear-your-tools",
+      "label": "primary repo"
+    },
+    "repo_b": {
+      "slug": "cyt-test",
+      "label": "secondary repo"
+    }
+  },
+  "tools": {
+    "workspace_scoped": {
+      "wire_name": "fff_grep",
+      "mcp_server": "fff",
+      "tool_name": "grep",
+      "catalog_scope": "workspace",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Search query"}
+        },
+        "required": ["query"]
+      },
+      "repo_a_capture": {"query": "*.yaml workspace"},
+      "repo_b_capture": {"query": "config.yaml ws"},
+      "enrich_query": "find yaml json mdc files workspace ws"
+    },
+    "user_scoped": {
+      "wire_name": "context7_query-docs",
+      "mcp_server": "context7",
+      "tool_name": "query-docs",
+      "catalog_scope": "user",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "libraryId": {"type": "string"},
+          "query": {"type": "string"}
+        },
+        "required": ["libraryId", "query"]
+      },
+      "repo_a_capture": {
+        "libraryId": "/xhluca/bm25s",
+        "query": "BM25 scoring formula from clear-your-tools session"
+      },
+      "repo_b_capture": {
+        "libraryId": "/xhluca/bm25s",
+        "query": "BM25 scoring formula from cyt-test session"
+      },
+      "enrich_query": "xhluca bm25s scoring documentation"
+    }
+  },
+  "integration_scenarios": [
+    {
+      "id": "record_enrich_workspace_scoped",
+      "description": "fff_grep captures recorded in repo A must not enrich repo B in a shared DB.",
+      "tool_key": "workspace_scoped"
+    },
+    {
+      "id": "record_enrich_user_scoped",
+      "description": "context7 query-docs captures recorded in repo A must not enrich repo B in a shared DB.",
+      "tool_key": "user_scoped"
+    }
+  ],
+  "gherkin_scenarios": [
+    {
+      "id": "workspace_scoped_no_cross_project_examples",
+      "tool_key": "workspace_scoped"
+    },
+    {
+      "id": "user_scoped_no_cross_project_examples",
+      "tool_key": "user_scoped"
+    }
+  ]
+}

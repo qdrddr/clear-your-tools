@@ -21,8 +21,9 @@ from cyt.tiers.models import EntityKind
 from cyt.tiers.scores import execution_score, utility_score
 from cyt.tiers.status_detail import build_kind_detail
 from cyt_mcp.config import sample_aggregator_config
+from cyt_mcp.search import is_meta_tool
 from cyt_mcp.tier_feedback_push import _build_payload
-from cyt_mcp.tool_use_feedback_middleware import ToolUseFeedbackMiddleware, _is_meta_tool
+from cyt_mcp.tool_use_feedback_middleware import ToolUseFeedbackMiddleware
 from tests.support.tier_capture_fixtures import (
     AttemptSequenceScenario,
     HttpPayloadScenario,
@@ -191,12 +192,12 @@ def test_capture_config_readers_match_fixture_defaults() -> None:
 
 @pytest.mark.parametrize("tool_name", load_meta_tools_not_reported())
 def test_meta_tools_are_not_reported(tool_name: str) -> None:
-    assert _is_meta_tool(tool_name) is True
+    assert is_meta_tool(tool_name) is True
 
 
 def test_tracked_tool_is_reported_by_middleware() -> None:
     tool = load_capture_tool()
-    assert _is_meta_tool(tool.wire_name) is False
+    assert is_meta_tool(tool.wire_name) is False
 
 
 @pytest.mark.asyncio

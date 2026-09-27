@@ -10,7 +10,9 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 from fastmcp import FastMCP
-from fastmcp.server.middleware import MiddlewareContext
+from fastmcp.prompts.base import PromptResult
+from fastmcp.resources.base import ResourceResult
+from fastmcp.server.middleware import CallNext, MiddlewareContext
 from mcp.types import (
     GetPromptRequestParams,
     ListPromptsRequest,
@@ -331,13 +333,19 @@ async def read_resource_via_middleware(
     server: FastMCP,
     *,
     uri: str,
-) -> Any:
+) -> ResourceResult:
     context = make_read_resource_context(uri)
 
-    async def _call_next(_ctx: MiddlewareContext[Any]) -> Any:
+    async def _call_next(
+        _ctx: MiddlewareContext[ReadResourceRequestParams],
+    ) -> ResourceResult:
         return await server.read_resource(uri)
 
-    return await middleware.on_read_resource(context, _call_next)
+    call_next = cast(
+        CallNext[ReadResourceRequestParams, ResourceResult],
+        _call_next,
+    )
+    return await middleware.on_read_resource(context, call_next)
 
 
 async def get_prompt_via_middleware(
@@ -345,10 +353,17 @@ async def get_prompt_via_middleware(
     server: FastMCP,
     *,
     name: str,
-) -> Any:
+) -> PromptResult:
     context = make_get_prompt_context(name)
 
-    async def _call_next(_ctx: MiddlewareContext[Any]) -> Any:
-        return await server._get_prompt(name)
+    async def _call_next(
+        _ctx: MiddlewareContext[GetPromptRequestParams],
+    ) -> PromptResult:
+        prompt = await server._get_prompt(name)
+        return cast(PromptResult, prompt)
 
-    return await middleware.on_get_prompt(context, _call_next)
+    call_next = cast(
+        CallNext[GetPromptRequestParams, PromptResult],
+        _call_next,
+    )
+    return await middleware.on_get_prompt(context, call_next)

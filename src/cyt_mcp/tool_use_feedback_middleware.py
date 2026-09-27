@@ -21,6 +21,7 @@ from cyt_mcp.tool_identity import canonical_backend_identity, resolve_backend_id
 
 logger = logging.getLogger(__name__)
 
+
 def _tool_call_succeeded(result: ToolResult) -> bool:
     if getattr(result, "is_error", False):
         return False

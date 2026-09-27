@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from cyt.hook.workspace_config import set_hook_workspace_in_config
-from cyt.tiers.adapters.tools import stamp_tool_catalog_source
+from cyt.tiers.adapters.tools import stamp_tool_catalog_source, tool_entity_id
 from cyt.tiers.manager import TierManager
 from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
+from tests.support.cyt_mcp_catalog_resilience_fixtures import (
+    load_usr_tools_catalog,
+    load_ws_tools_catalog,
+    register_layer_catalog,
+)
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tier_capture"
 SCENARIOS_PATH = FIXTURES_ROOT / "scenarios.json"
@@ -52,6 +58,30 @@ class IntegrationCaptureScenario:
     id: str
     payload_ids: tuple[str, ...]
     expected: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class MetaToolTierFeedbackScenario:
+    id: str
+    tool_name: str
+    payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CatalogLayerRegistrationScenario:
+    id: str
+    catalog_layer: str
+    backend_tool_name: str
+    meta_tool_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MetaToolIntegrationScenario:
+    id: str
+    payload_ids: tuple[str, ...]
+    forbidden_entity_ids: tuple[str, ...]
+    forbidden_names: tuple[str, ...]
+    minimum_backend_tools: int | None
 
 
 @dataclass(frozen=True)
@@ -168,6 +198,145 @@ def load_meta_tools_not_reported(path: Path = SCENARIOS_PATH) -> tuple[str, ...]
     if not isinstance(raw, list):
         return ()
     return tuple(str(item) for item in raw)
+
+
+def load_meta_tool_tier_feedback_payloads(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[MetaToolTierFeedbackScenario, ...]:
+    scenarios: list[MetaToolTierFeedbackScenario] = []
+    for row in _load_payload(path).get("meta_tool_tier_feedback", []):
+        if not isinstance(row, dict):
+            continue
+        payload_raw = row.get("payload")
+        if not isinstance(payload_raw, dict):
+            continue
+        scenarios.append(
+            MetaToolTierFeedbackScenario(
+                id=str(row["id"]),
+                tool_name=str(row["tool_name"]),
+                payload=dict(payload_raw),
+            ),
+        )
+    return tuple(scenarios)
+
+
+def meta_tool_tier_feedback_by_id(
+    payload_id: str,
+    path: Path = SCENARIOS_PATH,
+) -> MetaToolTierFeedbackScenario:
+    for scenario in load_meta_tool_tier_feedback_payloads(path):
+        if scenario.id == payload_id:
+            return scenario
+    raise KeyError(f"unknown meta tool tier feedback id: {payload_id}")
+
+
+def load_catalog_layer_registration_scenarios(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[CatalogLayerRegistrationScenario, ...]:
+    scenarios: list[CatalogLayerRegistrationScenario] = []
+    for row in _load_payload(path).get("catalog_layer_registration", []):
+        if not isinstance(row, dict):
+            continue
+        meta_names_raw = row.get("meta_tool_names")
+        if not isinstance(meta_names_raw, list):
+            meta_names_raw = []
+        scenarios.append(
+            CatalogLayerRegistrationScenario(
+                id=str(row["id"]),
+                catalog_layer=str(row["catalog_layer"]),
+                backend_tool_name=str(row["backend_tool_name"]),
+                meta_tool_names=tuple(str(item) for item in meta_names_raw),
+            ),
+        )
+    return tuple(scenarios)
+
+
+def load_meta_tool_integration_scenarios(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[MetaToolIntegrationScenario, ...]:
+    scenarios: list[MetaToolIntegrationScenario] = []
+    for row in _load_payload(path).get("meta_tool_integration", []):
+        if not isinstance(row, dict):
+            continue
+        payload_ids_raw = row.get("payload_ids")
+        if not isinstance(payload_ids_raw, list):
+            payload_ids_raw = []
+        forbidden_entity_ids_raw = row.get("forbidden_entity_ids")
+        if not isinstance(forbidden_entity_ids_raw, list):
+            forbidden_entity_ids_raw = []
+        forbidden_names_raw = row.get("forbidden_names")
+        if not isinstance(forbidden_names_raw, list):
+            forbidden_names_raw = []
+        minimum_raw = row.get("minimum_backend_tools")
+        scenarios.append(
+            MetaToolIntegrationScenario(
+                id=str(row["id"]),
+                payload_ids=tuple(str(item) for item in payload_ids_raw),
+                forbidden_entity_ids=tuple(str(item) for item in forbidden_entity_ids_raw),
+                forbidden_names=tuple(str(item) for item in forbidden_names_raw),
+                minimum_backend_tools=int(minimum_raw) if minimum_raw is not None else None,
+            ),
+        )
+    return tuple(scenarios)
+
+
+def meta_tool_entity_id(tool_name: str) -> str:
+    return tool_entity_id({"name": tool_name, "cyt_catalog_source": "cyt_mcp"})
+
+
+def _meta_tool_catalog_entries(meta_tool_names: Sequence[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": name,
+            "input_schema": {"type": "object"},
+            "cyt_catalog_source": "cyt_mcp",
+        }
+        for name in meta_tool_names
+    ]
+
+
+def register_catalog_with_meta_tools(
+    workspace: Path,
+    *,
+    catalog_layer: str,
+    backend_tool_name: str,
+    meta_tool_names: Sequence[str],
+    instance_id: str = "pid:test",
+) -> None:
+    if catalog_layer == "ws":
+        base_tools = load_ws_tools_catalog()
+    elif catalog_layer == "usr":
+        base_tools = load_usr_tools_catalog()
+    else:
+        raise ValueError(f"unsupported catalog layer: {catalog_layer}")
+    backend_present = any(str(tool.get("name") or "") == backend_tool_name for tool in base_tools)
+    if not backend_present:
+        raise ValueError(
+            f"backend tool {backend_tool_name!r} missing from {catalog_layer} fixture catalog",
+        )
+    tools = list(base_tools)
+    tools.extend(_meta_tool_catalog_entries(meta_tool_names))
+    register_layer_catalog(
+        workspace,
+        tools,
+        catalog_layer=catalog_layer,
+        instance_id=instance_id,
+    )
+
+
+def register_dual_layer_catalog_with_meta_tools(
+    workspace: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    meta_tool_names = load_meta_tools_not_reported()
+    ws_tools = load_ws_tools_catalog()
+    usr_tools = load_usr_tools_catalog()
+    ws_with_meta = list(ws_tools)
+    ws_with_meta.extend(_meta_tool_catalog_entries(meta_tool_names))
+    usr_with_meta = list(usr_tools)
+    usr_with_meta.extend(_meta_tool_catalog_entries(meta_tool_names))
+    register_layer_catalog(workspace, ws_with_meta, catalog_layer="ws")
+    register_layer_catalog(workspace, usr_with_meta, catalog_layer="usr")
+    return ws_with_meta, usr_with_meta
 
 
 def load_capture_config_values(path: Path = SCENARIOS_PATH) -> dict[str, str]:
@@ -320,8 +489,11 @@ __all__ = [
     "AttemptSequenceScenario",
     "AttemptStep",
     "CaptureToolFixture",
+    "CatalogLayerRegistrationScenario",
     "HttpPayloadScenario",
     "IntegrationCaptureScenario",
+    "MetaToolIntegrationScenario",
+    "MetaToolTierFeedbackScenario",
     "TierCaptureFixturePack",
     "apply_attempt_sequence",
     "capture_tier_config",
@@ -330,11 +502,18 @@ __all__ = [
     "load_attempt_sequences",
     "load_capture_config_values",
     "load_capture_tool",
+    "load_catalog_layer_registration_scenarios",
     "load_http_payloads",
     "load_integration_capture_scenarios",
+    "load_meta_tool_integration_scenarios",
+    "load_meta_tool_tier_feedback_payloads",
     "load_meta_tools_not_reported",
     "manager_for_pack",
     "materialize_capture_pack",
+    "meta_tool_entity_id",
+    "meta_tool_tier_feedback_by_id",
     "post_tier_feedback_http",
+    "register_catalog_with_meta_tools",
+    "register_dual_layer_catalog_with_meta_tools",
     "resolve_http_payload",
 ]

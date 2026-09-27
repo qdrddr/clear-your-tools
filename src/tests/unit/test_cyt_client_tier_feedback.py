@@ -100,12 +100,24 @@ def test_notify_skill_used_feedback_posts_to_daemon(tmp_path: Path) -> None:
 
 
 def test_notify_skill_used_feedback_skips_without_workspace() -> None:
-    with patch("cyt_client.tier_feedback.urlopen") as urlopen_mock:
+    with (
+        patch(
+            "cyt_client.tier_feedback.workspace_root_from_payload",
+            return_value=None,
+        ),
+        patch("cyt_client.tier_feedback.urlopen") as urlopen_mock,
+    ):
         from cyt_client.tier_feedback import notify_skill_used_feedback
 
         notify_skill_used_feedback({}, entity_id="/tmp/skill.md")
     urlopen_mock.assert_not_called()
 
-    with patch("cyt_client.tier_feedback.urlopen") as urlopen_mock:
+    with (
+        patch(
+            "cyt_client.tier_feedback.workspace_root_from_payload",
+            return_value=None,
+        ),
+        patch("cyt_client.tier_feedback.urlopen") as urlopen_mock,
+    ):
         notify_tool_used_feedback({}, tool_name="search", catalog="cyt_mcp")
     urlopen_mock.assert_not_called()

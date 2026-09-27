@@ -107,5 +107,90 @@
       "payload_ids": ["legacy_success_no_success_field"],
       "expected": {"attempts": 1.0, "used": 1.0, "examples_captured": false}
     }
+  ],
+  "meta_tool_tier_feedback": [
+    {
+      "id": "wire_get_tool_definitions",
+      "tool_name": "get-tool-definitions",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": true,
+        "tool_name": "get-tool-definitions",
+        "catalog": "cyt_mcp"
+      }
+    },
+    {
+      "id": "canonical_get_tool_definitions",
+      "tool_name": "cyt-mcp_get-tool-definitions",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": true,
+        "tool_name": "cyt-mcp_get-tool-definitions",
+        "catalog": "cyt_mcp"
+      }
+    },
+    {
+      "id": "context_mode_meta_get_tool_definitions",
+      "tool_name": "context-mode__get-tool-definitions",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": true,
+        "tool_name": "context-mode__get-tool-definitions",
+        "catalog": "cyt_mcp"
+      }
+    }
+  ],
+  "catalog_layer_registration": [
+    {
+      "id": "ws_layer",
+      "catalog_layer": "ws",
+      "backend_tool_name": "semble_search",
+      "meta_tool_names": [
+        "get-tool-definitions",
+        "cyt-mcp_get-tool-definitions"
+      ]
+    },
+    {
+      "id": "usr_layer",
+      "catalog_layer": "usr",
+      "backend_tool_name": "context7_resolve-library-id",
+      "meta_tool_names": [
+        "get-tool-definitions",
+        "cyt-mcp_get-tool-definitions"
+      ]
+    }
+  ],
+  "meta_tool_integration": [
+    {
+      "id": "http_feedback_ignores_all_meta_tools",
+      "payload_ids": [
+        "wire_get_tool_definitions",
+        "canonical_get_tool_definitions",
+        "context_mode_meta_get_tool_definitions"
+      ],
+      "forbidden_entity_ids": [
+        "cyt_mcp:get-tool-definitions",
+        "cyt_mcp:cyt-mcp_get-tool-definitions",
+        "cyt_mcp:context-mode__get-tool-definitions"
+      ],
+      "forbidden_names": [
+        "get-tool-definitions",
+        "cyt-mcp_get-tool-definitions",
+        "context-mode__get-tool-definitions"
+      ]
+    },
+    {
+      "id": "usr_ws_union_excludes_meta_tools",
+      "minimum_backend_tools": 5,
+      "forbidden_names": [
+        "get-tool-definitions",
+        "cyt-mcp_get-tool-definitions",
+        "context-mode__get-tool-definitions"
+      ],
+      "forbidden_entity_ids": []
+    }
   ]
 }

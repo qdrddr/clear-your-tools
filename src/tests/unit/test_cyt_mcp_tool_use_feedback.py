@@ -11,16 +11,16 @@ from mcp.types import CallToolRequestParams, TextContent
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from cyt_mcp.search import is_meta_tool
 from cyt_mcp.tool_use_feedback_middleware import (
     ToolUseFeedbackMiddleware,
-    _is_meta_tool,
     _tool_call_succeeded,
 )
 
 
 def test_is_meta_tool_skips_get_tool_definitions() -> None:
-    assert _is_meta_tool("get-tool-definitions") is True
-    assert _is_meta_tool("codebase-memory_search_graph") is False
+    assert is_meta_tool("get-tool-definitions") is True
+    assert is_meta_tool("codebase-memory_search_graph") is False
 
 
 def test_tool_call_succeeded_respects_is_error() -> None:

@@ -65,7 +65,6 @@ def record_tool_attempt_feedback(
             stamp_tool_catalog_source,
             tool_tracked_for_config,
         )
-
         from cyt_mcp.search import is_meta_tool
 
         if is_meta_tool(tool_name):
