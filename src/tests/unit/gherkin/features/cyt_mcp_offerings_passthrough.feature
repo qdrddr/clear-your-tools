@@ -22,3 +22,8 @@ Feature: cyt-mcp offerings passthrough
     When middleware handles tools/list
     Then tools/list should serve stub projections including gitnexus_cypher
     And tools/list should not proxy to backend tools/list
+
+  Scenario: Read resource proxies to mounted backend content
+    Given a cyt-mcp aggregator with mounted backend offerings
+    When middleware handles resources/read for gitnexus://gitnexus/repo/demo
+    Then resources/read should return backend body demo resource body

@@ -6,13 +6,17 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastmcp.prompts.base import PromptResult
+from fastmcp.resources.base import ResourceResult
 from fastmcp.tools.base import Tool
 from mcp.types import (
+    GetPromptRequestParams,
     ListPromptsRequest,
     ListResourcesRequest,
     ListResourceTemplatesRequest,
     ListToolsRequest,
     Prompt,
+    ReadResourceRequestParams,
     Resource,
     ResourceTemplate,
 )
@@ -285,3 +289,35 @@ def test_list_offering_handlers_never_ignore_call_next(tmp_path: Path) -> None:
         assert result == [sentinel], f"{method} must proxy via call_next"
         call_next.assert_awaited_once_with(context)
         call_next.reset_mock()
+
+
+def test_on_get_prompt_proxies_to_backends(tmp_path: Path) -> None:
+    middleware, coordinator = _middleware_for_scope(tmp_path, catalog_scope="user")
+    backend_result = PromptResult(messages=[])
+    call_next = AsyncMock(return_value=backend_result)
+    context = MagicMock()
+    context.method = "prompts/get"
+    context.message = GetPromptRequestParams(name="gitnexus_review")
+    context.fastmcp_context = None
+
+    with patch.object(coordinator, "ensure_backends_mounted"):
+        result = asyncio.run(middleware.on_get_prompt(context, call_next))
+
+    assert result is backend_result
+    call_next.assert_awaited_once_with(context)
+
+
+def test_on_read_resource_proxies_to_backends(tmp_path: Path) -> None:
+    middleware, coordinator = _middleware_for_scope(tmp_path, catalog_scope="user")
+    backend_result = ResourceResult(contents=[])
+    call_next = AsyncMock(return_value=backend_result)
+    context = MagicMock()
+    context.method = "resources/read"
+    context.message = ReadResourceRequestParams(uri=AnyUrl("gitnexus://gitnexus/repo/demo"))
+    context.fastmcp_context = None
+
+    with patch.object(coordinator, "ensure_backends_mounted"):
+        result = asyncio.run(middleware.on_read_resource(context, call_next))
+
+    assert result is backend_result
+    call_next.assert_awaited_once_with(context)

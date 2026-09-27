@@ -14,6 +14,7 @@ from tests.support.cyt_mcp_offerings_passthrough_fixtures import (
     build_aggregator_with_offerings_backend,
     list_offerings_via_middleware,
     make_offerings_list_context,
+    read_resource_via_middleware,
 )
 from tests.unit.gherkin.conftest import GherkinContext
 
@@ -140,3 +141,23 @@ def then_tools_include_stub(tool_name: str, gherkin_context: GherkinContext) -> 
 def then_tools_do_not_proxy(gherkin_context: GherkinContext) -> None:
     call_next = gherkin_context.payload["call_next"]
     call_next.assert_not_awaited()
+
+
+@when(parsers.parse("middleware handles resources/read for {uri}"))
+def when_read_resource(uri: str, gherkin_context: GherkinContext) -> None:
+    payload = gherkin_context.payload
+    gherkin_context.payload["result"] = asyncio.run(
+        read_resource_via_middleware(
+            payload["middleware"],
+            payload["server"],
+            uri=uri,
+        ),
+    )
+
+
+@then(parsers.parse("resources/read should return backend body {body}"))
+def then_read_resource_body(body: str, gherkin_context: GherkinContext) -> None:
+    result = gherkin_context.payload["result"]
+    contents = getattr(result, "contents", None) or []
+    assert contents
+    assert body in str(getattr(contents[0], "content", ""))

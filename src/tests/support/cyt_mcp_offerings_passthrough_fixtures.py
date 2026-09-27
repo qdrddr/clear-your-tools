@@ -12,11 +12,14 @@ from unittest.mock import MagicMock
 from fastmcp import FastMCP
 from fastmcp.server.middleware import MiddlewareContext
 from mcp.types import (
+    GetPromptRequestParams,
     ListPromptsRequest,
     ListResourcesRequest,
     ListResourceTemplatesRequest,
     ListToolsRequest,
+    ReadResourceRequestParams,
 )
+from pydantic.networks import AnyUrl
 
 from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
@@ -67,6 +70,8 @@ class OfferingsPassthroughScenario:
     expected_template_names: tuple[str, ...] = ()
     cached_tool_name: str | None = None
     expects_call_next: bool | None = None
+    expected_resource_body: str | None = None
+    read_resource_uri: str | None = None
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -160,6 +165,14 @@ def load_offerings_passthrough_scenarios(
                 ),
                 expects_call_next=(
                     bool(item["expects_call_next"]) if "expects_call_next" in item else None
+                ),
+                expected_resource_body=(
+                    str(item["expected_resource_body"])
+                    if item.get("expected_resource_body")
+                    else None
+                ),
+                read_resource_uri=(
+                    str(item["read_resource_uri"]) if item.get("read_resource_uri") else None
                 ),
             ),
         )
@@ -295,3 +308,47 @@ async def list_offerings_via_middleware(
 
     result = await handler(context, _call_next)
     return cast(Sequence[Any], result)
+
+
+def make_read_resource_context(uri: str) -> MiddlewareContext[Any]:
+    context = MagicMock()
+    context.method = "resources/read"
+    context.message = ReadResourceRequestParams(uri=AnyUrl(uri))
+    context.fastmcp_context = None
+    return context
+
+
+def make_get_prompt_context(name: str) -> MiddlewareContext[Any]:
+    context = MagicMock()
+    context.method = "prompts/get"
+    context.message = GetPromptRequestParams(name=name)
+    context.fastmcp_context = None
+    return context
+
+
+async def read_resource_via_middleware(
+    middleware: SessionWorkspaceMiddleware,
+    server: FastMCP,
+    *,
+    uri: str,
+) -> Any:
+    context = make_read_resource_context(uri)
+
+    async def _call_next(_ctx: MiddlewareContext[Any]) -> Any:
+        return await server.read_resource(uri)
+
+    return await middleware.on_read_resource(context, _call_next)
+
+
+async def get_prompt_via_middleware(
+    middleware: SessionWorkspaceMiddleware,
+    server: FastMCP,
+    *,
+    name: str,
+) -> Any:
+    context = make_get_prompt_context(name)
+
+    async def _call_next(_ctx: MiddlewareContext[Any]) -> Any:
+        return await server._get_prompt(name)
+
+    return await middleware.on_get_prompt(context, _call_next)

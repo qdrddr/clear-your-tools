@@ -20,6 +20,11 @@
       "method": "tools/list",
       "cached_tool_name": "gitnexus_cypher",
       "expects_call_next": false
+    },
+    {
+      "id": "read_resource_passthrough",
+      "method": "resources/read",
+      "expected_resource_body": "demo resource body"
     }
   ]
 }

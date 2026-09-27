@@ -58,7 +58,7 @@
     "src/tests/unit/test_cyt_mcp_cli.py": 0.37,
     "src/tests/unit/test_cyt_mcp_config.py": 0.72,
     "src/tests/unit/test_cyt_mcp_mcp_entry.py": 0.48,
-    "src/tests/unit/test_cyt_mcp_offerings_cache.py": 0.24,
+    "src/tests/unit/gherkin/test_cyt_mcp_offerings_passthrough_gherkin.py": 0.24,
     "src/tests/unit/test_cyt_mcp_search.py": 0.63,
     "src/tests/unit/test_cyt_mcp_session_log_wire_name.py": 0.02,
     "src/tests/unit/test_cyt_mcp_session_runtime.py": 0.24,
