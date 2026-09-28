@@ -461,6 +461,19 @@ def _hydrate_missing_servers_from_disk(
     return merged
 
 
+def _registry_has_push(config: dict[str, Any], *, allow_stale: bool = True) -> bool:
+    """True when the hook registry holds at least one tool (before identity filtering)."""
+    from cyt.hook.catalog_registry import (
+        catalog_for_hook,
+        hydrate_catalog_registry_for_read,
+    )
+
+    hydrate_catalog_registry_for_read()
+    agent = tools_hook_cyt_mcp_agent(config)
+    workspace = hook_workspace_from_config(config)
+    return bool(catalog_for_hook(agent, workspace, allow_stale=allow_stale))
+
+
 def _fetch_catalog_from_registry(
     config: dict[str, Any],
     *,
@@ -500,9 +513,8 @@ def _wait_for_registry_catalog(
     wait_seconds = _registry_wait_seconds(cfg, cold_start=cold_start)
     deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
-        tools = _fetch_catalog_from_registry(cfg, allow_stale=True)
-        if tools:
-            return tools
+        if _registry_has_push(cfg, allow_stale=True):
+            return _fetch_catalog_from_registry(cfg, allow_stale=True)
         time.sleep(BLOCKING_REGISTRY_POLL_SECONDS)
     return _fetch_catalog_from_registry(cfg, allow_stale=True)
 

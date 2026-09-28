@@ -568,16 +568,23 @@ def test_cli_enriches_transcript_before_post(capsys: pytest.CaptureFixture[str])
             "cyt_client.cli._resolve_hook_url_for_submit",
             return_value="http://127.0.0.1:8834/hook/inject",
         ):
-            with patch("cyt_client.cli.post_hook_inject", return_value=(200, b"")) as post:
-                from cyt_client.cli import main
+            with patch(
+                "cyt_client.cli.read_prior_rules_injection_for_hook",
+                return_value=("", False),
+            ):
+                with patch("cyt_client.cli.post_hook_inject", return_value=(200, b"")) as post:
+                    from cyt_client.cli import main
 
-                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
-                    main()
+                    with patch(
+                        "sys.stdin.buffer.read",
+                        return_value=json.dumps(payload).encode(),
+                    ):
+                        main()
 
-                sent = json.loads(post.call_args.args[1])
-                assert sent["cyt_transcript"] == [{"id": 1, "name": "Damien"}]
-                assert "cyt_skills" in sent
-                assert isinstance(sent["cyt_skills"], list)
+                    sent = json.loads(post.call_args.args[1])
+                    assert sent["cyt_transcript"] == [{"id": 1, "name": "Damien"}]
+                    assert "cyt_skills" in sent
+                    assert isinstance(sent["cyt_skills"], list)
 
     capsys.readouterr()
 

@@ -264,9 +264,9 @@ def _recover_hook_inject_on_empty_context(
 
     _verbose_log("cyt-client: empty hook injection; restarting hook daemon and retrying")
     try:
-        from cyt.hook.daemon import daemon_restart
+        from cyt_client.hook_invocation import restart_hook_daemon_unattended
 
-        daemon_restart(verbose=_verbose, unattended=True)
+        restart_hook_daemon_unattended(verbose=_verbose)
     except Exception:
         _verbose_exception("hook daemon restart after empty injection failed")
         return None
@@ -767,7 +767,7 @@ def main(argv: list[str] | None = None) -> None:
     _verbose, _debug, _fresh_hook, rule_path = _parse_client_flags(argv)
 
     try:
-        from cyt.hook.cli_invocation import ensure_hook_wrapper_scripts_for_hooks_file
+        from cyt_client.hook_invocation import ensure_hook_wrapper_scripts_for_hooks_file
 
         ensure_hook_wrapper_scripts_for_hooks_file()
     except Exception:

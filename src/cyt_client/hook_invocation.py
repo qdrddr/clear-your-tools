@@ -519,6 +519,20 @@ def cursor_pairing_hooks(
     }
 
 
+def ensure_hook_wrapper_scripts_for_hooks_file() -> None:
+    """Repair installed hook shell wrappers before cyt-client handles stdin."""
+    from cyt.hook.cli_invocation import ensure_hook_wrapper_scripts_for_hooks_file as _ensure
+
+    _ensure()
+
+
+def restart_hook_daemon_unattended(*, verbose: bool = False) -> None:
+    """Restart the cyt hook daemon without interactive prompts."""
+    from cyt.hook.daemon import daemon_restart
+
+    daemon_restart(verbose=verbose, unattended=True)
+
+
 def strip_cyt_hook_entries(entries: list[Any]) -> list[Any]:
     kept: list[Any] = []
     for entry in entries:

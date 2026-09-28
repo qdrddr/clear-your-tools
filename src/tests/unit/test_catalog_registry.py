@@ -33,6 +33,30 @@ def _clear_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     clear_catalog_registry()
 
 
+def _catalog_tool(
+    wire_name: str,
+    *,
+    server_key: str = "fixture",
+    tool_name: str | None = None,
+    input_schema: dict[str, Any] | None = None,
+    cyt_catalog_scope: str | None = None,
+) -> dict[str, Any]:
+    """Build a registry tool with explicit cyt-mcp backend identity."""
+    bare = tool_name or wire_name
+    schema = input_schema
+    if schema is None:
+        schema = {}
+    tool: dict[str, Any] = {
+        "name": wire_name,
+        "server_key": server_key,
+        "tool_name": bare,
+        "input_schema": schema,
+    }
+    if cyt_catalog_scope is not None:
+        tool["cyt_catalog_scope"] = cyt_catalog_scope
+    return tool
+
+
 def _register_layer(
     ws_root: Path,
     tools: list[dict[str, Any]],
@@ -64,7 +88,7 @@ def test_register_catalog_hydrates_hook_caches(
 
     ws_root = tmp_path / "project"
     ws_root.mkdir()
-    tools = [{"name": "hydrate_tool", "inputSchema": {}}]
+    tools = [_catalog_tool("fixture_hydrate", tool_name="hydrate")]
     config = set_hook_workspace_in_config(
         {
             "pruning": {
@@ -85,7 +109,7 @@ def test_register_catalog_hydrates_hook_caches(
     _register_layer(ws_root, tools)
 
     catalog = get_master_tool_catalog(config, blocking=False) or []
-    assert any(tool.get("name") == "hydrate_tool" for tool in catalog)
+    assert any(tool.get("name") == "fixture_hydrate" for tool in catalog)
 
 
 def test_register_rejects_legacy_global_scope() -> None:
