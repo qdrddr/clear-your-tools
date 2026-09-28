@@ -7,6 +7,7 @@
 #   ./scripts/publish/publish-git.sh bump-minor
 #   ./scripts/publish/publish-git.sh bump-major
 #   ./scripts/publish/publish-git.sh --skip-tests bump-patch
+#   ./scripts/publish/publish-git.sh --skip-tests --skip-hooks bump-patch
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +19,7 @@ export SHORTEN_ROOT="${ROOT}"
 
 usage() {
 	cat <<EOF
-Usage: $(basename "$0") [--skip-tests] TAG | bump-patch | bump-minor | bump-major
+Usage: $(basename "$0") [--skip-tests] [--skip-hooks] TAG | bump-patch | bump-minor | bump-major
 
 Examples:
   $(basename "$0") v1.0.8
@@ -26,9 +27,11 @@ Examples:
   $(basename "$0") bump-minor
   $(basename "$0") bump-major
   $(basename "$0") --skip-tests bump-patch
+  $(basename "$0") --skip-tests --skip-hooks bump-patch   # fastest local publish
 
 Options:
   --skip-tests  Skip the parallel pre-publish gate (unsafe; emergency use only)
+  --skip-hooks  Skip pre-commit hooks on the version commit (git commit --no-verify)
 
 Pre-publish gate (default):
   Runs scripts/pre-commit-hooks/prek-loop-all-parallel.sh --mode publish
@@ -45,7 +48,7 @@ Auto-bump (bump-patch / bump-minor / bump-major):
 Steps:
   0. Parallel pre-publish gate (unless --skip-tests)
   1. Run scripts/publish/sync-version.sh with the semver (without the leading v)
-  2. Commit only the version manifest files
+  2. Commit only the version manifest files (unless --skip-hooks)
   3. Push the current branch
   4. Force-create the git tag and push it
   5. Create (or recreate) a GitHub Release for the tag
@@ -186,11 +189,16 @@ release_notes() {
 }
 
 PUBLISH_SKIP_TESTS=0
+PUBLISH_SKIP_HOOKS=0
 PUBLISH_ARGS=()
 while (($#)); do
 	case "$1" in
 	--skip-tests)
 		PUBLISH_SKIP_TESTS=1
+		shift
+		;;
+	--skip-hooks)
+		PUBLISH_SKIP_HOOKS=1
 		shift
 		;;
 	-h | --help)
@@ -265,10 +273,15 @@ stage_version_files
 if git diff --cached --quiet; then
 	echo "version manifests already at ${semver}; skipping commit"
 else
-	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
-	# re-touch those files or rebuild native artifacts during the version commit.
-	SKIP=sync-version,heal-cargo-lock,export-requirements,export-rust-sbom,cargo-sort,cargo-clippy-cyt-indexer,detect-secrets,cargo-build-sdk-release,verify-pins,maturin-develop,gitleaks,trufflehog,go-fumpt,go-imports,go-mod-tidy-repo,go-staticcheck-repo-mod,go-critic,go-sec-repo-mod,go-build-repo-mod,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-npm-audit,typescript-sort-package-json,typescript-test-unit,typescript-test-parity \
-		git commit -m "version bump to ${tag}"
+	if [[ ${PUBLISH_SKIP_HOOKS} == 1 || ${CYT_PUBLISH_SKIP_HOOKS:-} == 1 ]]; then
+		echo "Skipping pre-commit hooks on version commit (--skip-hooks)."
+		git commit --no-verify -m "version bump to ${tag}"
+	else
+		# sync-version already refreshed manifests and Cargo.lock; skip hooks that
+		# re-touch those files or rebuild native artifacts during the version commit.
+		SKIP=sync-version,heal-cargo-lock,export-requirements,export-rust-sbom,cargo-sort,cargo-clippy-cyt-indexer,detect-secrets,cargo-build-sdk-release,verify-pins,maturin-develop,gitleaks,trufflehog,go-fumpt,go-imports,go-mod-tidy-repo,go-staticcheck-repo-mod,go-critic,go-sec-repo-mod,go-build-repo-mod,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-npm-audit,typescript-sort-package-json,typescript-test-unit,typescript-test-parity \
+			git commit -m "version bump to ${tag}"
+	fi
 fi
 
 git push origin HEAD

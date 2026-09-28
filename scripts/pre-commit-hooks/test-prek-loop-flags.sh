@@ -481,6 +481,8 @@ assert_contains "${workflow_src}" "cyt_prek_parallel_gate rust-only" "workflow c
 assert_contains "${workflow_src}" "cyt_prek_parallel_gate py-only" "workflow app-test uses py parallel gate"
 assert_contains "${publish_src}" "prek-loop-all-parallel.sh" "publish-git runs parallel gate"
 assert_contains "${publish_src}" "--skip-tests" "publish-git supports --skip-tests"
+assert_contains "${publish_src}" "--skip-hooks" "publish-git supports --skip-hooks"
+assert_contains "${publish_src}" "git commit --no-verify" "publish-git --skip-hooks uses --no-verify"
 assert_contains "${pytest_ci_src}" "qa" "pytest-app-ci includes qa category"
 
 if ((failures > 0)); then

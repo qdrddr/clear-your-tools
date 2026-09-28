@@ -222,7 +222,8 @@ Release flow (parallel gate runs automatically before version bump):
 
 ```bash
 ./scripts/publish/publish-git.sh bump-minor
-# emergency skip: ./scripts/publish/publish-git.sh --skip-tests bump-minor
+# emergency skip gate: ./scripts/publish/publish-git.sh --skip-tests bump-minor
+# fast local publish: ./scripts/publish/publish-git.sh --skip-tests --skip-hooks bump-minor
 ```
 
 On failure: `target/.prek-parallel-logs/failures.log`. Shard tuning: `PREK_RUST_UNIT_SHARDS`, `PREK_PYTEST_UNIT_SHARDS`.
