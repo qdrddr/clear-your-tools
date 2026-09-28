@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from cyt.config import (
     load_config,
     tools_hook_cyt_mcp_agent,
@@ -385,27 +387,30 @@ def _workspace_scope_disk_tools(cache_key: _CytMcpCacheKey) -> list[dict[str, An
     if not cache_key.workspace:
         return []
     ws = Path(cache_key.workspace).expanduser()
-    agg_path = ws / ".agents/cyt/config/mcp-config.yaml"
-    if not agg_path.is_file():
-        from cyt_mcp.workspace_catalog import workspace_aggregator_path
+    from cyt_mcp.workspace_catalog import workspace_aggregator_path, workspace_server_defs_path
 
-        alt = workspace_aggregator_path(ws, cache_key.agent)
-        if alt is None or not alt.is_file():
-            return []
-        agg_path = alt
+    agg_path = workspace_aggregator_path(ws, cache_key.agent)
+    defs_path = workspace_server_defs_path(ws, cache_key.agent)
+    if not agg_path.is_file() or defs_path is None or not defs_path.is_file():
+        return []
     try:
-        from cyt_mcp.catalog_build import disk_catalog_slug_for_config
-        from cyt_mcp.config import load_aggregator_config
+        from cyt_mcp.config import _infer_catalog_scope
 
-        config = load_aggregator_config(
-            agent=cache_key.agent,
-            aggregator_path=agg_path,
-            workspace_folder=ws,
-        )
-        if config.catalog_scope != "workspace":
+        raw = yaml.safe_load(agg_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
             return []
-        slug = disk_catalog_slug_for_config(config)
-    except (ValueError, OSError):
+        if _infer_catalog_scope(raw, agg_path) != "workspace":
+            return []
+        try:
+            workspace_key = str(ws.resolve())
+        except OSError:
+            workspace_key = str(ws)
+        slug = scope_config_fingerprint(
+            agg_path,
+            defs_path,
+            version=workspace_key,
+        )
+    except (ValueError, OSError, yaml.YAMLError):
         return []
     envelope = read_disk_catalog(slug)
     if envelope is None:

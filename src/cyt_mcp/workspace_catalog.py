@@ -26,18 +26,25 @@ def workspace_server_defs_path(workspace_root: Path, agent: str) -> Path | None:
 
 
 def workspace_aggregator_path(workspace_root: Path, agent: str) -> Path:
-    canonical = workspace_root / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
-    if canonical.is_file():
-        return canonical
+    """Return workspace MCP config path, preferring canonical ``mcp-config.yaml``."""
+    config_dir = workspace_root / ".agents" / "cyt" / "config"
+    for path in (
+        config_dir / "mcp-config.yaml",
+        config_dir / "mcp-aggregator.yaml",
+    ):
+        if path.is_file():
+            return path
     rel_dir = _AGENT_CYT_DIRS.get((agent or "cursor").strip() or "cursor", ".cursor")
     cyt_dir = workspace_root / rel_dir / "cyt"
     for path in (
+        cyt_dir / "config" / "mcp-config.yaml",
         cyt_dir / "config" / "mcp-aggregator.yaml",
+        cyt_dir / "mcp-config.yaml",
         cyt_dir / "mcp-aggregator.yaml",
     ):
         if path.is_file():
             return path
-    return canonical
+    return config_dir / "mcp-config.yaml"
 
 
 def parse_workspace_root(raw: str | None) -> Path | None:

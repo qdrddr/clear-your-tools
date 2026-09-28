@@ -329,7 +329,7 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
         from cyt.hook.active_workspace import touch_active_workspace
 
         touch_active_workspace(config.agent, config.workspace_root)
-    hydrated = _hydrate_server_runtime_caches(cache, config)
+    _hydrate_server_runtime_caches(cache, config)
     if bool(cache.snapshot()):
         # Disk/registry hydrate can warm the cache before stdio starts; still push so
         # hook inject/tiers see ws tools without waiting for a full backend refresh.
