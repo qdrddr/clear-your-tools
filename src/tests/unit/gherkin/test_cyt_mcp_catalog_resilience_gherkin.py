@@ -43,6 +43,10 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     write_restart_polluted_usr_scope_disk_catalog,
     write_usr_scope_disk_catalog,
 )
+from tests.support.tier_capture_fixtures import (
+    load_meta_tools_not_reported,
+    register_dual_layer_catalog_with_meta_tools,
+)
 from tests.unit.gherkin.conftest import GherkinContext
 
 FEATURES = Path(__file__).resolve().parent / "features" / "cyt_mcp_catalog_resilience.feature"
@@ -163,6 +167,39 @@ def given_hook_config(gherkin_context: GherkinContext, tmp_path: Path) -> None:
         gherkin_context.payload["inject_scenario"] = load_resilience_scenario(
             "hook_inject_bm25_prompt",
         )
+
+
+@given("dual-layer usr and ws cyt-mcp catalogs registered with meta tools in the payload")
+def given_dual_layer_catalog_with_meta_tools(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
+    workspace = materialize_workspace(tmp_path)
+    register_dual_layer_catalog_with_meta_tools(workspace)
+    gherkin_context.payload["workspace"] = workspace
+    gherkin_context.payload["union_scenario"] = load_resilience_scenario(
+        "dual_layer_meta_tools_tiers_stats",
+    )
+
+
+@given("workspace cyt-mcp catalog registered with meta tools in the payload")
+def given_ws_catalog_with_meta_tools(gherkin_context: GherkinContext, tmp_path: Path) -> None:
+    workspace = materialize_workspace(tmp_path)
+    ws_tools = load_ws_tools_catalog()
+    polluted = list(ws_tools)
+    polluted.extend(
+        {
+            "name": name,
+            "input_schema": {"type": "object"},
+            "cyt_catalog_source": "cyt_mcp",
+        }
+        for name in load_meta_tools_not_reported()
+    )
+    register_ws_catalog(workspace, polluted)
+    gherkin_context.payload["workspace"] = workspace
+    gherkin_context.payload["union_scenario"] = load_resilience_scenario(
+        "ws_only_meta_tools_tiers_stats",
+    )
 
 
 @given("dual-layer usr and ws cyt-mcp catalogs registered for the workspace")
@@ -402,6 +439,31 @@ def then_hook_stdout_tools(gherkin_context: GherkinContext) -> None:
     stdout = result.stdout_text
     for name in scenario.raw["expected_tool_names_in_stdout"]:
         assert name in stdout
+
+
+@then("master catalog tool names should exclude meta tools from fixture list")
+def then_master_catalog_excludes_meta_fixture_names(gherkin_context: GherkinContext) -> None:
+    scenario = gherkin_context.payload["union_scenario"]
+    workspace = gherkin_context.payload["workspace"]
+    config = gherkin_context.config
+    clear_master_catalog_cache()
+    master = get_master_tool_catalog(config, blocking=True) or []
+    names = {str(tool.get("name") or "") for tool in master}
+    for forbidden in scenario.raw["forbidden_tool_names"]:
+        assert forbidden not in names
+    assert catalog_for_hook("cursor", workspace)
+
+
+@then("tiers stats catalog count should equal workspace-only backend tool total")
+def then_tiers_stats_ws_only_backend_total(gherkin_context: GherkinContext) -> None:
+    scenario = gherkin_context.payload["union_scenario"]
+    payload = gherkin_context.payload["tiers_stats_json"]
+    troubleshooting = payload["overview"]["troubleshooting"]
+    tier_total = payload["overview"]["tier_statistics"]["tools"]["totals"]["count"]
+    expected_total = int(scenario.raw["expected_total_tools"])
+    assert troubleshooting["catalog_tool_count"] == expected_total
+    assert troubleshooting["catalog_user_tool_count"] == 0
+    assert tier_total == expected_total
 
 
 @then("tiers stats catalog count should equal usr plus ws tool totals")

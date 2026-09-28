@@ -8,10 +8,13 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from cyt.hook.catalog_registry import catalog_for_hook, clear_catalog_registry
+from cyt.hook.catalog_registry import catalog_for_hook, clear_catalog_registry, register_catalog
 from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
 from cyt.tiers.models import EntityKind
 from cyt.tools.master_catalog import clear_master_catalog_cache, get_master_tool_catalog
+from cyt_mcp.config import sample_aggregator_config
+from cyt_mcp.hook_daemon_push import _build_register_payload
+from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
 from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     capture_registry_registrations,
@@ -165,3 +168,54 @@ def then_master_excludes_meta(gherkin_context: GherkinContext) -> None:
     assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert SEARCH_TOOL_NAME not in names
     assert len(names) >= int(gherkin_context.payload["expected_backend_count"])
+
+
+@given("a cyt-mcp runtime cache with backend and meta tools from fixture list")
+def given_runtime_cache_with_meta_tools(gherkin_context: GherkinContext, tmp_path: Path) -> None:
+    pack = materialize_capture_pack(tmp_path)
+    meta_tools = load_meta_tools_not_reported()
+    cache = RuntimeToolCache()
+    cache.replace(
+        [{"name": name, "inputSchema": {"type": "object"}} for name in meta_tools]
+        + [{"name": "semble_search", "inputSchema": {"type": "object"}}],
+    )
+    gherkin_context.payload = {
+        "pack": pack,
+        "cache": cache,
+        "meta_tools": meta_tools,
+    }
+
+
+@when("cyt-mcp builds hook daemon register payload for the workspace")
+def when_build_register_payload(gherkin_context: GherkinContext) -> None:
+    pack = gherkin_context.payload["pack"]
+    config = sample_aggregator_config(
+        catalog_scope="workspace",
+        workspace_root=pack.workspace,
+    )
+    gherkin_context.payload["register_body"] = _build_register_payload(
+        config,
+        gherkin_context.payload["cache"],
+        include_tools=True,
+    )
+
+
+@then("register payload tool names should exclude meta tools from fixture list")
+def then_register_payload_excludes_meta(gherkin_context: GherkinContext) -> None:
+    body = gherkin_context.payload["register_body"]
+    names = {str(tool.get("name") or "") for tool in body["tools"] if isinstance(tool, dict)}
+    assert names == {"semble_search"}
+    for meta_name in gherkin_context.payload["meta_tools"]:
+        assert meta_name not in names
+
+
+@then("hook catalog merged after register should exclude meta tools from fixture list")
+def then_hook_catalog_after_register_excludes_meta(gherkin_context: GherkinContext) -> None:
+    pack = gherkin_context.payload["pack"]
+    clear_catalog_registry()
+    register_catalog(gherkin_context.payload["register_body"])
+    merged = catalog_for_hook("cursor", pack.workspace)
+    names = {str(tool.get("name") or "") for tool in merged}
+    assert names == {"semble_search"}
+    for meta_name in gherkin_context.payload["meta_tools"]:
+        assert meta_name not in names

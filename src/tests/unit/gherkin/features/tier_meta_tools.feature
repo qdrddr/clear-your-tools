@@ -27,3 +27,9 @@ Feature: cyt-mcp meta tools excluded from tier manager
     Given a workspace with usr and ws cyt-mcp catalog layers registered
     When master hook catalog is rebuilt for tier tracking
     Then master catalog should exclude get-tool-definitions and canonical meta name
+
+  Scenario: cyt-mcp catalog push payload excludes meta tools before hook registration
+    Given a cyt-mcp runtime cache with backend and meta tools from fixture list
+    When cyt-mcp builds hook daemon register payload for the workspace
+    Then register payload tool names should exclude meta tools from fixture list
+    And hook catalog merged after register should exclude meta tools from fixture list

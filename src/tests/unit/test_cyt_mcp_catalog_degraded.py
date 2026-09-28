@@ -163,3 +163,43 @@ def test_apply_fetched_catalog_keeps_mlflow_when_backend_degraded(
     names = [tool["name"] for tool in envelope["tools"]]
     assert "mlflow-mcp_search_traces" in names
     assert "atlassian-jira-dc_jira_searchIssues" in names
+
+
+def test_hydrate_missing_servers_skips_removed_backends_not_in_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.cyt_mcp.catalog import _CytMcpCacheKey, _hydrate_missing_servers_from_disk
+
+    monkeypatch.setattr(
+        "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda **kwargs: ["context7", "gitnexus"],
+    )
+    from cyt.cyt_mcp.catalog_disk import write_disk_catalog
+
+    disk_tools = [
+        _tool("hedl_hedl_read", server_key="hedl"),
+        _tool("gitnexus_query", server_key="gitnexus"),
+    ]
+    write_disk_catalog(
+        "cursor",
+        agent="cursor",
+        tools=disk_tools,
+        content_hash="abc",
+    )
+    memory_tools = [
+        _tool("context7_query-docs", server_key="context7"),
+    ]
+
+    hydrated = _hydrate_missing_servers_from_disk(
+        _CytMcpCacheKey(agent="cursor", slug="cursor"),
+        memory_tools,
+    )
+
+    names = {tool["name"] for tool in hydrated}
+    assert names == {"context7_query-docs", "gitnexus_query"}
+    assert "hedl_hedl_read" not in names

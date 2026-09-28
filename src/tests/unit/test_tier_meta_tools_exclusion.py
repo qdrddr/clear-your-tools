@@ -197,6 +197,41 @@ def test_hydrate_runtime_cache_excludes_canonical_meta_tool_from_disk(
     assert "get-tool-definitions" not in names
 
 
+def test_resolve_tracked_catalog_entity_ids_excludes_meta_tools(
+    capture_pack: TierCaptureFixturePack,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.tiers.adapters.tools import resolve_tracked_catalog_entity_ids
+
+    catalog = [
+        {"name": "semble_search", "cyt_catalog_source": "cyt_mcp"},
+        {"name": "get-tool-definitions", "cyt_catalog_source": "cyt_mcp"},
+    ]
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: catalog,
+    )
+    ids = resolve_tracked_catalog_entity_ids(capture_pack.config, blocking=False)
+    assert ids == frozenset({"cyt_mcp:semble_search"})
+
+
+def test_catalog_payload_excludes_meta_tools_before_hook_registration(
+    tmp_path: Path,
+) -> None:
+    from cyt_mcp.catalog import catalog_payload
+
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {"name": name, "inputSchema": {"type": "object"}}
+            for name in load_meta_tools_not_reported()
+        ]
+        + [{"name": "semble_search", "inputSchema": {"type": "object"}}],
+    )
+    names = [tool["name"] for tool in catalog_payload(cache, agent="cursor")["tools"]]
+    assert names == ["semble_search"]
+
+
 def test_meta_tool_entity_ids_are_distinct_from_backend_tool() -> None:
     backend_id = tool_entity_id(
         {"name": "semble_search", "cyt_catalog_source": "cyt_mcp"},

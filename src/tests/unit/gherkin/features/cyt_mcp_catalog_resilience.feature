@@ -76,3 +76,16 @@ Feature: cyt-mcp catalog resilience
     And a cyt-mcp hook config with tier tracking enabled
     When cyt tiers stats runs with JSON output for the workspace
     Then tiers stats catalog count should equal usr plus ws tool totals
+
+  Scenario: Dual-layer tiers stats excludes meta tools when registration payloads include them
+    Given dual-layer usr and ws cyt-mcp catalogs registered with meta tools in the payload
+    And a cyt-mcp hook config with tier tracking enabled
+    When cyt tiers stats runs with JSON output for the workspace
+    Then tiers stats catalog count should equal usr plus ws tool totals
+    And master catalog tool names should exclude meta tools from fixture list
+
+  Scenario: Workspace-only tiers stats excludes meta tools when ws registration includes them
+    Given workspace cyt-mcp catalog registered with meta tools in the payload
+    And a cyt-mcp hook config with tier tracking enabled
+    When cyt tiers stats runs with JSON output for the workspace
+    Then tiers stats catalog count should equal workspace-only backend tool total

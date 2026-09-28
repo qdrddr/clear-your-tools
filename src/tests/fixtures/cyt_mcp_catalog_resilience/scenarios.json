@@ -100,6 +100,40 @@
         "gitnexus_cypher",
         "semble_search"
       ]
+    },
+    {
+      "id": "dual_layer_meta_tools_tiers_stats",
+      "description": "Meta tools in usr/ws registration payloads must not inflate tiers stats Total",
+      "expected_ws_tool_names": [
+        "semble_search",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool"
+      ],
+      "expected_usr_tool_names": [
+        "context7_resolve-library-id",
+        "context7_query-docs"
+      ],
+      "expected_total_tools": 5,
+      "expected_scope": "all",
+      "expected_user_tool_count": 2,
+      "expected_workspace_tool_count": 3,
+      "forbidden_tool_names": [
+        "get-tool-definitions",
+        "cyt-mcp_get-tool-definitions",
+        "context-mode__get-tool-definitions"
+      ]
+    },
+    {
+      "id": "ws_only_meta_tools_tiers_stats",
+      "description": "Workspace-only registration with meta tools must not inflate tiers stats Total",
+      "expected_total_tools": 3,
+      "expected_user_tool_count": 0,
+      "expected_workspace_tool_count": 3,
+      "forbidden_tool_names": [
+        "get-tool-definitions",
+        "cyt-mcp_get-tool-definitions",
+        "context-mode__get-tool-definitions"
+      ]
     }
   ]
 }

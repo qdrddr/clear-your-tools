@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from cyt.hook.catalog_registry import catalog_for_hook, clear_catalog_registry
 from cyt_mcp.config import (
     AggregatorConfig,
     load_aggregator_config,
@@ -18,6 +19,7 @@ from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.hook_daemon_push import (
     _RETRY_DELAYS_SECONDS,
     PushContext,
+    _build_register_payload,
     _can_push_to_registry,
     _instance_key,
     _last_permissions_revision,
@@ -26,6 +28,7 @@ from cyt_mcp.hook_daemon_push import (
     schedule_catalog_push,
 )
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from tests.support.tier_capture_fixtures import load_meta_tools_not_reported
 
 
 class _TrackingConfigHolder(ConfigHolder):
@@ -91,6 +94,79 @@ def test_push_once_sends_full_then_hash_only(tmp_path: Path) -> None:
     assert calls[0]["workspace_root"] == str(tmp_path)
     assert "tools" in calls[0]
     assert "tools" not in calls[1]
+
+
+@pytest.mark.parametrize("meta_tool_name", load_meta_tools_not_reported())
+def test_build_register_payload_excludes_meta_tool_names(
+    tmp_path: Path,
+    meta_tool_name: str,
+) -> None:
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {"name": meta_tool_name, "inputSchema": {"type": "object"}},
+            {"name": "semble_search", "inputSchema": {"type": "object"}},
+        ],
+    )
+    body = _build_register_payload(_config(workspace_root=tmp_path), cache, include_tools=True)
+    names = [str(tool.get("name") or "") for tool in body["tools"] if isinstance(tool, dict)]
+    assert meta_tool_name not in names
+    assert names == ["semble_search"]
+
+
+def test_register_catalog_from_push_payload_excludes_meta_tools(tmp_path: Path) -> None:
+    from cyt.hook.catalog_registry import register_catalog
+
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {"name": name, "inputSchema": {"type": "object"}}
+            for name in load_meta_tools_not_reported()
+        ]
+        + [{"name": "semble_search", "inputSchema": {"type": "object"}}],
+    )
+    clear_catalog_registry()
+    body = _build_register_payload(_config(workspace_root=tmp_path), cache, include_tools=True)
+    register_catalog(body)
+
+    merged = catalog_for_hook("cursor", tmp_path)
+    names = {str(tool.get("name") or "") for tool in merged}
+    assert names == {"semble_search"}
+    for meta_name in load_meta_tools_not_reported():
+        assert meta_name not in names
+
+
+def test_push_once_excludes_get_tool_definitions_from_daemon_payload(tmp_path: Path) -> None:
+    from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
+
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {"name": MCP_WIRE_SEARCH_TOOL_NAME, "inputSchema": {"type": "object"}},
+            {"name": "semble_search", "inputSchema": {"type": "object"}},
+        ],
+    )
+    config = _config(workspace_root=tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def fake_post(_url: str, payload: dict[str, object]) -> tuple[int, dict[str, object] | None]:
+        calls.append(payload)
+        return 200, {"status": "stored", "permissions_revision": 0}
+
+    with (
+        patch(
+            "cyt_mcp.hook_daemon_push.resolve_hook_register_url",
+            return_value="http://127.0.0.1:8834/hook/catalog/register",
+        ),
+        patch("cyt_mcp.hook_daemon_push._post_json", side_effect=fake_post),
+    ):
+        ok, _rev = _push_once(config, cache)
+        assert ok is True
+
+    tools = calls[0]["tools"]
+    assert isinstance(tools, list)
+    names = [str(tool.get("name") or "") for tool in tools if isinstance(tool, dict)]
+    assert names == ["semble_search"]
 
 
 def test_push_once_skipped_without_workspace_root() -> None:

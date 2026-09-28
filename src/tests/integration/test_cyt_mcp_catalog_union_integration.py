@@ -11,7 +11,11 @@ import pytest
 from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.tiers.cli import main as tiers_main
 from cyt.tiers.manager import _managers
-from cyt.tools.master_catalog import clear_master_catalog_cache, get_master_tool_catalog
+from cyt.tools.master_catalog import (
+    clear_master_catalog_cache,
+    get_master_tool_catalog,
+    rebuild_master_catalog,
+)
 from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     capture_registry_registrations,
     load_resilience_scenario,
@@ -23,6 +27,10 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     register_ws_catalog,
     reset_catalog_state,
     write_usr_scope_disk_catalog,
+)
+from tests.support.tier_capture_fixtures import (
+    load_meta_tools_not_reported,
+    register_dual_layer_catalog_with_meta_tools,
 )
 
 
@@ -133,16 +141,27 @@ def test_master_catalog_merges_usr_disk_when_registry_has_ws_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Match gherkin disk-merge setup: clear, register ws, usr disk, cold rebuild."""
     scenario = load_resilience_scenario("usr_disk_merge_ws_registry")
     workspace = materialize_workspace(tmp_path)
     config = patch_tiers_stats_config(monkeypatch, workspace, db_path=tmp_path / "tiers.db")
-    register_ws_catalog(workspace, load_ws_tools_catalog())
     patch_daemon_catalog_status(monkeypatch, capture_registry_registrations())
+    monkeypatch.setattr(
+        "cyt.hook.catalog_registry._sync_live_registrations_from_daemon",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog._hydrate_master_from_disk_if_empty",
+        lambda *_args, **_kwargs: None,
+    )
     clear_cyt_mcp_catalog_cache()
     clear_master_catalog_cache()
+    register_ws_catalog(workspace, load_ws_tools_catalog())
+    patch_daemon_catalog_status(monkeypatch, capture_registry_registrations())
     write_usr_scope_disk_catalog(monkeypatch, tmp_path / "cyt-mcp-catalog")
 
-    catalog = get_master_tool_catalog(config, blocking=True)
+    rebuild_master_catalog(config, blocking=True, cold_start=True)
+    catalog = get_master_tool_catalog(config, blocking=False)
     assert catalog is not None
     names = {tool["name"] for tool in catalog}
     assert names == set(scenario.raw["expected_merged_tool_names"])
@@ -171,3 +190,72 @@ def test_tiers_stats_after_registry_clear_hydrates_dual_layer_total(
         payload["overview"]["troubleshooting"]["catalog_tool_count"]
         == scenario.raw["expected_total_tools"]
     )
+
+
+def test_tiers_stats_excludes_meta_tools_from_dual_layer_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Registration payloads may include get-tool-definitions; tier totals must not."""
+    scenario = load_resilience_scenario("dual_layer_meta_tools_tiers_stats")
+    workspace = materialize_workspace(tmp_path)
+    raw_ws, raw_usr = register_dual_layer_catalog_with_meta_tools(workspace)
+    backend_ws = load_ws_tools_catalog()
+    backend_usr_count = 2
+    assert len(raw_ws) > len(backend_ws)
+    assert len(raw_usr) > backend_usr_count
+
+    patch_daemon_catalog_status(monkeypatch, capture_registry_registrations())
+    config = patch_tiers_stats_config(monkeypatch, workspace, db_path=tmp_path / "tiers.db")
+
+    code = tiers_main(["stats", "--workspace", str(workspace), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    troubleshooting = payload["overview"]["troubleshooting"]
+    tier_total = payload["overview"]["tier_statistics"]["tools"]["totals"]["count"]
+    expected_total = int(scenario.raw["expected_total_tools"])
+
+    assert troubleshooting["catalog_tool_count"] == expected_total
+    assert tier_total == expected_total
+
+    master = get_master_tool_catalog(config, blocking=True) or []
+    master_names = {str(tool.get("name") or "") for tool in master}
+    for forbidden in scenario.raw["forbidden_tool_names"]:
+        assert forbidden not in master_names
+
+
+def test_tiers_stats_ws_only_excludes_meta_tools_from_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    scenario = load_resilience_scenario("ws_only_meta_tools_tiers_stats")
+    workspace = materialize_workspace(tmp_path)
+    ws_tools = load_ws_tools_catalog()
+    polluted = list(ws_tools)
+    polluted.extend(
+        {
+            "name": name,
+            "input_schema": {"type": "object"},
+            "cyt_catalog_source": "cyt_mcp",
+        }
+        for name in load_meta_tools_not_reported()
+    )
+    register_ws_catalog(workspace, polluted)
+    assert len(polluted) > len(ws_tools)
+
+    patch_daemon_catalog_status(monkeypatch, capture_registry_registrations())
+    patch_tiers_stats_config(monkeypatch, workspace, db_path=tmp_path / "tiers.db")
+
+    code = tiers_main(["stats", "--workspace", str(workspace), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    troubleshooting = payload["overview"]["troubleshooting"]
+    tier_total = payload["overview"]["tier_statistics"]["tools"]["totals"]["count"]
+    expected_total = int(scenario.raw["expected_total_tools"])
+
+    assert troubleshooting["catalog_tool_count"] == expected_total
+    assert troubleshooting["catalog_workspace_tool_count"] == expected_total
+    assert troubleshooting["catalog_user_tool_count"] == 0
+    assert tier_total == expected_total

@@ -31,6 +31,7 @@ WS_TOOLS_CATALOG_PATH = FIXTURES_DIR / "ws_tools_catalog.json"
 USR_TOOLS_CATALOG_PATH = FIXTURES_DIR / "usr_tools_catalog.json"
 POLLUTED_USR_TOOLS_CATALOG_PATH = FIXTURES_DIR / "polluted_usr_tools_catalog.json"
 POLLUTED_USR_TOOLS_WITH_RESTART_PATH = FIXTURES_DIR / "polluted_usr_tools_with_restart_catalog.json"
+STALE_REMOVED_BACKEND_DISK_CATALOG_PATH = FIXTURES_DIR / "stale_removed_backend_disk_catalog.json"
 SCENARIOS_PATH = FIXTURES_DIR / "scenarios.json"
 
 
@@ -59,6 +60,16 @@ def load_usr_tools_catalog(path: Path = USR_TOOLS_CATALOG_PATH) -> list[dict[str
 
 def load_polluted_usr_tools_catalog(
     path: Path = POLLUTED_USR_TOOLS_CATALOG_PATH,
+) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tools = payload.get("tools")
+    if not isinstance(tools, list):
+        raise ValueError(f"{path}: expected tools array")
+    return [dict(tool) for tool in tools if isinstance(tool, dict)]
+
+
+def load_stale_removed_backend_disk_catalog(
+    path: Path = STALE_REMOVED_BACKEND_DISK_CATALOG_PATH,
 ) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     tools = payload.get("tools")
@@ -334,6 +345,36 @@ def write_usr_scope_disk_catalog(
     global_fp = scope_config_fingerprint(global_agg, global_defs)
     usr_key = _CytMcpCacheKey(agent="cursor", slug=global_fp, workspace="")
     _write_catalog_disk(usr_key, tools)
+    return tools
+
+
+def clear_cyt_mcp_memory_catalog_state() -> None:
+    """Drop in-memory cyt-mcp catalog state without purging registry or disk caches."""
+    from cyt.cyt_mcp.catalog import _catalog_lock, _catalog_states
+    from cyt.tools.master_catalog import clear_master_catalog_cache
+
+    with _catalog_lock:
+        _catalog_states.clear()
+    clear_master_catalog_cache()
+
+
+def write_workspace_scope_disk_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    cache_dir: Path,
+    config: dict[str, Any],
+    *,
+    disk_tools: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Persist workspace-scoped cyt-mcp tools to the hook catalog disk cache."""
+    from cyt.cyt_mcp.catalog import _cache_key_for_config, _write_catalog_disk
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir", lambda: cache_dir)
+    tools = list(
+        disk_tools if disk_tools is not None else load_stale_removed_backend_disk_catalog(),
+    )
+    cache_key = _cache_key_for_config(config)
+    _write_catalog_disk(cache_key, tools)
     return tools
 
 

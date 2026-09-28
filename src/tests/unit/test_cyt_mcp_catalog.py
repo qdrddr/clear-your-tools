@@ -67,3 +67,21 @@ def test_catalog_payload_excludes_search_tool() -> None:
     assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert SEARCH_TOOL_NAME not in names
     assert "codebase-memory-mcp_search_graph" in names
+
+
+def test_catalog_payload_excludes_suffixed_meta_tool_names() -> None:
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {
+                "name": "cyt-mcp-ws__get-tool-definitions",
+                "inputSchema": {"type": "object", "properties": {"tool_name": {"type": "string"}}},
+            },
+            {
+                "name": "semble_search",
+                "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        ],
+    )
+    names = [tool["name"] for tool in catalog_payload(cache, agent="cursor")["tools"]]
+    assert names == ["semble_search"]

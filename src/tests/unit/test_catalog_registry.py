@@ -112,6 +112,39 @@ def test_register_catalog_hydrates_hook_caches(
     assert any(tool.get("name") == "fixture_hydrate" for tool in catalog)
 
 
+def test_register_catalog_strips_meta_tools_from_stored_registration(
+    tmp_path: Path,
+) -> None:
+    clear_catalog_registry(purge_disk_snapshot=True)
+    ws_root = tmp_path / "project"
+    ws_root.mkdir()
+    tools = [
+        _catalog_tool("semble_search", server_key="semble", tool_name="search"),
+        _catalog_tool(
+            "get-tool-definitions",
+            server_key="cyt-mcp",
+            tool_name="get-tool-definitions",
+        ),
+        _catalog_tool(
+            "cyt-mcp_get-tool-definitions",
+            server_key="cyt-mcp",
+            tool_name="get-tool-definitions",
+        ),
+    ]
+    _register_layer(ws_root, tools)
+
+    ws_registrations = [
+        row for row in list_catalog_registrations() if row.get("workspace_root") == str(ws_root)
+    ]
+    assert len(ws_registrations) == 1
+    stored_names = {str(tool.get("name") or "") for tool in ws_registrations[0]["tools"]}
+    assert stored_names == {"semble_search"}
+
+    merged = catalog_for_hook("cursor", ws_root)
+    merged_names = {str(tool.get("name") or "") for tool in merged}
+    assert merged_names == {"semble_search"}
+
+
 def test_register_rejects_legacy_global_scope() -> None:
     tools = [{"name": "global_tool", "input_schema": {}}]
     content_hash = raw_catalog_content_hash(tools)
