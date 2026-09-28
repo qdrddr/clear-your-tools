@@ -256,6 +256,9 @@ fi
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"
 bash "${ROOT}/scripts/deps/export-requirements.sh"
 bash "${ROOT}/scripts/deps/export-rust-sbom.sh"
+# Sync the app venv to the bumped sdk/python version before commit hooks.
+# maturin develop can strip chunk registry pins from Cargo.lock; heal before staging.
+bash "${ROOT}/scripts/local/dev/workflow.sh" app-setup
 "${ROOT}/scripts/local/dev/heal-cargo-lock.sh"
 
 stage_version_files

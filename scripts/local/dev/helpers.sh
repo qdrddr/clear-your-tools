@@ -740,11 +740,37 @@ print(f"  install: {install_kind}")
 PY
 	}
 
+	# True when the editable cyt-indexer-sdk install matches sdk/python/pyproject.toml.
+	_cyt_app_python_env_current() {
+		require_cmd uv
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		uv run --no-sync python - <<'PY'
+import sys
+import tomllib
+from importlib import metadata
+from pathlib import Path
+
+root = Path(".").resolve()
+expected = tomllib.loads((root / "sdk/python/pyproject.toml").read_text())["project"]["version"]
+try:
+    installed = metadata.version("cyt-indexer-sdk")
+except metadata.PackageNotFoundError:
+    sys.exit(1)
+sys.exit(0 if installed == expected else 1)
+PY
+	}
+
 	cyt_verify_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "verify app"
-		cyt_run uv run python - <<'PY'
+		# maturin develop during uv sync can strip chunk registry pins from Cargo.lock;
+		# heal afterward and verify with --no-sync so pre-commit does not rewrite the lock.
+		if ! _cyt_app_python_env_current; then
+			cyt_sync_app
+			chunk_ensure_workspace_cargo_lock "${CYT_REPO_ROOT}"
+		fi
+		cyt_run uv run --no-sync python - <<'PY'
 from cyt_indexer.build import build_catalog_index as sdk_build
 from cyt.indexer.build import build_catalog_index as app_build
 

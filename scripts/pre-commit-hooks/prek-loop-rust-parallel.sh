@@ -59,17 +59,17 @@ while (($#)); do
 	--git-add)
 		shift
 		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
-			echo "--git-add requires orchestrator or group." >&2
-			exit 1
+			PARALLEL_GIT_ADD=orchestrator
+		else
+			case "$1" in
+			orchestrator | group) PARALLEL_GIT_ADD="$1" ;;
+			*)
+				echo "--git-add must be orchestrator or group (got: $1)." >&2
+				exit 1
+				;;
+			esac
+			shift
 		fi
-		case "$1" in
-		orchestrator | group) PARALLEL_GIT_ADD="$1" ;;
-		*)
-			echo "--git-add must be orchestrator or group (got: $1)." >&2
-			exit 1
-			;;
-		esac
-		shift
 		;;
 	--one-run | --changed-only | --fail-fast)
 		FORWARD_ARGS+=("$1")
@@ -88,7 +88,7 @@ while (($#)); do
 		shift 2
 		;;
 	-h | --help)
-		echo "Usage: $0 [--short] [--one-run] [--changed-only] [--from-ref REF] [--to-ref REF] [--fail-fast] [--no-git-add] [--git-add orchestrator|group] [--update-shard-weights] [--skip-rebalance]" >&2
+		echo "Usage: $0 [--short] [--one-run] [--changed-only] [--from-ref REF] [--to-ref REF] [--fail-fast] [--no-git-add] [--git-add [orchestrator|group]] [--update-shard-weights] [--skip-rebalance]" >&2
 		echo "Runs rust-sync → parallel audit/deny/udeps → clippy/header → parallel tests → rust-build." >&2
 		echo "Parallel logs: ${LOG_DIR}/<group>.log" >&2
 		echo "Failure summary: ${FAILURES_LOG}" >&2
