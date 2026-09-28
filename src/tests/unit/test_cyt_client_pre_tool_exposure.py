@@ -44,6 +44,10 @@ def _write_type2_session(
     if server_key and backend_tool_name:
         tool_record["server_key"] = server_key
         tool_record["tool_name"] = backend_tool_name
+    elif "_" in tool_name:
+        derived_server, derived_tool = tool_name.split("_", 1)
+        tool_record["server_key"] = derived_server
+        tool_record["tool_name"] = derived_tool
     tools = [tool_record]
     if extra_tools:
         tools.extend(extra_tools)
@@ -103,10 +107,17 @@ def test_schema_mismatch_persists_full_type1_tool_entry(
     assert entry["key"] == "tool:cyt_mcp:filesystem_read_file"
     assert entry["input_schema"] == schema
     expected = build_type1_tool_entry_from_catalog_record(
-        {"name": "filesystem_read_file", "input_schema": schema},
+        {
+            "name": "filesystem_read_file",
+            "server_key": "filesystem",
+            "tool_name": "read_file",
+            "input_schema": schema,
+        },
         catalog="cyt_mcp",
         full=True,
     )
+    assert entry["server_key"] == "filesystem"
+    assert entry["tool_name"] == "read_file"
     assert entry["hash"] == expected["hash"]
 
 
@@ -370,7 +381,12 @@ def test_schema_deny_omits_definition_when_pre_exposed_via_type1_entry(
     }
     _write_type2_session(log_path, "filesystem_read_file", schema)
     deny_entry = build_type1_tool_entry_from_catalog_record(
-        {"name": "filesystem_read_file", "input_schema": schema},
+        {
+            "name": "filesystem_read_file",
+            "server_key": "filesystem",
+            "tool_name": "read_file",
+            "input_schema": schema,
+        },
         catalog="cyt_mcp",
         full=True,
     )
@@ -404,7 +420,12 @@ def test_schema_deny_includes_definition_after_compaction(
     }
     _write_type2_session(log_path, "filesystem_read_file", schema)
     deny_entry = build_type1_tool_entry_from_catalog_record(
-        {"name": "filesystem_read_file", "input_schema": schema},
+        {
+            "name": "filesystem_read_file",
+            "server_key": "filesystem",
+            "tool_name": "read_file",
+            "input_schema": schema,
+        },
         catalog="cyt_mcp",
         full=True,
     )
@@ -413,7 +434,14 @@ def test_schema_deny_includes_definition_after_compaction(
         "key": "tool_catalog:cyt_mcp",
         "catalog": "cyt_mcp",
         "hash": "post-compaction-hash",
-        "tools": [{"name": "filesystem_read_file", "input_schema": schema}],
+        "tools": [
+            {
+                "name": "filesystem_read_file",
+                "server_key": "filesystem",
+                "tool_name": "read_file",
+                "input_schema": schema,
+            },
+        ],
     }
     log_path.write_text(
         log_path.read_text(encoding="utf-8")

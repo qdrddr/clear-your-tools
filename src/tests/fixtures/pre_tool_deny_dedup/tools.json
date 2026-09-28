@@ -1,6 +1,8 @@
 {
   "filesystem_read_file": {
     "catalog": "cyt_mcp",
+    "server_key": "filesystem",
+    "tool_name": "read_file",
     "input_schema": {
       "type": "object",
       "properties": {

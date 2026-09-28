@@ -18,9 +18,9 @@ def test_resolve_from_server_key_and_tool_name() -> None:
     assert resolve_mcp_server_and_tool(tool) == ("codebase-memory-mcp", "search_graph")
 
 
-def test_resolve_infers_bare_name_when_session_log_omits_tool_name() -> None:
+def test_resolve_without_tool_name_does_not_infer_bare_name() -> None:
     tool = {"name": "grep", "server_key": "fff"}
-    assert resolve_mcp_server_and_tool(tool) == ("fff", "grep")
+    assert resolve_mcp_server_and_tool(tool) == ("unknown", "grep")
 
 
 def test_resolve_without_explicit_fields_returns_unknown() -> None:

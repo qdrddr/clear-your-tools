@@ -17,17 +17,41 @@ from cyt_mcp.catalog import merge_catalog_payloads
 def test_merge_catalog_payloads_user_base_wins_on_conflict() -> None:
     base = {
         "agent": "cursor",
-        "tools": [{"name": "a_tool", "input_schema": {}}],
+        "tools": [
+            {
+                "name": "a_tool",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+                "cyt_catalog_scope": "user",
+            },
+        ],
         "degraded_servers": ["global-down"],
     }
     overlay = {
         "agent": "cursor",
-        "tools": [{"name": "a_tool", "input_schema": {"type": "object", "properties": {}}}],
+        "tools": [
+            {
+                "name": "a_tool",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "repo": {"type": "string"},
+                    },
+                    "required": ["query", "repo"],
+                },
+                "cyt_catalog_scope": "workspace",
+            },
+        ],
         "degraded_servers": ["ws-down"],
     }
     merged = merge_catalog_payloads(base, overlay)
     assert len(merged["tools"]) == 1
-    assert merged["tools"][0]["input_schema"] == {}
+    assert set(merged["tools"][0]["input_schema"]["required"]) == {"query", "repo"}
+    assert merged["tools"][0]["cyt_catalog_scope"] == "user"
     assert set(merged["degraded_servers"]) == {"global-down", "ws-down"}
 
 

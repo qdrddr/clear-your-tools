@@ -6,10 +6,17 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "query": {"type": "string"},
-          "repo": {"type": "string"}
+          "query": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
         },
-        "required": ["query", "repo"]
+        "required": [
+          "query",
+          "repo"
+        ]
       },
       "cyt_catalog_source": "cyt_mcp",
       "server_key": "semble",
@@ -17,17 +24,248 @@
     },
     {
       "name": "gitnexus_cypher",
-      "description": "Run Cypher queries against the GitNexus knowledge graph",
+      "description": "Execute Cypher query against the code knowledge graph.\n\nWHEN TO USE: Complex structural queries that search/explore can't answer. READ gitnexus://repo/{name}/schema first for the full schema.\nAFTER THIS: Use context() on result symbols for deeper context.\n\nSCHEMA:\n- Nodes: File, Folder, Function, Class, Interface, Method, CodeElement, Community, Process, Route, Tool\n- Multi-language nodes (use backticks): `Struct`, `Enum`, `Trait`, `Impl`, etc.\n- All edges via single CodeRelation table with 'type' property\n- Edge types: CONTAINS, DEFINES, IMPORTS, CALLS, EXTENDS, IMPLEMENTS, HAS_METHOD, HAS_PROPERTY, ACCESSES, METHOD_OVERRIDES, OVERRIDES, METHOD_IMPLEMENTS, MEMBER_OF, STEP_IN_PROCESS, HANDLES_ROUTE, FETCHES, HANDLES_TOOL, ENTRY_POINT_OF, WRAPS, QUERIES, INJECTS, CFG, REACHING_DEF, TAINTED, SANITIZES, TAINT_PATH, CDG, POST_DOMINATE \u2014 CFG, REACHING_DEF, TAINTED, SANITIZES, TAINT_PATH, CDG, POST_DOMINATE are populated ONLY on indexes built with `gitnexus analyze --pdg` (zero rows on a default index); OVERRIDES is a legacy alias \u2014 rows are written as METHOD_OVERRIDES\n- Edge properties: type (STRING), confidence (DOUBLE), reason (STRING), step (INT32)\n\nEXAMPLES:\n\u2022 Find callers of a function:\n  MATCH (a)-[:CodeRelation {type: 'CALLS'}]->(b:Function {name: \"validateUser\"}) RETURN a.name, a.filePath\n\n\u2022 Find community members:\n  MATCH (f)-[:CodeRelation {type: 'MEMBER_OF'}]->(c:Community) WHERE c.heuristicLabel = \"Auth\" RETURN f.name\n\n\u2022 Trace a process:\n  MATCH (s)-[r:CodeRelation {type: 'STEP_IN_PROCESS'}]->(p:Process) WHERE p.heuristicLabel = \"UserLogin\" RETURN s.name, r.step ORDER BY r.step\n\n\u2022 Find all methods of a class:\n  MATCH (c:Class {name: \"UserService\"})-[r:CodeRelation {type: 'HAS_METHOD'}]->(m:Method) RETURN m.name, m.parameterCount, m.returnType\n\n\u2022 Find all properties of a class:\n  MATCH (c:Class {name: \"User\"})-[r:CodeRelation {type: 'HAS_PROPERTY'}]->(p:Property) RETURN p.name, p.declaredType\n\n\u2022 Find all writers of a field:\n  MATCH (f:Function)-[r:CodeRelation {type: 'ACCESSES', reason: 'write'}]->(p:Property) WHERE p.name = \"address\" RETURN f.name, f.filePath\n\n\u2022 Find method overrides (MRO resolution):\n  MATCH (winner:Method)-[r:CodeRelation {type: 'METHOD_OVERRIDES'}]->(loser:Method) RETURN winner.name, winner.filePath, loser.filePath, r.reason\n\n\u2022 Find DI-injected implementations (beans injected into a consumer class):\n  MATCH (c:Class {name: 'OrderService'})-[r:CodeRelation]->(impl:Class) WHERE r.type = 'INJECTS' RETURN impl.name, r.reason\n\n\u2022 Detect diamond inheritance:\n  MATCH (d:Class)-[:CodeRelation {type: 'EXTENDS'}]->(b1), (d)-[:CodeRelation {type: 'EXTENDS'}]->(b2), (b1)-[:CodeRelation {type: 'EXTENDS'}]->(a), (b2)-[:CodeRelation {type: 'EXTENDS'}]->(a) WHERE b1 <> b2 RETURN d.name, b1.name, b2.name, a.name\n\nOUTPUT: Returns { markdown, row_count } \u2014 results formatted as a Markdown table for easy reading.\n\nTIPS:\n- All relationships use single CodeRelation table \u2014 filter with {type: 'CALLS'} etc.\n- Community = auto-detected functional area (Leiden algorithm). Properties: heuristicLabel, cohesion, symbolCount, keywords, description, enrichedBy\n- Process = execution flow trace from entry point to terminal. Properties: heuristicLabel, processType, stepCount, communities, entryPointId, terminalId\n- Use heuristicLabel (not label) for human-readable community/process names\n- PDG layers (only when indexed with `--pdg`): BasicBlock nodes + CFG / CDG (control dependence, branch sense 'T'|'F' in reason) / REACHING_DEF (def\u2192use, variable in reason) edges, all BasicBlock\u2192BasicBlock. Prefer the `pdg_query` tool \u2014 it anchors + bounds these for you (raw `[:CDG*]`/`[:REACHING_DEF*]` path scans are unindexed and unbounded).",
       "input_schema": {
         "type": "object",
         "properties": {
-          "query": {"type": "string"}
+          "statement": {
+            "type": "string",
+            "description": "Cypher statement to execute."
+          },
+          "params": {
+            "type": "object",
+            "description": "Optional query parameters for placeholders (e.g. $name) to execute via prepared statement binding."
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name or path. Omit if only one repo is indexed."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional: scope to a pinned branch index (multi-branch repos, #2106). Omit for the workspace index, which follows the checked-out working tree. Ignored in group mode."
+          }
         },
-        "required": ["query"]
+        "required": [
+          "statement"
+        ]
       },
       "cyt_catalog_source": "cyt_mcp",
       "server_key": "gitnexus",
       "tool_name": "cypher"
+    },
+    {
+      "name": "fff_grep",
+      "description": "Search file contents. Search for bare identifiers (e.g. 'InProgressQuote', 'ActorAuth'), NOT code syntax or regex. Filter files with constraints (e.g. '*.rs query', 'src/ query'). Use filename, directory (ending with /) or glob expressions to prefilter. See server instructions for constraint syntax and core rules.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "cursor": {
+            "description": "Cursor from previous result. Only use if previous results weren't sufficient.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxResults": {
+            "description": "Max matching lines (default 20).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "output_mode": {
+            "description": "Output format (default 'content').",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "description": "Search text or regex query with optional constraint prefixes.\nMatches within single lines only \u2014 use ONE specific term, not multiple words.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "GrepParams",
+        "type": "object"
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "server_key": "fff",
+      "tool_name": "grep"
+    },
+    {
+      "name": "jcodemunch_search_symbols",
+      "description": "Search for symbols matching a query across the entire indexed repository. Returns matches with signatures and summaries.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository identifier (owner/repo or just repo name)"
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query (matches symbol names, signatures, summaries, docstrings)"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Optional filter by symbol kind",
+            "enum": [
+              "function",
+              "class",
+              "method",
+              "constant",
+              "type",
+              "template",
+              "import"
+            ]
+          },
+          "file_pattern": {
+            "type": "string",
+            "description": "Optional glob pattern to filter files (e.g., 'src/**/*.py')"
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional filter by language",
+            "enum": [
+              "python",
+              "javascript",
+              "typescript",
+              "tsx",
+              "go",
+              "rust",
+              "java",
+              "php",
+              "dart",
+              "csharp",
+              "razor",
+              "c",
+              "swift",
+              "cpp",
+              "elixir",
+              "ruby",
+              "perl",
+              "gdscript",
+              "blade",
+              "al",
+              "kotlin",
+              "gleam",
+              "bash",
+              "nix",
+              "vue",
+              "ejs",
+              "verse",
+              "lua",
+              "luau",
+              "erlang",
+              "fortran",
+              "sql",
+              "scala",
+              "haskell",
+              "julia",
+              "r",
+              "css",
+              "toml",
+              "groovy",
+              "objc",
+              "proto",
+              "hcl",
+              "graphql",
+              "autohotkey",
+              "asm",
+              "xml",
+              "openapi"
+            ]
+          },
+          "decorator": {
+            "type": "string",
+            "description": "Optional filter: only return symbols with this decorator (case-insensitive substring match, e.g. 'route', 'property', 'Deprecated')"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of results to return (ignored when token_budget is set)",
+            "default": 10
+          },
+          "token_budget": {
+            "type": "integer",
+            "description": "Token budget cap. When set, results are sorted by score and greedily packed until the budget is exhausted, charging each row's actual payload size (compact rows ~15 tokens, so a budget can admit many rows). Overrides max_results \u2014 pass max_results without token_budget when row count matters. Reports token_budget, tokens_used, and tokens_remaining in _meta."
+          },
+          "detail_level": {
+            "type": "string",
+            "description": "Controls result verbosity. 'compact' returns id/name/kind/file/line only (~15 tokens each, best for broad discovery). 'standard' returns signatures and summaries (default). 'full' inlines source code, docstring, and end_line \u2014 equivalent to search + get_symbol in one call.",
+            "enum": [
+              "compact",
+              "standard",
+              "full"
+            ],
+            "default": "standard"
+          },
+          "debug": {
+            "type": "boolean",
+            "description": "When true, each result includes a score_breakdown showing per-field scoring contributions (name_exact, name_contains, name_word_overlap, signature_phrase, signature_word_overlap, summary_phrase, summary_word_overlap, keywords, docstring_word_overlap). Also adds candidates_scored to _meta.",
+            "default": false
+          },
+          "fuzzy": {
+            "type": "boolean",
+            "description": "Enable fuzzy matching. When true, uses trigram overlap + Levenshtein distance as fallback when BM25 scores are low. Fuzzy results include match_type, fuzzy_similarity, and edit_distance fields.",
+            "default": false
+          },
+          "fuzzy_threshold": {
+            "type": "number",
+            "description": "Minimum Jaccard trigram similarity (0.0\u20131.0) for fuzzy candidates. Lower values surface more candidates. Default 0.4.",
+            "default": 0.4
+          },
+          "max_edit_distance": {
+            "type": "integer",
+            "description": "Maximum Levenshtein distance for direct name matching (catches typos). Default 2.",
+            "default": 2
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "centrality",
+              "combined"
+            ],
+            "description": "Ranking strategy. 'relevance' (default) = BM25 text match. 'centrality' = filter by query, rank by PageRank. 'combined' = BM25 + PageRank weighted.",
+            "default": "relevance"
+          },
+          "semantic": {
+            "type": "boolean",
+            "description": "Enable semantic (embedding-based) search. Requires an embedding provider: JCODEMUNCH_EMBED_MODEL (sentence-transformers), GOOGLE_API_KEY+GOOGLE_EMBED_MODEL (Gemini), or OPENAI_API_KEY+OPENAI_EMBED_MODEL (OpenAI). When false (default) there is zero performance impact.",
+            "default": false
+          },
+          "semantic_weight": {
+            "type": "number",
+            "description": "Weight for semantic score in hybrid BM25+embedding ranking (0.0\u20131.0). BM25 receives 1-weight. Default 0.5. Set to 0.0 for identical results to pure BM25; set to 1.0 for pure semantic.",
+            "default": 0.5
+          },
+          "semantic_only": {
+            "type": "boolean",
+            "description": "Skip BM25 entirely and rank solely by embedding cosine similarity. Implies semantic=true.",
+            "default": false
+          },
+          "fusion": {
+            "type": "boolean",
+            "description": "Enable multi-signal fusion (Weighted Reciprocal Rank) across lexical, structural, similarity, and identity channels. Produces higher-quality ranking than linear score addition. When True, sort_by is ignored.",
+            "default": false
+          },
+          "fqn": {
+            "type": "string",
+            "description": "PHP fully-qualified class name (e.g. 'App\\Models\\User'). Resolves via PSR-4 and uses the class name as query. Alternative to query."
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "server_key": "jcodemunch",
+      "tool_name": "search_symbols"
     }
   ]
 }

@@ -13,7 +13,23 @@
   ],
   "session_catalog_tools": [
     {
-      "id": "wire_equals_bare_legacy_session_log",
+      "id": "wire_equals_bare_with_explicit_tool_name",
+      "catalog_tool": {
+        "name": "grep",
+        "server_key": "fff",
+        "tool_name": "grep",
+        "input_schema": {
+          "type": "object",
+          "properties": {"pattern": {"type": "string"}}
+        }
+      },
+      "payload_tool_name": "MCP:grep",
+      "tool_input": {"pattern": "auth"},
+      "expected_mcp_server": "fff",
+      "expected_tool_name": "grep"
+    },
+    {
+      "id": "legacy_session_log_missing_tool_name_rejected",
       "catalog_tool": {
         "name": "grep",
         "server_key": "fff",
@@ -24,8 +40,8 @@
       },
       "payload_tool_name": "MCP:grep",
       "tool_input": {"pattern": "auth"},
-      "expected_mcp_server": "fff",
-      "expected_tool_name": "grep"
+      "expected_mcp_server": null,
+      "expected_tool_name": null
     },
     {
       "id": "explicit_server_and_bare",
@@ -58,7 +74,7 @@
       "expected_tool_name": null
     },
     {
-      "id": "wrong_explicit_fields_use_canonical_wire_split",
+      "id": "explicit_fields_trusted_over_wire_split",
       "catalog_tool": {
         "name": "codebase-memory_search_graph",
         "server_key": "search",
@@ -73,8 +89,8 @@
       },
       "payload_tool_name": "MCP:codebase-memory_search_graph",
       "tool_input": {"project": "clear-your-tools", "query": "BM25 ranking"},
-      "expected_mcp_server": "codebase-memory",
-      "expected_tool_name": "search_graph"
+      "expected_mcp_server": "search",
+      "expected_tool_name": "graph"
     }
   ],
   "integration_scenarios": [

@@ -313,6 +313,7 @@ def test_catalog_tool_hash_matches_type1_tool_entry_hash() -> None:
     type1 = build_tool_log_entry(
         {
             "tool_name": "index_status",
+            "server_key": "codebase-memory",
             "name": "codebase-memory_index_status",
             "description": catalog_record["description"],
             "input_schema": schema,
@@ -323,6 +324,7 @@ def test_catalog_tool_hash_matches_type1_tool_entry_hash() -> None:
         catalog_tools=[
             {
                 "tool_name": "index_status",
+                "server_key": "codebase-memory",
                 "name": "codebase-memory_index_status",
                 "description": catalog_record["description"],
                 "input_schema": schema,
@@ -359,9 +361,37 @@ def test_cyt_mcp_tool_log_entry_prefers_wire_name_over_bare_tool_name() -> None:
     entry = build_tool_log_entry(tool, catalog="cyt_mcp", full=False)
     assert entry["key"] == "tool:cyt_mcp:fff_grep"
     assert entry["name"] == "fff_grep"
+    assert entry["server_key"] == "fff"
+    assert entry["tool_name"] == "grep"
     fragment = format_entry_fragment(entry)
     assert "name='fff_grep'" in fragment
     assert "name='grep'" not in fragment
+
+
+def test_cyt_mcp_tool_log_entry_requires_backend_identity() -> None:
+    tool = {
+        "name": "fff_grep",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }
+    with pytest.raises(ValueError, match="missing explicit server_key/tool_name"):
+        build_tool_log_entry(tool, catalog="cyt_mcp", full=False)
+
+
+def test_cyt_mcp_tool_dict_from_log_entry_restores_backend_identity() -> None:
+    from cyt.injection.session_log_build import _tool_dict_from_log_entry
+
+    entry = {
+        "kind": "tool",
+        "catalog": "cyt_mcp",
+        "name": "fff_grep",
+        "server_key": "fff",
+        "tool_name": "grep",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }
+    tool = _tool_dict_from_log_entry(entry)
+    assert tool["server_key"] == "fff"
+    assert tool["tool_name"] == "grep"
+    assert tool["cyt_catalog_source"] == "cyt_mcp"
 
 
 def test_cyt_mcp_distinct_wire_names_for_shared_bare_tool_name() -> None:
@@ -384,10 +414,14 @@ def test_cyt_mcp_distinct_wire_names_for_shared_bare_tool_name() -> None:
 def test_cyt_mcp_tool_log_entry_sets_hook_injection_source() -> None:
     tool = {
         "name": "codebase-memory-mcp_search_graph",
+        "server_key": "codebase-memory-mcp",
+        "tool_name": "search_graph",
         "description": "graph search",
         "input_schema": {"type": "object", "properties": {"project": {"type": "string"}}},
     }
     entry = build_tool_log_entry(tool, catalog="cyt_mcp", full=False)
+    assert entry["server_key"] == "codebase-memory-mcp"
+    assert entry["tool_name"] == "search_graph"
     assert entry["source"] == "hook_injection"
     fragment = format_entry_fragment(entry)
     assert "codebase-memory-mcp_search_graph" in fragment
@@ -415,9 +449,12 @@ def test_search_persisted_tool_entry_round_trip() -> None:
     )
     assert entry["kind"] == "tool_catalog"
     assert entry["catalog"] == "cyt_mcp"
+    persisted = entry["tools"][0]
     tool_entry = build_tool_log_entry(
         {
-            "name": "codebase-memory-mcp_search_graph",
+            "name": persisted["name"],
+            "server_key": persisted["server_key"],
+            "tool_name": persisted["tool_name"],
             "description": "graph search",
             "input_schema": definition["inputSchema"],
         },

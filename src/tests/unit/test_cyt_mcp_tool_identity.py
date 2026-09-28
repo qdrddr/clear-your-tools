@@ -80,16 +80,17 @@ def test_resolve_backend_identity_requires_explicit_fields() -> None:
     )
 
 
-def test_resolve_backend_identity_infers_bare_name_when_session_log_omits_tool_name() -> None:
-    assert resolve_backend_identity(
-        {"name": "grep", "server_key": "fff"},
-    ) == ("fff", "grep")
+def test_resolve_backend_identity_requires_explicit_tool_name() -> None:
+    assert resolve_backend_identity({"name": "grep", "server_key": "fff"}) == (
+        "unknown",
+        "grep",
+    )
     assert resolve_backend_identity(
         {"name": "gitnexus_query", "server_key": "gitnexus"},
-    ) == ("gitnexus", "query")
+    ) == ("unknown", "gitnexus_query")
 
 
-def test_canonical_backend_identity_prefers_wire_split_over_wrong_explicit_fields() -> None:
+def test_canonical_backend_identity_prefers_explicit_fields_over_wire_split() -> None:
     server_keys = ["codebase-memory", "semble", "search"]
     server, bare = canonical_backend_identity(
         {
@@ -99,7 +100,14 @@ def test_canonical_backend_identity_prefers_wire_split_over_wrong_explicit_field
         },
         server_keys,
     )
-    assert (server, bare) == ("codebase-memory", "search_graph")
+    assert (server, bare) == ("search", "graph")
+
+
+def test_require_backend_identity_raises_when_tool_name_missing() -> None:
+    from cyt_mcp.tool_identity import require_backend_identity
+
+    with pytest.raises(ValueError, match="missing explicit server_key/tool_name"):
+        require_backend_identity({"name": "grep", "server_key": "fff"})
 
 
 def test_is_canonical_schema_identity_rejects_partial_split() -> None:

@@ -66,7 +66,7 @@ def test_fixture_canonical_identities_pass_validation(
     load_capture_tool_scenarios(),
     ids=lambda item: item.id,
 )
-def test_canonical_backend_identity_overrides_wrong_explicit_fields(
+def test_canonical_backend_identity_uses_explicit_catalog_fields(
     scenario: CaptureToolScenario,
     server_keys: list[str],
 ) -> None:

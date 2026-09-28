@@ -55,7 +55,7 @@ def _assert_post_tool_use_persists_valid_identity(
     scenario = next(
         item
         for item in load_session_catalog_scenarios()
-        if item.id == "wire_equals_bare_legacy_session_log"
+        if item.id == "wire_equals_bare_with_explicit_tool_name"
     )
     log_path = tmp_path / "guard" / "session.jsonl"
     write_session_catalog_log(log_path, catalog_tool=scenario.catalog_tool)

@@ -58,6 +58,8 @@ def test_build_tool_catalog_entry_from_search() -> None:
     assert entry["kind"] == "tool_catalog"
     assert entry["catalog"] == "cyt_mcp"
     assert entry["tools"][0]["name"] == "codebase-memory-mcp_search_graph"
+    assert entry["tools"][0]["server_key"] == "codebase-memory-mcp"
+    assert entry["tools"][0]["tool_name"] == "search_graph"
     assert entry["tools"][0]["input_schema"] == definition["inputSchema"]
 
 
@@ -144,11 +146,11 @@ def test_extract_post_tool_example_capture_success(
     assert capture["args"] == {"project": "demo", "query": "bm25"}
 
 
-def test_extract_post_tool_example_capture_resolves_server_when_tool_name_omitted(
+def test_extract_post_tool_example_capture_skips_when_tool_name_omitted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Session logs omit tool_name when wire name equals bare name; capture must still resolve server."""
+    """Example capture requires explicit tool_name on cyt_mcp catalog records."""
     log_path = tmp_path / "session.jsonl"
     schema = {"type": "object", "properties": {"pattern": {"type": "string"}}}
     log_path.write_text(
@@ -177,10 +179,7 @@ def test_extract_post_tool_example_capture_resolves_server_when_tool_name_omitte
         "tool_input": {"pattern": "auth"},
         "tool_output": json.dumps({"results": []}),
     }
-    capture = extract_post_tool_example_capture(payload)
-    assert capture is not None
-    assert capture["mcp_server"] == "fff"
-    assert capture["tool_name"] == "grep"
+    assert extract_post_tool_example_capture(payload) is None
 
 
 def test_extract_post_tool_example_capture_skips_failed_call(

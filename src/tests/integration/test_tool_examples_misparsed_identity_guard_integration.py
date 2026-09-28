@@ -42,8 +42,8 @@ def test_tool_examples_misparsed_identity_guard_integration_scenarios(
         _assert_open_purges_misparsed_seed(tmp_path)
     elif scenario.id == "open_purges_orphan_examples":
         _assert_open_purges_orphan_examples(tmp_path)
-    elif scenario.id == "capture_uses_canonical_identity":
-        _assert_capture_uses_canonical_identity(tmp_path, monkeypatch)
+    elif scenario.id == "capture_uses_explicit_catalog_identity":
+        _assert_capture_uses_explicit_catalog_identity(tmp_path, monkeypatch)
     else:
         raise AssertionError(f"unknown integration scenario: {scenario.id}")
 
@@ -96,7 +96,7 @@ def _assert_open_purges_orphan_examples(tmp_path: Path) -> None:
     assert count_orphan_examples(pack.user_examples_db_path) == 0
 
 
-def _assert_capture_uses_canonical_identity(
+def _assert_capture_uses_explicit_catalog_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

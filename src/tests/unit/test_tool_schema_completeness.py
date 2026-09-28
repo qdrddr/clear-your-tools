@@ -6,7 +6,7 @@ import asyncio
 import copy
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,29 +18,34 @@ from cyt.hook.catalog_registry import (
     RegisterStatus,
     _union_layer_tools,
     catalog_for_hook,
-    clear_catalog_registry,
     register_catalog,
 )
-from cyt.injection.session_log_build import build_tool_catalog_log_entry
+from cyt.injection.session_log_build import build_tool_catalog_log_entry, build_tool_log_entry
 from cyt.pruners.tools_filter import filter_tools_for_query
+from cyt.tiers.adapters.tools import prepare_tool_for_tier_pipeline
 from cyt.tiers.manager import NoOpTierManager, _managers
+from cyt.tiers.models import Tier
+from cyt.tools.injection_schema import ensure_tool_injection_schema, schema_required_property_names
+from cyt_mcp.catalog import catalog_payload, merge_catalog_payloads
+from cyt_mcp.catalog_export import stub_dict_from_hook_tool
+from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.session_runtime import MultiWorkspaceCoordinator, WorkspaceSessionRuntime
 from tests.support.tool_schema_completeness_fixtures import (
+    FULL_WS_DISK_CATALOG_PATH,
+    PARTIAL_WS_REGISTRY_PATH,
     cyt_mcp_hook_config,
     load_bm25_catalog_tools,
     load_scenario,
     load_tool_list,
     materialize_workspace,
+    multi_required_backend_tools,
+    partial_schema_from_backend,
     register_ws_catalog,
     reset_catalog_state,
     write_full_disk_catalog,
-)
-from tests.support.tool_schema_completeness_fixtures import (
-    FULL_WS_DISK_CATALOG_PATH,
-    PARTIAL_WS_REGISTRY_PATH,
 )
 
 PARTIAL_SEMBLE = {
@@ -85,7 +90,7 @@ def test_enrich_tools_with_fullest_schemas_merges_disk_repo() -> None:
     semble = _tool_by_name(enriched, "semble_search")
     assert semble["input_schema"]["required"] == ["query", "repo"]
     gitnexus = _tool_by_name(enriched, "gitnexus_cypher")
-    assert gitnexus["input_schema"]["required"] == ["query"]
+    assert gitnexus["input_schema"]["required"] == ["statement"]
 
 
 def test_fetch_catalog_from_registry_enriches_partial_semble_from_disk(
@@ -256,7 +261,11 @@ def test_prune_jcodemunch_keeps_repo_and_query_required(
             "enabled": True,
             "tiers": {"mode": "off", "database": {"path": str(tmp_path / "tier_state.db")}},
             "sequence": ["bm25"],
-            "policy": {"system_tool": "prune_optional", "mcp_tool": "prune_all", "minimum_tools": 5},
+            "policy": {
+                "system_tool": "prune_optional",
+                "mcp_tool": "prune_all",
+                "minimum_tools": 5,
+            },
             "pipelines": {
                 "bm25": {
                     "index_dir": index_dir,
@@ -360,21 +369,155 @@ def test_register_ws_catalog_does_not_strip_other_tool_schemas(
     semble = _tool_by_name(merged, "semble_search")
     gitnexus = _tool_by_name(merged, "gitnexus_cypher")
     assert set(semble["input_schema"]["required"]) == {"query", "repo"}
-    assert gitnexus["input_schema"]["required"] == ["query"]
+    assert gitnexus["input_schema"]["required"] == ["statement"]
 
 
 def test_partial_registry_without_disk_stays_query_only(
     tmp_path: Path,
 ) -> None:
+    """Contract exception: propagation_contract.json degraded_partial_registry_without_disk."""
+    from tests.support.tool_schema_completeness_fixtures import load_propagation_pipeline_scenario
+
+    scenario = load_propagation_pipeline_scenario("degraded_partial_registry_without_disk")
     workspace = materialize_workspace(tmp_path)
     config = cyt_mcp_hook_config(workspace)
     partial_tools = load_tool_list(PARTIAL_WS_REGISTRY_PATH)
     register_ws_catalog(workspace, partial_tools)
 
     fetched = _fetch_catalog_from_registry(config, allow_stale=True)
-    semble = _tool_by_name(fetched, "semble_search")
-    assert semble["input_schema"]["required"] == ["query"]
-    assert "repo" not in semble["input_schema"].get("properties", {})
+    semble = _tool_by_name(fetched, str(scenario.raw["tool_ref"]))
+    assert sorted(semble["input_schema"]["required"]) == sorted(scenario.raw["expected_required"])
+    for forbidden in scenario.raw.get("forbidden_properties") or []:
+        assert forbidden not in semble["input_schema"].get("properties", {})
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "expected_required"),
+    multi_required_backend_tools(),
+    ids=[name for name, _ in multi_required_backend_tools()],
+)
+@pytest.mark.parametrize("tier", [Tier.ACTIVE, Tier.HOT, Tier.EXTRA_HOT], ids=["T2", "T3", "T4"])
+def test_ensure_injection_schema_restores_all_backend_required_for_tiers(
+    tool_name: str,
+    expected_required: list[str],
+    tier: Tier,
+) -> None:
+    """Every multi-required backend tool keeps all required fields after tier materialization."""
+    catalog = load_bm25_catalog_tools()
+    full_tool = _tool_by_name(catalog, tool_name)
+    partial = copy.deepcopy(full_tool)
+    partial["input_schema"] = partial_schema_from_backend(full_tool)
+    tiered = prepare_tool_for_tier_pipeline(partial, tier)
+    tiered["cyt_injection_tier"] = {
+        Tier.ACTIVE: "t2",
+        Tier.HOT: "t3",
+        Tier.EXTRA_HOT: "t4",
+    }[tier]
+    merged = ensure_tool_injection_schema(tiered, catalog_tools=catalog)
+    injected_schema = merged.get("input_schema") or {}
+    assert sorted(schema_required_property_names(injected_schema)) == expected_required
+
+
+def test_build_tool_log_entry_type1_uses_fullest_schema_from_catalog() -> None:
+    tools = [
+        {
+            "name": "jcodemunch_search_symbols",
+            "server_key": "jcodemunch",
+            "tool_name": "search_symbols",
+            "input_schema": copy.deepcopy(PARTIAL_SEMBLE),
+        },
+        {
+            "name": "jcodemunch_search_symbols",
+            "server_key": "jcodemunch",
+            "tool_name": "search_symbols",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "repo": {"type": "string"},
+                },
+                "required": ["query", "repo"],
+            },
+        },
+    ]
+    entry = build_tool_log_entry(
+        tools[0],
+        catalog="cyt_mcp",
+        full=False,
+        catalog_tools=tools,
+    )
+    assert set(entry["input_schema"]["required"]) == {"query", "repo"}
+
+
+def test_catalog_payload_merges_fullest_schema_from_search_index() -> None:
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {
+                "name": "semble_search",
+                "inputSchema": copy.deepcopy(PARTIAL_SEMBLE),
+            },
+        ],
+        search_index={
+            "semble_search": {
+                "name": "semble_search",
+                "inputSchema": copy.deepcopy(FULL_SEMBLE),
+            },
+        },
+    )
+    payload = catalog_payload(cache, agent="cursor")
+    semble = _tool_by_name(payload["tools"], "semble_search")
+    assert set(semble["input_schema"]["required"]) == {"query", "repo"}
+
+
+def test_merge_catalog_payloads_picks_fullest_schema_on_conflict() -> None:
+    base = {
+        "agent": "cursor",
+        "tools": [
+            {
+                "name": "semble_search",
+                "input_schema": copy.deepcopy(PARTIAL_SEMBLE),
+                "cyt_catalog_scope": "user",
+            },
+        ],
+        "degraded_servers": [],
+    }
+    overlay = {
+        "agent": "cursor",
+        "tools": [
+            {
+                "name": "semble_search",
+                "input_schema": copy.deepcopy(FULL_SEMBLE),
+                "cyt_catalog_scope": "workspace",
+            },
+        ],
+        "degraded_servers": ["ws-down"],
+    }
+    merged = merge_catalog_payloads(base, overlay)
+    semble = _tool_by_name(merged["tools"], "semble_search")
+    assert set(semble["input_schema"]["required"]) == {"query", "repo"}
+    assert semble["cyt_catalog_scope"] == "user"
+
+
+def test_frontend_stub_preserves_all_backend_required_properties() -> None:
+    tool = {
+        "name": "context-mode_ctx_batch_execute",
+        "description": "batch execute",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "commands": {"type": "array"},
+                "queries": {"type": "array"},
+            },
+            "required": ["commands", "queries"],
+        },
+    }
+    stub = stub_dict_from_hook_tool(
+        tool,
+        retain={"tool": ["name"], "required_properties": ["name"]},
+    )
+    assert set(stub["inputSchema"]["required"]) == {"commands", "queries"}
+    assert set(stub["inputSchema"]["properties"]) == {"commands", "queries"}
 
 
 def test_usr_layer_register_preserves_fullest_schema(tmp_path: Path) -> None:

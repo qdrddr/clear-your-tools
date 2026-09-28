@@ -1,0 +1,262 @@
+{
+  "reference_tools": [
+    {
+      "id": "semble_search",
+      "catalog_source": "bm25",
+      "required": ["query", "repo"],
+      "optional": ["top_k", "max_snippet_lines"],
+      "server_key": "semble",
+      "tool_name": "search",
+      "forbidden_on_other_tools": ["query"]
+    },
+    {
+      "id": "jcodemunch_search_symbols",
+      "catalog_source": "bm25",
+      "required": ["repo", "query"],
+      "optional": ["kind", "file_pattern", "language", "max_results"],
+      "server_key": "jcodemunch",
+      "tool_name": "search_symbols",
+      "forbidden_on_other_tools": []
+    },
+    {
+      "id": "fff_grep",
+      "catalog_source": "bm25",
+      "required": ["query"],
+      "optional": ["cursor", "maxResults", "output_mode"],
+      "server_key": "fff",
+      "tool_name": "grep",
+      "forbidden_on_other_tools": ["repo"]
+    },
+    {
+      "id": "gitnexus_cypher",
+      "catalog_source": "bm25",
+      "required": ["statement"],
+      "optional": ["params", "repo", "branch"],
+      "server_key": "gitnexus",
+      "tool_name": "cypher",
+      "forbidden_on_other_tools": []
+    },
+    {
+      "id": "dual_tool_required_optional",
+      "catalog_source": "dual_schema",
+      "required": ["query"],
+      "optional": ["limit"],
+      "server_key": "dual",
+      "tool_name": "required_optional",
+      "forbidden_on_other_tools": []
+    }
+  ],
+  "type2_expectations": [
+    {
+      "tool_ref": "semble_search",
+      "required": ["query", "repo"],
+      "optional": ["top_k", "max_snippet_lines"],
+      "forbidden_on_other_tools": ["query"]
+    },
+    {
+      "tool_ref": "gitnexus_cypher",
+      "required": ["statement"],
+      "optional": ["params", "repo", "branch"],
+      "forbidden_on_other_tools": []
+    },
+    {
+      "tool_ref": "fff_grep",
+      "required": ["query"],
+      "optional": ["cursor", "maxResults", "output_mode"],
+      "forbidden_on_other_tools": ["repo"]
+    },
+    {
+      "tool_ref": "jcodemunch_search_symbols",
+      "required": ["repo", "query"],
+      "optional": ["kind", "file_pattern", "language", "max_results"],
+      "forbidden_on_other_tools": []
+    }
+  ],
+  "tier_identity_expectations": [
+    {"tool_ref": "semble_search", "tier": "t0"},
+    {"tool_ref": "semble_search", "tier": "t1"},
+    {"tool_ref": "semble_search", "tier": "t2"},
+    {"tool_ref": "semble_search", "tier": "t3"},
+    {"tool_ref": "semble_search", "tier": "t4"},
+    {"tool_ref": "gitnexus_cypher", "tier": "t0"},
+    {"tool_ref": "gitnexus_cypher", "tier": "t1"},
+    {"tool_ref": "gitnexus_cypher", "tier": "t2"},
+    {"tool_ref": "gitnexus_cypher", "tier": "t3"},
+    {"tool_ref": "gitnexus_cypher", "tier": "t4"},
+    {"tool_ref": "fff_grep", "tier": "t2"},
+    {"tool_ref": "fff_grep", "tier": "t3"},
+    {"tool_ref": "jcodemunch_search_symbols", "tier": "t2"},
+    {"tool_ref": "jcodemunch_search_symbols", "tier": "t3"}
+  ],
+  "identity_pipeline_modules": [
+    {
+      "id": "runtime_cache_catalog_payload",
+      "module": "cyt_mcp.catalog.catalog_payload",
+      "stage": "runtime_cache",
+      "tool_ref": "semble_search"
+    },
+    {
+      "id": "hook_cache_normalize",
+      "module": "cyt.cyt_mcp.catalog._normalize_tools_list",
+      "stage": "hook_cache",
+      "tool_ref": "semble_search"
+    },
+    {
+      "id": "catalog_registry_union",
+      "module": "cyt.hook.catalog_registry.catalog_for_hook",
+      "stage": "catalog_registry",
+      "tool_ref": "semble_search"
+    },
+    {
+      "id": "tier_manager_prune",
+      "module": "cyt.pruners.tools_filter.filter_tools_for_query",
+      "stage": "prune",
+      "tool_ref": "dual_tool_required_optional"
+    },
+    {
+      "id": "frontend_stub_export",
+      "module": "cyt_mcp.catalog_export.stub_dict_from_hook_tool",
+      "stage": "frontend_stub",
+      "tool_ref": "semble_search"
+    },
+    {
+      "id": "client_session_capture_type2",
+      "module": "cyt_client.session_capture._tool_record_for_catalog",
+      "stage": "type2_catalog",
+      "tool_ref": "semble_search"
+    }
+  ],
+  "tier_expectations": [
+    {
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "t2",
+      "injected_required": ["query"],
+      "injected_optional": []
+    },
+    {
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "t3",
+      "injected_required": ["query"],
+      "injected_optional": ["limit"]
+    },
+    {
+      "tool_ref": "dual_tool_required_optional",
+      "tier": "t4",
+      "injected_required": ["query"],
+      "injected_optional": ["limit"]
+    },
+    {
+      "tool_ref": "semble_search",
+      "tier": "t2",
+      "injected_required": ["query", "repo"],
+      "injected_optional": []
+    },
+    {
+      "tool_ref": "semble_search",
+      "tier": "t3",
+      "injected_required": ["query", "repo"],
+      "injected_optional": ["top_k", "max_snippet_lines"]
+    },
+    {
+      "tool_ref": "semble_search",
+      "tier": "t4",
+      "injected_required": ["query", "repo"],
+      "injected_optional": ["top_k", "max_snippet_lines"]
+    }
+  ],
+  "pipeline_scenarios": [
+    {
+      "id": "unpruned_type2_contains_tool_not_in_pruned_output",
+      "description": "Type-2 master catalog includes tools dropped from pruned injection",
+      "master_catalog_source": "bm25_subset",
+      "prune_query": "Use fff_grep to search BM25 pattern in repository files only",
+      "type2_tool_ref": "fff_grep",
+      "pruned_must_include": ["fff_grep"],
+      "pruned_must_exclude": ["gitnexus_cypher", "semble_search"],
+      "type2_must_include": ["fff_grep", "gitnexus_cypher", "semble_search"]
+    },
+    {
+      "id": "survived_t2_type1_and_injection_have_all_required",
+      "description": "Survived T2 tool keeps all backend required in Type-1 and injection",
+      "master_catalog_source": "full_ws_disk",
+      "prune_query": "Locate primary code implementing BM25, use MCP: semble_search gitnexus_cypher",
+      "tool_ref": "semble_search",
+      "tier": "t2",
+      "expected_required": ["query", "repo"]
+    },
+    {
+      "id": "survived_t3_injection_includes_optionals_t2_does_not",
+      "description": "T3 injection includes optionals; T2 does not",
+      "master_catalog_source": "dual_schema",
+      "prune_query": "search symbols with optional limit parameter",
+      "tool_ref": "dual_tool_required_optional",
+      "tier_t2_optional_forbidden": ["limit"],
+      "tier_t3_optional_required": ["limit"]
+    },
+    {
+      "id": "cross_tool_no_query_on_gitnexus",
+      "description": "semble query required must not appear on gitnexus_cypher injection",
+      "master_catalog_source": "full_ws_disk",
+      "prune_query": "Run gitnexus_cypher to query the knowledge graph for BM25",
+      "owner_tool_ref": "semble_search",
+      "leaked_property": "query",
+      "target_tool_ref": "gitnexus_cypher"
+    },
+    {
+      "id": "degraded_partial_registry_without_disk",
+      "description": "Partial registry without disk keeps partial required (documented exception)",
+      "master_catalog_source": "partial_ws_registry",
+      "tool_ref": "semble_search",
+      "expected_required": ["query"],
+      "forbidden_properties": ["repo"]
+    },
+    {
+      "id": "backend_identity_preserved_in_type2",
+      "description": "Type-2 records preserve server_key and tool_name mapping",
+      "master_catalog_source": "full_ws_disk",
+      "tool_ref": "semble_search",
+      "server_key": "semble",
+      "tool_name": "search"
+    },
+    {
+      "id": "backend_identity_preserved_in_type1",
+      "description": "Type-1 records preserve server_key and tool_name mapping",
+      "master_catalog_source": "full_ws_disk",
+      "tool_ref": "semble_search",
+      "server_key": "semble",
+      "tool_name": "search"
+    }
+  ],
+  "session_log_identity": {
+    "writer_scenarios": [
+      {"id": "hook_type1_semble", "writer": "hook_type1", "tool_ref": "semble_search"},
+      {"id": "hook_type2_semble", "writer": "hook_type2", "tool_ref": "semble_search"},
+      {"id": "hook_type1_fff", "writer": "hook_type1", "tool_ref": "fff_grep"},
+      {"id": "hook_type2_gitnexus", "writer": "hook_type2", "tool_ref": "gitnexus_cypher"},
+      {"id": "client_type1_semble", "writer": "client_type1", "tool_ref": "semble_search"},
+      {"id": "client_type2_semble", "writer": "client_type2", "tool_ref": "semble_search"}
+    ],
+    "round_trip_tool_ref": "fff_grep",
+    "capture_enrichment": {
+      "wire_name": "codebase-memory-mcp_search_graph",
+      "expected_server_key": "codebase-memory-mcp",
+      "expected_tool_name": "search_graph",
+      "input_schema": {
+        "type": "object",
+        "properties": {"project": {"type": "string"}},
+        "required": ["project"]
+      }
+    },
+    "explicit_first_resolution": {
+      "wire_name": "codebase-memory_search_graph",
+      "server_key": "search",
+      "tool_name": "graph",
+      "expected_server_key": "search",
+      "expected_tool_name": "graph",
+      "server_keys": ["codebase-memory", "semble", "search"]
+    },
+    "reject_missing_identity_writers": ["hook_type1", "hook_type2", "client_type1"],
+    "reject_missing_identity_tool_ref": "semble_search",
+    "meta_tool_exempt": "cyt-mcp_get-tool-definitions"
+  }
+}

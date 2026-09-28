@@ -188,7 +188,8 @@ def test_union_usr_wins_on_wire_name_conflict(tmp_path: Path) -> None:
 
     merged = catalog_for_hook("cursor", ws_root)
     assert len(merged) == 1
-    assert merged[0]["input_schema"] == {}
+    # usr layer wins on tool metadata; input_schema merges to the fullest shape.
+    assert merged[0]["input_schema"] == {"type": "object"}
     assert merged[0]["cyt_catalog_scope"] == "user"
 
 

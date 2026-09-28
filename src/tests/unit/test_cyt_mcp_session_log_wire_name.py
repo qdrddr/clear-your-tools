@@ -57,6 +57,8 @@ def test_build_tool_log_entry_uses_wire_name_from_fixture(
     )
     assert entry["key"] == expectation.expected_key
     assert entry["name"] == expectation.wire_name
+    assert entry["server_key"] == tool["server_key"]
+    assert entry["tool_name"] == tool["tool_name"]
     assert tool_item_key(tool, catalog="cyt_mcp") == expectation.expected_key
 
     injection_xml = format_tool_item(tool)
