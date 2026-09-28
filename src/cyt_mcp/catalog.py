@@ -34,7 +34,7 @@ def catalog_tools_content_hash(tools: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def catalog_payload(
+def catalog_payload(  # noqa: C901
     cache: RuntimeToolCache,
     *,
     agent: str,

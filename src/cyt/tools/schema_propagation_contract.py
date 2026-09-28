@@ -49,10 +49,11 @@ Hard rules
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
-from cyt.tools.injection_schema import input_schema_from_tool, schema_required_property_names
+from cyt.tiers.tool_token_materialization import input_schema_from_tool
+from cyt.tools.injection_schema import schema_required_property_names
 from cyt_mcp.tool_identity import wire_name_for
 
 # Required identity fields on Type-1 and Type-2 cyt_mcp session log records.
@@ -85,7 +86,7 @@ TYPE2_FORBIDDEN_RAW_KEYS = frozenset(
 )
 
 
-class PropagationStage(str, Enum):
+class PropagationStage(StrEnum):
     BACKEND = "backend"
     MASTER_CATALOG = "master_catalog"
     FRONTEND_STUB = "frontend_stub"
@@ -97,7 +98,7 @@ class PropagationStage(str, Enum):
     PRE_TOOL_GATE = "pre_tool_gate"
 
 
-class IdentityStage(str, Enum):
+class IdentityStage(StrEnum):
     """Pipeline stages where backend identity must remain deterministic."""
 
     BACKEND = "backend"
@@ -182,8 +183,7 @@ def assert_identity_matches_reference(
         )
     if actual.catalog_source != catalog_source:
         raise AssertionError(
-            f"catalog_source mismatch at {label}: "
-            f"{actual.catalog_source!r} != {catalog_source!r}",
+            f"catalog_source mismatch at {label}: {actual.catalog_source!r} != {catalog_source!r}",
         )
     assert_backend_identity_preserved(tool, catalog=catalog_source)
 
@@ -208,8 +208,7 @@ def assert_tier_identity_preserved(
         after_val = after.get(field)
         if after_val != before_val:
             raise AssertionError(
-                f"identity field {field!r} changed at {label}: "
-                f"{before_val!r} -> {after_val!r}",
+                f"identity field {field!r} changed at {label}: {before_val!r} -> {after_val!r}",
             )
 
     before_entity = tool_entity_id_from_tool(before)
@@ -347,7 +346,6 @@ def assert_tier_injected_schema(
     injected = schema_from_tool(tool)
     backend_required = required_names(backend_schema)
     backend_optional = optional_names(backend_schema)
-    injected_required = required_names(injected)
     injected_optional = optional_names(injected)
     injected_all = property_names(injected)
     name = tool_name or str(tool.get("name") or "")
@@ -456,7 +454,9 @@ def assert_injection_fragment_properties(
     if optional:
         for key in optional:
             if f"'{key}'" not in fragment:
-                raise AssertionError(f"injection fragment for {label!r} missing optional key {key!r}")
+                raise AssertionError(
+                    f"injection fragment for {label!r} missing optional key {key!r}",
+                )
     if forbidden:
         for key in forbidden:
             if f"'{key}'" in fragment:

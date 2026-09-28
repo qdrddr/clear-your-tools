@@ -153,9 +153,10 @@ def build_type1_tool_entry_from_catalog_record(
         )
     )
 
+    entry: dict[str, Any]
     if catalog == "mcpc":
         session = str(mcpc_session or tool_record.get("mcpc_session") or "").strip()
-        entry: dict[str, Any] = {
+        entry = {
             "kind": "tool",
             "key": _tool_item_key("mcpc", name, mcpc_session=session or None),
             "hash": content_hash,
@@ -171,7 +172,7 @@ def build_type1_tool_entry_from_catalog_record(
         entry["title"] = name
         return entry
 
-    entry: dict[str, Any] = {
+    entry = {
         "kind": "tool",
         "key": _tool_item_key(catalog, name),
         "hash": content_hash,
@@ -188,7 +189,9 @@ def build_type1_tool_entry_from_catalog_record(
             if description_text:
                 entry["description"] = description_text
             return entry
-        server_key = str(tool_record.get("server_key") or tool_record.get("mcp_server") or "").strip()
+        server_key = str(
+            tool_record.get("server_key") or tool_record.get("mcp_server") or "",
+        ).strip()
         bare_name = str(tool_record.get("tool_name") or "").strip()
         if not server_key or not bare_name:
             msg = (

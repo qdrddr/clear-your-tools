@@ -430,7 +430,7 @@ def format_entry_fragment(entry: dict[str, Any]) -> str:
     return ""
 
 
-def build_tool_log_entry(
+def build_tool_log_entry(  # noqa: C901
     tool: dict[str, Any],
     *,
     catalog: CatalogKind,
@@ -730,7 +730,7 @@ def build_resource_log_entry(match: MatchedResource, *, full: bool) -> dict[str,
     return entry
 
 
-def _tool_dict_from_log_entry(entry: dict[str, Any]) -> dict[str, Any]:
+def _tool_dict_from_log_entry(entry: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
     tool: dict[str, Any] = {
         "name": entry.get("name", ""),
         "input_schema": deepcopy(entry.get("input_schema") or {}),
