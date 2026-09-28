@@ -606,9 +606,7 @@ def ensure_hook_wrapper_scripts_for_hooks_file(
     resolved_hooks_path = (hooks_path or cursor_hooks_json_path()).expanduser()
     wrapper_commands = _collect_hook_wrapper_commands_from_hooks_json(resolved_hooks_path)
     missing = [
-        command
-        for command in wrapper_commands
-        if not Path(command.strip()).expanduser().is_file()
+        command for command in wrapper_commands if not Path(command.strip()).expanduser().is_file()
     ]
     if not missing:
         return []
@@ -621,20 +619,19 @@ def ensure_hook_wrapper_scripts_for_hooks_file(
     if len(modes) != 1:
         return []
 
-    mode = next(iter(modes))
+    resolved_mode = next(iter(modes))
+    wrapper_mode: Literal["installed", "dev"] = "dev" if resolved_mode == "dev" else "installed"
     repo_root = dev_repo_root or repo_root_from_cyt_cli_script()
-    if mode == "dev" and repo_root is None:
+    if wrapper_mode == "dev" and repo_root is None:
         return []
 
     invocation = HookCliInvocation(
-        mode=mode,
-        repo_root=repo_root if mode == "dev" else None,
+        mode=wrapper_mode,
+        repo_root=repo_root if wrapper_mode == "dev" else None,
     )
     installed = install_hook_shell_wrappers(invocation=invocation)
     repaired = [
-        path
-        for command in missing
-        if (path := Path(command.strip()).expanduser()).is_file()
+        path for command in missing if (path := Path(command.strip()).expanduser()).is_file()
     ]
     if not repaired:
         repaired = [installed["client"], installed["daemon_start"]]

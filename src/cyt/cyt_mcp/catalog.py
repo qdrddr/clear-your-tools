@@ -276,58 +276,11 @@ def _filter_tools_by_permissions(
     return filter_catalog_tool_dicts(tools, effective.mcp.deny)
 
 
-def _configured_server_keys_for_hook(config: dict[str, Any]) -> set[str]:
-    try:
-        from cyt_mcp.config import load_known_mcp_server_keys
-
-        workspace = hook_workspace_from_config(config)
-        if workspace is not None:
-            return {
-                str(key).strip()
-                for key in load_known_mcp_server_keys(
-                    agent=tools_hook_cyt_mcp_agent(config),
-                    project_root=workspace,
-                )
-                if str(key).strip()
-            }
-        return {
-            str(key).strip()
-            for key in load_known_mcp_server_keys(agent=tools_hook_cyt_mcp_agent(config))
-            if str(key).strip()
-        }
-    except Exception:
-        return set()
-
-
-def _drop_tools_with_unconfigured_server_keys(
-    tools: Sequence[dict[str, Any]],
-    configured_keys: set[str],
+def _ready_catalog_tools(
+    config: dict[str, Any],
+    tools: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    if not configured_keys:
-        return list(tools)
-    kept: list[dict[str, Any]] = []
-    dropped: list[str] = []
-    for tool in tools:
-        server_key = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
-        if server_key and server_key not in configured_keys:
-            name = str(tool.get("name") or "").strip()
-            if name:
-                dropped.append(name)
-            continue
-        kept.append(tool)
-    if dropped:
-        logger.warning(
-            "cyt-mcp catalog dropped %d tools with unconfigured server_key: %s",
-            len(dropped),
-            ", ".join(sorted(set(dropped))[:10]),
-        )
-    return kept
-
-
-def _ready_catalog_tools(config: dict[str, Any], tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    configured_keys = _configured_server_keys_for_hook(config)
     filtered = _drop_cyt_mcp_tools_missing_identity(tools)
-    filtered = _drop_tools_with_unconfigured_server_keys(filtered, configured_keys)
     return _filter_tools_by_permissions(config, filtered)
 
 

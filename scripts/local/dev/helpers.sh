@@ -848,7 +848,7 @@ PY
 					cyt_section "Publish extras"
 					cyt_run bash "${CYT_REPO_ROOT}/scripts/pre-commit-hooks/prek-loop.sh" \
 						--one-run --no-git-add --git-add none \
-						$([[ -n ${CYT_LOCAL_DEV_SHORT:-} ]] && printf '%s' --short) \
+						${CYT_LOCAL_DEV_SHORT:+--short} \
 						-g uni release
 				fi
 				;;

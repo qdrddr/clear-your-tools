@@ -47,17 +47,12 @@ def _configured_mcp_server_keys() -> set[str]:
     try:
         from cyt_mcp.config import load_known_mcp_server_keys
 
-        return {
-            str(key).strip()
-            for key in load_known_mcp_server_keys()
-            if str(key).strip()
-        }
+        return {str(key).strip() for key in load_known_mcp_server_keys() if str(key).strip()}
     except Exception:
         return set()
 
 
-def server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
-    """Server keys for ``enrich_tool_identity`` (configured keys + wire-name hints)."""
+def _explicit_server_keys_from_tools(tools: Sequence[Any]) -> set[str]:
     keys: set[str] = set()
     for item in tools:
         if not isinstance(item, dict):
@@ -65,22 +60,47 @@ def server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
         server_key = item.get("server_key")
         if isinstance(server_key, str) and server_key.strip():
             keys.add(server_key.strip())
+    return keys
 
+
+def _wire_prefix_keys_from_tools(
+    tools: Sequence[Any],
+    *,
+    configured: set[str],
+) -> set[str]:
+    keys: set[str] = set()
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        wire = str(item.get("name") or "").strip()
+        if not wire:
+            continue
+        candidates = server_key_candidates_from_wire_name(wire)
+        if not configured:
+            if candidates:
+                keys.add(candidates[0])
+            continue
+        for candidate in candidates:
+            if candidate in configured:
+                keys.add(candidate)
+    return keys
+
+
+def server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
+    """Server keys for ``enrich_tool_identity`` (configured keys + wire-name hints)."""
     configured = _configured_mcp_server_keys()
-    keys.update(configured)
-
-    if configured:
-        for item in tools:
-            if not isinstance(item, dict):
-                continue
-            wire = str(item.get("name") or "").strip()
-            for candidate in server_key_candidates_from_wire_name(wire):
-                if candidate in configured:
-                    keys.add(candidate)
-    else:
-        keys.update(collect_server_keys_from_tools(tools))
-
+    keys = set(configured)
+    keys.update(_explicit_server_keys_from_tools(tools))
+    keys.update(_wire_prefix_keys_from_tools(tools, configured=configured))
     return sorted(keys, key=len, reverse=True)
+
+
+def _is_false_wire_split(identity: CytMcpToolIdentity) -> bool:
+    """Reject heuristic false splits such as restart_tool -> restart/tool."""
+    if identity.backend_tool_name != "tool":
+        return False
+    configured = _configured_mcp_server_keys()
+    return not configured or identity.server_key not in configured
 
 
 def split_wire_name(wire_name: str, server_keys: list[str]) -> CytMcpToolIdentity | None:
@@ -97,12 +117,16 @@ def split_wire_name(wire_name: str, server_keys: list[str]) -> CytMcpToolIdentit
         if not name.startswith(prefix):
             continue
         backend_tool_name = name[len(prefix) :].strip()
-        if backend_tool_name:
-            return CytMcpToolIdentity(
-                wire_name=name,
-                server_key=server_key,
-                backend_tool_name=backend_tool_name,
-            )
+        if not backend_tool_name:
+            continue
+        identity = CytMcpToolIdentity(
+            wire_name=name,
+            server_key=server_key,
+            backend_tool_name=backend_tool_name,
+        )
+        if _is_false_wire_split(identity):
+            continue
+        return identity
     return None
 
 
@@ -120,11 +144,7 @@ def enrich_tool_identity(tool: dict[str, Any], server_keys: list[str]) -> dict[s
         return enriched
 
     identity = split_wire_name(wire, server_keys)
-    if identity is None:
-        return enriched
-
-    configured = _configured_mcp_server_keys()
-    if configured and identity.server_key not in configured:
+    if identity is None or _is_false_wire_split(identity):
         return enriched
 
     enriched["name"] = identity.wire_name

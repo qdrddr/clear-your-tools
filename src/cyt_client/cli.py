@@ -267,7 +267,7 @@ def _recover_hook_inject_on_empty_context(
         from cyt.hook.daemon import daemon_restart
 
         daemon_restart(verbose=_verbose, unattended=True)
-    except Exception as exc:
+    except Exception:
         _verbose_exception("hook daemon restart after empty injection failed")
         return None
 

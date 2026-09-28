@@ -146,7 +146,7 @@ _run_py_parallel() {
 }
 
 _run_sdk_builds() {
-	# shellcheck disable=SC1091
+	# shellcheck source=scripts/local/dev/helpers.sh
 	source "${HELPERS}"
 	export CYT_REPO_ROOT="${ROOT}"
 	if [[ -n ${CYT_LOCAL_DEV_SHORT:-} ]]; then
@@ -167,7 +167,7 @@ _run_sdk_builds() {
 }
 
 _run_verify_pins() {
-	# shellcheck disable=SC1091
+	# shellcheck source=scripts/local/dev/helpers.sh
 	source "${HELPERS}"
 	export CYT_REPO_ROOT="${ROOT}"
 	if [[ -n ${CYT_LOCAL_DEV_SHORT:-} ]]; then

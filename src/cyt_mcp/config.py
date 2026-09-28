@@ -191,8 +191,6 @@ def listed_mcp_server_names(path: Path) -> frozenset[str]:
         payload = _load_mcp_server_defs_payload(path)
     except (OSError, yaml.YAMLError, ValueError, json.JSONDecodeError):
         return frozenset()
-    if not isinstance(payload, dict):
-        return frozenset()
     servers = payload.get("mcpServers")
     if not isinstance(servers, dict):
         return frozenset()
@@ -329,8 +327,6 @@ def load_mcp_servers(
     try:
         payload = _load_mcp_server_defs_payload(path)
     except (OSError, yaml.YAMLError, ValueError, json.JSONDecodeError):
-        return {}
-    if not isinstance(payload, dict):
         return {}
     servers = payload.get("mcpServers")
     if not isinstance(servers, dict):
