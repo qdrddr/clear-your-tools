@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import threading
 import time
@@ -190,6 +191,61 @@ def _normalize_catalog_scope(raw: object) -> str | None:
     if scope == "workspace":
         return "workspace"
     return None
+
+
+def _fullest_schemas_from_disk_by_hash() -> dict[str, dict[str, Any]]:
+    """Scan cyt-mcp by-hash disk envelopes and return the fullest schema per tool name."""
+    from cyt.cyt_mcp.catalog_disk import cyt_mcp_catalog_cache_dir
+    from cyt.tools.injection_schema import pick_fullest_input_schema
+
+    cache_dir = cyt_mcp_catalog_cache_dir() / "by-hash"
+    if not cache_dir.is_dir():
+        return {}
+    best: dict[str, dict[str, Any]] = {}
+    for path in cache_dir.glob("*.json"):
+        if path.suffix != ".json" or ".tmp" in path.name:
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            continue
+        tools_raw = payload.get("tools")
+        if not isinstance(tools_raw, list):
+            continue
+        for item in tools_raw:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            schema = pick_fullest_input_schema(item, {"input_schema": best.get(name, {})})
+            if schema:
+                best[name] = schema
+    return best
+
+
+def _enrich_tools_with_fullest_schemas(
+    tools: list[dict[str, Any]],
+    *,
+    disk_schemas: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Merge registry/disk tool rows with the fullest known input_schema per name."""
+    from cyt.tools.injection_schema import pick_fullest_input_schema
+
+    disk = disk_schemas if disk_schemas is not None else _fullest_schemas_from_disk_by_hash()
+    if not disk:
+        return tools
+    enriched: list[dict[str, Any]] = []
+    for tool in tools:
+        name = str(tool.get("name") or "").strip()
+        fuller = disk.get(name)
+        if not name or not fuller:
+            enriched.append(tool)
+            continue
+        merged = copy.deepcopy(tool)
+        merged["input_schema"] = pick_fullest_input_schema(tool, {"input_schema": fuller})
+        enriched.append(merged)
+    return enriched
 
 
 def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
@@ -489,6 +545,7 @@ def _fetch_catalog_from_registry(
     workspace = hook_workspace_from_config(config)
     tools = catalog_for_hook(agent, workspace, allow_stale=allow_stale)
     tools = _merge_missing_user_scope_catalog_tools(config, tools)
+    tools = _enrich_tools_with_fullest_schemas(tools)
     return _normalize_tools_list(tools)
 
 

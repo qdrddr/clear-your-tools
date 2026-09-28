@@ -131,6 +131,7 @@ def _ensure_injection_schemas_for_tiers(
         ensure_tool_injection_schema(
             tool,
             full_tool=originals.get(str(tool.get("name") or "")),
+            catalog_tools=original_tools,
         )
         for tool in pruned
         if isinstance(tool, dict)

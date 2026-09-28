@@ -146,6 +146,52 @@ def entangle_examples_with_schema(
     return out
 
 
+def _schema_completeness_score(schema: dict[str, Any]) -> tuple[int, int]:
+    """Return (required_property_count, total_property_count) for schema ranking."""
+    props = schema.get("properties")
+    properties = props if isinstance(props, dict) else {}
+    required = schema_required_property_names(schema)
+    return (len(required), len(properties))
+
+
+def pick_fullest_input_schema(*candidates: dict[str, Any] | None) -> dict[str, Any]:
+    """Choose the candidate tool/schema dict with the most required properties."""
+    best: dict[str, Any] = {}
+    best_score = (-1, -1)
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        schema = input_schema_from_tool(candidate)
+        if not schema:
+            continue
+        score = _schema_completeness_score(schema)
+        if score > best_score:
+            best = copy.deepcopy(schema)
+            best_score = score
+    return best
+
+
+def resolve_backend_schema_for_injection(
+    tool: dict[str, Any],
+    *,
+    full_tool: dict[str, Any] | None = None,
+    catalog_tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Pick the fullest backend schema among stamped, fallback, and catalog namesakes."""
+    name = str(tool.get("name") or "").strip()
+    candidates: list[dict[str, Any]] = [
+        {"input_schema": backend_schema_from_tool(tool, full_tool=full_tool)},
+        tool,
+    ]
+    if isinstance(full_tool, dict):
+        candidates.append(full_tool)
+    if catalog_tools and name:
+        for item in catalog_tools:
+            if isinstance(item, dict) and str(item.get("name") or "").strip() == name:
+                candidates.append(item)
+    return pick_fullest_input_schema(*candidates)
+
+
 def ensure_required_properties_in_schema(
     injection_schema: dict[str, Any],
     full_schema: dict[str, Any],
@@ -211,11 +257,18 @@ def ensure_tool_injection_schema(
     tool: dict[str, Any],
     *,
     full_tool: dict[str, Any] | None = None,
+    catalog_tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Ensure T2-T4 tools carry required schema fields; entangle examples to that schema."""
     out = copy.deepcopy(tool)
     tier = out.get("cyt_injection_tier")
-    backend = backend_schema_from_tool(out, full_tool=full_tool)
+    backend = resolve_backend_schema_for_injection(
+        out,
+        full_tool=full_tool,
+        catalog_tools=catalog_tools,
+    )
+    if not backend:
+        backend = backend_schema_from_tool(out, full_tool=full_tool)
     schema = input_schema_from_tool(out)
     if injection_tier_allows_required_schema(
         str(tier) if tier is not None else None,

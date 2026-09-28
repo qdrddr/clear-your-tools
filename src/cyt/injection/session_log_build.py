@@ -514,6 +514,7 @@ def _tool_record_core_for_catalog_bundle(
     tool: dict[str, Any],
     *,
     catalog: CatalogKind,
+    catalog_tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     wire_name = str(tool.get("name") or "").strip()
     bare_name = str(tool.get("tool_name") or "").strip()
@@ -524,6 +525,16 @@ def _tool_record_core_for_catalog_bundle(
     else:
         name = str(bare_name or wire_name).strip()
     schema = _tool_input_schema_for_catalog(tool, catalog=catalog)
+    if catalog_tools:
+        from cyt.tools.injection_schema import pick_fullest_input_schema
+
+        namesakes = [
+            item
+            for item in catalog_tools
+            if isinstance(item, dict) and str(item.get("name") or "").strip() == name
+        ]
+        if namesakes:
+            schema = pick_fullest_input_schema(tool, *namesakes)
     record: dict[str, Any] = {
         "name": name,
         "input_schema": schema,
@@ -563,8 +574,13 @@ def _tool_record_for_catalog_bundle(
     tool: dict[str, Any],
     *,
     catalog: CatalogKind,
+    catalog_tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    record = _tool_record_core_for_catalog_bundle(tool, catalog=catalog)
+    record = _tool_record_core_for_catalog_bundle(
+        tool,
+        catalog=catalog,
+        catalog_tools=catalog_tools,
+    )
     record["hash"] = catalog_tool_record_content_hash(catalog, record)
     return record
 
@@ -572,7 +588,11 @@ def _tool_record_for_catalog_bundle(
 def catalog_bundle_content_hash(catalog: CatalogKind, tools: list[dict[str, Any]]) -> str:
     canonical_tools = sorted(
         [
-            _tool_record_core_for_catalog_bundle(tool, catalog=catalog)
+            _tool_record_core_for_catalog_bundle(
+                tool,
+                catalog=catalog,
+                catalog_tools=tools,
+            )
             for tool in tools
             if _tool_has_catalog_name(tool, catalog=catalog)
         ],
@@ -590,7 +610,7 @@ def build_tool_catalog_log_entry(
     tools: list[dict[str, Any]],
 ) -> dict[str, Any]:
     tool_records = [
-        _tool_record_for_catalog_bundle(tool, catalog=catalog)
+        _tool_record_for_catalog_bundle(tool, catalog=catalog, catalog_tools=tools)
         for tool in tools
         if _tool_has_catalog_name(tool, catalog=catalog)
     ]

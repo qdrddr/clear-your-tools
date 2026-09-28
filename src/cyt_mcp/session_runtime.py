@@ -208,8 +208,7 @@ class MultiWorkspaceCoordinator:
         self._register_push_context(runtime)
         with self._lock:
             self._runtimes[key] = runtime
-        if not cache.snapshot():
-            self._schedule_runtime_background_refresh(cache, config, key)
+        self._schedule_runtime_background_refresh(cache, config, key)
         return runtime
 
     def _schedule_runtime_background_refresh(
@@ -220,7 +219,7 @@ class MultiWorkspaceCoordinator:
     ) -> None:
         async def _background_runtime_refresh() -> None:
             try:
-                await refresh_catalog_cache(self._server, cache, config)
+                await refresh_catalog_cache(self._server, cache, config, force=True)
                 from cyt_mcp.hook_daemon_push import _instance_key, _push_contexts
                 from cyt_mcp.tool_list_notify import notify_all_sessions_list_changed
 

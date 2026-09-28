@@ -670,15 +670,24 @@ def _union_layer_tools(
     ws_tools: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Union usr + ws catalogs; usr wins on wire name conflict."""
+    from cyt.tools.injection_schema import pick_fullest_input_schema
+
     by_name: dict[str, dict[str, Any]] = {}
     for tool in ws_tools:
         name = str(tool.get("name") or "").strip()
         if name:
-            by_name[name] = tool
+            by_name[name] = copy.deepcopy(tool)
     for tool in usr_tools:
         name = str(tool.get("name") or "").strip()
-        if name:
-            by_name[name] = tool
+        if not name:
+            continue
+        existing = by_name.get(name)
+        if existing is None:
+            by_name[name] = copy.deepcopy(tool)
+            continue
+        merged = copy.deepcopy(tool)
+        merged["input_schema"] = pick_fullest_input_schema(existing, tool)
+        by_name[name] = merged
     return list(by_name.values())
 
 
