@@ -2593,7 +2593,11 @@ def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
             {"type": "command", "command": inline_client, "timeout": 60},
         ],
     }
-    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=True,
+    )
     merged, changed = hook_setup.upsert_cursor_hooks(
         existing,
         before_submit_entry=entries["before_submit"],

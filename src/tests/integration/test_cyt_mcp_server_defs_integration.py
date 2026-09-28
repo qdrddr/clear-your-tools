@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.tiers.cli import main as tiers_main
 from cyt.tiers.manager import _managers
-from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.tools.master_catalog import (
     clear_master_catalog_cache,
     get_master_tool_catalog,
@@ -34,7 +34,6 @@ from tests.support.cyt_mcp_server_defs_fixtures import (
     assert_mcp_server_defs_is_json,
     load_server_defs_scenario,
     materialize_workspace_with_mcp_config,
-    workspace_server_defs_path,
 )
 
 
@@ -55,7 +54,6 @@ def test_workspace_setup_migration_produces_json_backend_defs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
-
     from cyt.hook.install_scope import CytInstallScope
 
     workspace = tmp_path / "project"
@@ -150,5 +148,8 @@ def test_tiers_stats_excludes_restart_tool_from_user_count(
     payload = json.loads(capsys.readouterr().out)
     troubleshooting = payload["overview"]["troubleshooting"]
     assert troubleshooting["catalog_user_tool_count"] == scenario.raw["expected_user_tool_count"]
-    assert troubleshooting["catalog_workspace_tool_count"] == scenario.raw["expected_workspace_tool_count"]
+    assert (
+        troubleshooting["catalog_workspace_tool_count"]
+        == scenario.raw["expected_workspace_tool_count"]
+    )
     assert troubleshooting["catalog_tool_count"] == scenario.raw["expected_total_tools"]

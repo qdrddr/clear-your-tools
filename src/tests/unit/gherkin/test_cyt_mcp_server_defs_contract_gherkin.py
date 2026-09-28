@@ -16,7 +16,6 @@ from tests.support.cyt_mcp_server_defs_fixtures import (
     assert_mcp_server_defs_is_json,
     load_server_defs_scenario,
     materialize_workspace_with_mcp_config,
-    workspace_server_defs_path,
 )
 from tests.unit.gherkin.conftest import GherkinContext
 

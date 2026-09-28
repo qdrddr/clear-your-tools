@@ -78,7 +78,7 @@ def assert_mcp_server_defs_is_json(path: Path) -> dict[str, Any]:
     """Assert *path* is strict JSON with an ``mcpServers`` object (not YAML)."""
     text = path.read_text(encoding="utf-8")
     stripped = text.lstrip()
-    if stripped.startswith("mcpServers:") or stripped.startswith("---"):
+    if stripped.startswith(("mcpServers:", "---")):
         raise AssertionError(f"{path}: server defs must be JSON, not YAML")
     payload = json.loads(text)
     if not isinstance(payload, dict):

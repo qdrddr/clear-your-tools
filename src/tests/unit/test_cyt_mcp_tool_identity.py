@@ -150,3 +150,16 @@ def test_enrich_rejects_restart_tool_when_restart_not_configured(
     enriched = enrich_tool_identity(tool, server_keys_for_enrichment([tool]))
     assert "server_key" not in enriched
     assert enriched["name"] == "restart_tool"
+
+
+def test_enrich_code_review_graph_query_graph_tool_with_configured_server_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda *args, **kwargs: ["code-review-graph", "semble"],
+    )
+    tool = {"name": "code-review-graph_query_graph_tool", "input_schema": {}}
+    enriched = enrich_tool_identity(tool, server_keys_for_enrichment([tool]))
+    assert enriched["server_key"] == "code-review-graph"
+    assert enriched["tool_name"] == "query_graph_tool"

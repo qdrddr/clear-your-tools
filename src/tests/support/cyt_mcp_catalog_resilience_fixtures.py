@@ -30,9 +30,7 @@ RESILIENCE_MCP_SERVER_KEYS = (
 WS_TOOLS_CATALOG_PATH = FIXTURES_DIR / "ws_tools_catalog.json"
 USR_TOOLS_CATALOG_PATH = FIXTURES_DIR / "usr_tools_catalog.json"
 POLLUTED_USR_TOOLS_CATALOG_PATH = FIXTURES_DIR / "polluted_usr_tools_catalog.json"
-POLLUTED_USR_TOOLS_WITH_RESTART_PATH = (
-    FIXTURES_DIR / "polluted_usr_tools_with_restart_catalog.json"
-)
+POLLUTED_USR_TOOLS_WITH_RESTART_PATH = FIXTURES_DIR / "polluted_usr_tools_with_restart_catalog.json"
 SCENARIOS_PATH = FIXTURES_DIR / "scenarios.json"
 
 
@@ -259,10 +257,10 @@ def write_registry_disk_snapshot(
 
 def patch_resilience_mcp_server_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin configured MCP server keys so false splits like restart_tool are rejected."""
-    keys = list(RESILIENCE_MCP_SERVER_KEYS)
+    keys: list[str] = [str(key) for key in RESILIENCE_MCP_SERVER_KEYS]
 
     def _load_known(*_args: object, **_kwargs: object) -> list[str]:
-        return keys
+        return list(keys)
 
     monkeypatch.setattr("cyt_mcp.config.load_known_mcp_server_keys", _load_known)
 
