@@ -82,6 +82,29 @@ def _cyt_mcp_wire_name(tool: dict[str, Any]) -> str:
     return str(tool.get("name") or "").strip()
 
 
+def _cyt_mcp_identity_for_log(tool: dict[str, Any]) -> tuple[str, str, str]:
+    """Return ``(wire_name, server_key, tool_name)`` or raise if identity is incomplete."""
+    from cyt_mcp.tool_identity import wire_name_for
+
+    wire_name = str(tool.get("name") or "").strip()
+    server_key = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+    tool_name = str(tool.get("tool_name") or "").strip()
+    label = wire_name or f"{server_key}_{tool_name}"
+    if not server_key or not tool_name:
+        msg = f"cyt_mcp tool {label!r} missing explicit server_key/tool_name mapping"
+        raise ValueError(msg)
+    canonical_wire = wire_name_for(server_key, tool_name)
+    return canonical_wire, server_key, tool_name
+
+
+def _stamp_cyt_mcp_identity(record: dict[str, Any], tool: dict[str, Any]) -> None:
+    """Stamp deterministic cyt_mcp identity triple on a Type-1/Type-2 log record."""
+    wire_name, server_key, tool_name = _cyt_mcp_identity_for_log(tool)
+    record["name"] = wire_name
+    record["server_key"] = server_key
+    record["tool_name"] = tool_name
+
+
 def _tool_item_name(tool: dict[str, Any], *, catalog: CatalogKind | None = None) -> str:
     source = str(tool.get("cyt_catalog_source") or catalog or "executor").strip()
     if source == "cyt_mcp":
@@ -443,11 +466,15 @@ def build_tool_log_entry(
         if server:
             entry["server"] = {k: v for k, v in server.items() if v}
     elif catalog == "cyt_mcp":
+        from cyt_mcp.search import is_meta_tool
+
+        if not is_meta_tool(str(entry.get("name") or "")):
+            _stamp_cyt_mcp_identity(entry, tool)
         schema = _tool_input_schema_for_catalog(tool, catalog=catalog)
         if catalog_tools:
             from cyt.tools.injection_schema import pick_fullest_input_schema
 
-            wire_name = str(tool.get("name") or "").strip()
+            wire_name = str(entry.get("name") or "").strip()
             namesakes = [
                 item
                 for item in catalog_tools
@@ -551,16 +578,10 @@ def _tool_record_core_for_catalog_bundle(
         "input_schema": schema,
     }
     if catalog == "cyt_mcp":
-        server_key = str(tool.get("server_key") or "").strip()
-        bare = str(tool.get("tool_name") or "").strip()
-        if not server_key or not bare:
-            msg = (
-                f"cyt_mcp Type-2 catalog tool {name!r} missing explicit "
-                "server_key/tool_name mapping"
-            )
-            raise ValueError(msg)
-        record["server_key"] = server_key
-        record["tool_name"] = bare
+        from cyt_mcp.search import is_meta_tool
+
+        if not is_meta_tool(name):
+            _stamp_cyt_mcp_identity(record, tool)
     description = tool.get("description")
     if description is not None and str(description).strip():
         record["description"] = str(description).strip()
@@ -727,6 +748,16 @@ def _tool_dict_from_log_entry(entry: dict[str, Any]) -> dict[str, Any]:
                 tool["server_instructions"] = server["instructions"]
             if server.get("description"):
                 tool["server_description"] = server["description"]
+    elif entry.get("catalog") == "cyt_mcp":
+        server_key = str(entry.get("server_key") or "").strip()
+        bare_name = str(entry.get("tool_name") or "").strip()
+        if server_key:
+            tool["server_key"] = server_key
+        if bare_name:
+            tool["tool_name"] = bare_name
+        tool["cyt_catalog_source"] = "cyt_mcp"
+        if "description" in entry:
+            tool["description"] = entry["description"]
     elif "description" in entry:
         tool["description"] = entry["description"]
     stored_hash = entry.get("hash")

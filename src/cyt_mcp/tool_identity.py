@@ -166,13 +166,21 @@ def _bare_tool_name_from_wire(*, server: str, wire: str) -> str:
     return text
 
 
+def require_backend_identity(tool: dict[str, Any]) -> tuple[str, str]:
+    """Return ``(server_key, tool_name)`` or raise when explicit fields are missing."""
+    server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+    bare = str(tool.get("tool_name") or "").strip()
+    if server and bare:
+        return server, bare
+    wire = str(tool.get("name") or "").strip()
+    raise ValueError(f"cyt_mcp tool {wire!r} missing explicit server_key/tool_name mapping")
+
+
 def resolve_backend_identity(tool: dict[str, Any]) -> tuple[str, str]:
     """Return backend (server_key, tool_name) from explicit catalog fields only."""
     server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
     bare = str(tool.get("tool_name") or "").strip()
     wire = str(tool.get("name") or "").strip()
-    if not bare and server and wire:
-        bare = _bare_tool_name_from_wire(server=server, wire=wire)
     if server and bare:
         return server, bare
     return "unknown", wire or "unknown"
@@ -209,28 +217,16 @@ def canonical_backend_identity(
     tool: dict[str, Any],
     server_keys: list[str],
 ) -> tuple[str, str]:
-    """Return authoritative backend identity using wire-name split when possible."""
+    """Return backend identity; explicit fields win over wire-name split."""
     wire = str(tool.get("name") or "").strip()
     explicit_server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
     explicit_bare = str(tool.get("tool_name") or "").strip()
-    if not explicit_bare and explicit_server and wire:
-        explicit_bare = _bare_tool_name_from_wire(server=explicit_server, wire=wire)
+    if explicit_server and explicit_bare:
+        return explicit_server, explicit_bare
 
     split_identity = split_wire_name(wire, server_keys) if wire and server_keys else None
     if split_identity is not None:
         return split_identity.server_key, split_identity.backend_tool_name
-
-    if (
-        explicit_server
-        and explicit_bare
-        and is_known_server_key(explicit_server, server_keys)
-        and (
-            not wire
-            or wire == wire_name_for(explicit_server, explicit_bare)
-            or wire == explicit_bare
-        )
-    ):
-        return explicit_server, explicit_bare
 
     return "unknown", wire or "unknown"
 

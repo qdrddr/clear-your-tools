@@ -152,6 +152,13 @@ def extract_cyt_mcp_search_result(payload: dict[str, Any]) -> tuple[str, dict[st
 
 
 def _tool_record_for_catalog(tool_name: str, definition: dict[str, Any]) -> dict[str, Any]:
+    from cyt_mcp.tool_identity import (
+        enrich_tool_identity,
+        require_backend_identity,
+        server_keys_for_enrichment,
+        wire_name_for,
+    )
+
     input_schema = definition.get("inputSchema") or definition.get("input_schema") or {}
     if not isinstance(input_schema, dict):
         input_schema = {}
@@ -161,6 +168,16 @@ def _tool_record_for_catalog(tool_name: str, definition: dict[str, Any]) -> dict
     }
     if definition.get("description") is not None:
         record["description"] = str(definition["description"])
+    for field in ("server_key", "tool_name", "mcp_server"):
+        value = definition.get(field)
+        if isinstance(value, str) and value.strip():
+            record[field] = value.strip()
+    enriched = enrich_tool_identity(record, server_keys_for_enrichment([record]))
+    server_key, bare_name = require_backend_identity(enriched)
+    record["name"] = wire_name_for(server_key, bare_name)
+    record["server_key"] = server_key
+    record["tool_name"] = bare_name
+    record["cyt_catalog_source"] = "cyt_mcp"
     record["hash"] = catalog_tool_record_content_hash("cyt_mcp", record)
     return record
 

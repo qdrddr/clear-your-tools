@@ -7,7 +7,8 @@ Type-2 ``tool_catalog`` JSONL entries come from the **unpruned master hook catal
 ``name``, ``input_schema``, ``server_key``/``tool_name`` (cyt_mcp), optional ``description``.
 
 Type-1 ``tool`` JSONL entries come from **prompt-pruned** tools that survive the session
-gate (``gate_tools_for_session``). They record per-tool injection state for dedup/history.
+gate (``gate_tools_for_session``). They record per-tool injection state for dedup/history
+and carry the same cyt_mcp identity triple as Type-2 (``name``, ``server_key``, ``tool_name``).
 
 Tier dual-schema (surviving tools)
 ----------------------------------
@@ -21,20 +22,41 @@ Tier ``input_schema`` materialization:
 After ``ensure_tool_injection_schema``, injected schema must contain all backend required
 fields even when an upstream catalog row was partial (merged from master catalog peers).
 
+Backend identity (wire ↔ MCP server)
+------------------------------------
+cyt_mcp tools carry a deterministic triple:
+
+- ``name`` (wire name) = ``{server_key}_{tool_name}``
+- ``server_key`` — MCP aggregator server id (e.g. ``semble``, ``gitnexus``)
+- ``tool_name`` — bare backend tool name on that server (e.g. ``search``, ``cypher``)
+
+Tier entity id = ``{cyt_catalog_source}:{wire_name}`` (typically ``cyt_mcp:semble_search``).
+
+Identity must survive unchanged through tier prep (T0-T4), cache, registry union, pruning,
+injection merge, and Type-2 emit. Frontend stubs intentionally expose wire ``name`` only;
+backend fields are recovered from the hook catalog or Type-2 authority catalog.
+
 Hard rules
 ----------
 1. Never invent required properties not present on the backend tool.
 2. Never drop backend required when a fuller source exists (disk, search_index, peers).
 3. Never mix required/optional properties across tools.
 4. Do not omit properties that should survive the current tier + prune stage.
+5. Never mutate ``name``, ``server_key``, or ``tool_name`` during tier prep (T0-T4).
+6. Never remap wire names across modules; resolve bare names via master catalog only.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 from cyt.tools.injection_schema import input_schema_from_tool, schema_required_property_names
+from cyt_mcp.tool_identity import wire_name_for
+
+# Required identity fields on Type-1 and Type-2 cyt_mcp session log records.
+TYPE1_CYT_MCP_IDENTITY_FIELDS = ("name", "server_key", "tool_name")
 
 # Allowed top-level keys on normalized Type-2 cyt_mcp catalog records.
 TYPE2_CYT_MCP_ALLOWED_KEYS = frozenset(
@@ -73,6 +95,199 @@ class PropagationStage(str, Enum):
     TYPE1_TOOL_ENTRY = "type1_tool_entry"
     INJECTION_FRAGMENT = "injection_fragment"
     PRE_TOOL_GATE = "pre_tool_gate"
+
+
+class IdentityStage(str, Enum):
+    """Pipeline stages where backend identity must remain deterministic."""
+
+    BACKEND = "backend"
+    RUNTIME_CACHE = "runtime_cache"
+    HOOK_CACHE = "hook_cache"
+    CATALOG_REGISTRY = "catalog_registry"
+    TIER_PREP = "tier_prep"
+    TIER_APPLY = "tier_apply"
+    PRUNE = "prune"
+    INJECTION = "injection"
+    TYPE2_CATALOG = "type2_catalog"
+    TYPE1_LOG = "type1_log"
+    FRONTEND_STUB = "frontend_stub"
+
+
+# Fields that tier prep (T0-T4) and downstream pipeline stages must not mutate.
+TIER_IDENTITY_FIELDS = ("name", "server_key", "tool_name", "cyt_catalog_source")
+
+
+@dataclass(frozen=True)
+class BackendIdentity:
+    """Canonical cyt_mcp backend identity triple."""
+
+    wire_name: str
+    server_key: str
+    tool_name: str
+    catalog_source: str = "cyt_mcp"
+
+    @property
+    def entity_id(self) -> str:
+        return f"{self.catalog_source}:{self.wire_name}" if self.wire_name else ""
+
+
+def backend_identity_from_tool(tool: dict[str, Any]) -> BackendIdentity:
+    """Extract backend identity from a tool or catalog record."""
+    wire_name = str(tool.get("name") or "").strip()
+    server_key = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+    bare_name = str(tool.get("tool_name") or "").strip()
+    source = str(tool.get("cyt_catalog_source") or "cyt_mcp").strip() or "cyt_mcp"
+    return BackendIdentity(
+        wire_name=wire_name,
+        server_key=server_key,
+        tool_name=bare_name,
+        catalog_source=source,
+    )
+
+
+def expected_wire_name(server_key: str, tool_name: str) -> str:
+    """Return the canonical cyt_mcp wire name for a backend pair."""
+    return wire_name_for(server_key.strip(), tool_name.strip())
+
+
+def tool_entity_id_from_tool(tool: dict[str, Any]) -> str:
+    """Stable tier entity id: ``{catalog_source}:{wire_name}``."""
+    identity = backend_identity_from_tool(tool)
+    return identity.entity_id
+
+
+def assert_identity_matches_reference(
+    tool: dict[str, Any],
+    *,
+    wire_name: str,
+    server_key: str,
+    tool_name: str,
+    catalog_source: str = "cyt_mcp",
+    stage: IdentityStage | PropagationStage | str = IdentityStage.BACKEND,
+) -> None:
+    """Assert *tool* matches the contract reference backend mapping."""
+    actual = backend_identity_from_tool(tool)
+    label = str(stage)
+    if actual.wire_name != wire_name:
+        raise AssertionError(
+            f"wire name mismatch at {label}: {actual.wire_name!r} != {wire_name!r}",
+        )
+    if actual.server_key != server_key:
+        raise AssertionError(
+            f"server_key mismatch at {label}: {actual.server_key!r} != {server_key!r}",
+        )
+    if actual.tool_name != tool_name:
+        raise AssertionError(
+            f"tool_name mismatch at {label}: {actual.tool_name!r} != {tool_name!r}",
+        )
+    if actual.catalog_source != catalog_source:
+        raise AssertionError(
+            f"catalog_source mismatch at {label}: "
+            f"{actual.catalog_source!r} != {catalog_source!r}",
+        )
+    assert_backend_identity_preserved(tool, catalog=catalog_source)
+
+
+def assert_tier_identity_preserved(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    *,
+    tier: str = "",
+    stage: IdentityStage | PropagationStage | str = IdentityStage.TIER_PREP,
+) -> None:
+    """Assert tier prep (T0-T4) and downstream transforms keep backend identity stable."""
+    label_parts = [str(stage)]
+    if tier:
+        label_parts.append(f"tier {tier.strip().upper()}")
+    label = " ".join(label_parts)
+
+    for field in TIER_IDENTITY_FIELDS:
+        before_val = before.get(field)
+        if before_val is None or not str(before_val).strip():
+            continue
+        after_val = after.get(field)
+        if after_val != before_val:
+            raise AssertionError(
+                f"identity field {field!r} changed at {label}: "
+                f"{before_val!r} -> {after_val!r}",
+            )
+
+    before_entity = tool_entity_id_from_tool(before)
+    after_entity = tool_entity_id_from_tool(after)
+    if before_entity and after_entity != before_entity:
+        raise AssertionError(
+            f"entity_id changed at {label}: {before_entity!r} -> {after_entity!r}",
+        )
+
+    server_key = str(after.get("server_key") or "").strip()
+    bare_name = str(after.get("tool_name") or "").strip()
+    if server_key and bare_name:
+        assert_backend_identity_preserved(after)
+
+
+def assert_frontend_stub_wire_name(stub: dict[str, Any], hook_tool: dict[str, Any]) -> None:
+    """Frontend stubs expose wire ``name`` only; backend fields are intentionally omitted."""
+    hook_name = str(hook_tool.get("name") or "").strip()
+    stub_name = str(stub.get("name") or "").strip()
+    if not hook_name or stub_name != hook_name:
+        raise AssertionError(
+            f"frontend stub wire name mismatch: stub={stub_name!r} hook={hook_name!r}",
+        )
+    for forbidden in ("server_key", "tool_name", "mcp_server"):
+        if forbidden in stub:
+            raise AssertionError(
+                f"frontend stub must not expose backend field {forbidden!r}",
+            )
+
+
+def assert_type1_record_shape(record: dict[str, Any]) -> None:
+    """Type-1 cyt_mcp records must carry the full backend identity triple."""
+    assert_backend_identity_preserved(record)
+
+
+def assert_type1_backend_identity(
+    entry: dict[str, Any],
+    *,
+    wire_name: str,
+    server_key: str,
+    tool_name: str,
+) -> None:
+    """Type-1 tool log entries preserve wire name and backend identity fields."""
+    assert_identity_matches_reference(
+        entry,
+        wire_name=wire_name,
+        server_key=server_key,
+        tool_name=tool_name,
+        stage=PropagationStage.TYPE1_TOOL_ENTRY,
+    )
+
+
+def assert_type1_wire_name(entry: dict[str, Any], wire_name: str) -> None:
+    """Backward-compatible alias: assert wire name and full backend identity triple."""
+    actual = str(entry.get("name") or "").strip()
+    if actual != wire_name:
+        raise AssertionError(
+            f"Type-1 wire name mismatch: {actual!r} != {wire_name!r}",
+        )
+    assert_type1_record_shape(entry)
+
+
+def assert_explicit_identity_preferred(
+    tool: dict[str, Any],
+    server_keys: list[str],
+    *,
+    expected_server: str,
+    expected_bare: str,
+) -> None:
+    """Explicit server_key/tool_name must win over wire-name split heuristics."""
+    from cyt_mcp.tool_identity import canonical_backend_identity
+
+    server, bare = canonical_backend_identity(tool, server_keys)
+    if (server, bare) != (expected_server, expected_bare):
+        raise AssertionError(
+            f"explicit identity not preferred: {(server, bare)!r} != "
+            f"{(expected_server, expected_bare)!r}",
+        )
 
 
 def required_names(schema: dict[str, Any]) -> set[str]:

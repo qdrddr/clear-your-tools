@@ -1180,6 +1180,11 @@ def _resolve_mcp_server_and_tool_name(
     if not str(merged.get("name") or "").strip():
         merged["name"] = catalog_tool_name
 
+    explicit_server = str(merged.get("server_key") or merged.get("mcp_server") or "").strip()
+    explicit_bare = str(merged.get("tool_name") or "").strip()
+    if explicit_server and explicit_bare:
+        return explicit_server, explicit_bare
+
     keys = list(server_keys or [])
     config_keys = load_known_mcp_server_keys(project_root=project_root)
     if config_keys:
@@ -1222,15 +1227,10 @@ def _bare_tool_name_for_example_capture(
     bare_tool = str(tool.get("tool_name") or "").strip()
     if catalog != "cyt_mcp":
         return bare_tool or catalog_tool_name
-    from cyt_mcp.tool_identity import _bare_tool_name_from_wire
-
     server_key = str(tool.get("server_key") or "").strip()
-    wire_name = str(tool.get("name") or catalog_tool_name).strip()
-    if not server_key:
+    if not server_key or not bare_tool:
         return None
-    if not bare_tool:
-        bare_tool = _bare_tool_name_from_wire(server=server_key, wire=wire_name)
-    return bare_tool or None
+    return bare_tool
 
 
 def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:

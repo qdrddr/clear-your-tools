@@ -171,7 +171,7 @@ def build_type1_tool_entry_from_catalog_record(
         entry["title"] = name
         return entry
 
-    entry = {
+    entry: dict[str, Any] = {
         "kind": "tool",
         "key": _tool_item_key(catalog, name),
         "hash": content_hash,
@@ -181,6 +181,27 @@ def build_type1_tool_entry_from_catalog_record(
         "input_schema": deepcopy(schema),
         "source": _PRE_TOOL_DENY_SOURCE,
     }
+    if catalog == "cyt_mcp":
+        from cyt_mcp.search import is_meta_tool
+
+        if is_meta_tool(name):
+            if description_text:
+                entry["description"] = description_text
+            return entry
+        server_key = str(tool_record.get("server_key") or tool_record.get("mcp_server") or "").strip()
+        bare_name = str(tool_record.get("tool_name") or "").strip()
+        if not server_key or not bare_name:
+            msg = (
+                f"cyt_mcp Type-1 catalog tool {name!r} missing explicit "
+                "server_key/tool_name mapping"
+            )
+            raise ValueError(msg)
+        from cyt_mcp.tool_identity import wire_name_for
+
+        entry["name"] = wire_name_for(server_key, bare_name)
+        entry["server_key"] = server_key
+        entry["tool_name"] = bare_name
+        entry["key"] = _tool_item_key(catalog, entry["name"])
     if description_text:
         entry["description"] = description_text
     return entry
