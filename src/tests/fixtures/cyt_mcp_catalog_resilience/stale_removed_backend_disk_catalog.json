@@ -1,0 +1,28 @@
+{
+  "tools": [
+    {
+      "name": "hedl_hedl_read",
+      "description": "Stale tool from a removed MCP backend",
+      "input_schema": {"type": "object"},
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_catalog_scope": "workspace",
+      "server_key": "hedl",
+      "tool_name": "hedl_read"
+    },
+    {
+      "name": "gitnexus_cypher",
+      "description": "Run Cypher queries against the GitNexus knowledge graph",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "cyt_catalog_source": "cyt_mcp",
+      "cyt_catalog_scope": "workspace",
+      "server_key": "gitnexus",
+      "tool_name": "cypher"
+    }
+  ]
+}
