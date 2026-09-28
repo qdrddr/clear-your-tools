@@ -147,7 +147,15 @@ def test_register_catalog_eager_hydrates_master_without_warm(
 
     register_ws_catalog(pack.workspace, pack.tools)
 
-    catalog = get_master_tool_catalog(config, blocking=False) or []
+    import time
+
+    deadline = time.monotonic() + 5.0
+    catalog: list[dict[str, object]] = []
+    while time.monotonic() < deadline:
+        catalog = get_master_tool_catalog(config, blocking=False) or []
+        if len(catalog) >= pack.minimum_master_catalog_tools:
+            break
+        time.sleep(0.05)
     names = {tool["name"] for tool in catalog}
     assert len(catalog) >= pack.minimum_master_catalog_tools
     assert set(pack.expected_tool_names).issubset(names)

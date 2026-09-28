@@ -246,10 +246,10 @@ def _start_pairing_repair_thread(config: AggregatorConfig) -> None:
 def _hydrate_server_runtime_caches(
     cache: RuntimeToolCache,
     config: AggregatorConfig,
-) -> None:
+) -> bool:
     from cyt_mcp.catalog_build import hydrate_runtime_cache
 
-    hydrate_runtime_cache(cache, config)
+    return hydrate_runtime_cache(cache, config)
 
 
 def _make_background_catalog_refresh(
@@ -329,7 +329,13 @@ async def _run_server(config: AggregatorConfig, *, aggregator_path: Path | None 
         from cyt.hook.active_workspace import touch_active_workspace
 
         touch_active_workspace(config.agent, config.workspace_root)
-    _hydrate_server_runtime_caches(cache, config)
+    hydrated = _hydrate_server_runtime_caches(cache, config)
+    if bool(cache.snapshot()):
+        # Disk/registry hydrate can warm the cache before stdio starts; still push so
+        # hook inject/tiers see ws tools without waiting for a full backend refresh.
+        from cyt_mcp.hook_daemon_push import schedule_catalog_push
+
+        schedule_catalog_push(cache, config)
     background_catalog_refresh = _make_background_catalog_refresh(
         cache=cache,
         config=config,

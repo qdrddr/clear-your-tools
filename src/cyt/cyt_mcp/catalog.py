@@ -380,6 +380,42 @@ def _disk_catalog_tools(cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
     return _normalize_tools_list(tools)
 
 
+def _workspace_scope_disk_tools(cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
+    """Load ws-scoped disk catalog (separate slug from merged hook injection cache)."""
+    if not cache_key.workspace:
+        return []
+    ws = Path(cache_key.workspace).expanduser()
+    agg_path = ws / ".agents/cyt/config/mcp-config.yaml"
+    if not agg_path.is_file():
+        from cyt_mcp.workspace_catalog import workspace_aggregator_path
+
+        alt = workspace_aggregator_path(ws, cache_key.agent)
+        if alt is None or not alt.is_file():
+            return []
+        agg_path = alt
+    try:
+        from cyt_mcp.catalog_build import disk_catalog_slug_for_config
+        from cyt_mcp.config import load_aggregator_config
+
+        config = load_aggregator_config(
+            agent=cache_key.agent,
+            aggregator_path=agg_path,
+            workspace_folder=ws,
+        )
+        if config.catalog_scope != "workspace":
+            return []
+        slug = disk_catalog_slug_for_config(config)
+    except (ValueError, OSError):
+        return []
+    envelope = read_disk_catalog(slug)
+    if envelope is None:
+        return []
+    tools = envelope.get("tools")
+    if not isinstance(tools, list):
+        return []
+    return _normalize_tools_list(tools)
+
+
 def _server_keys_for_tools(tools: Sequence[dict[str, Any]]) -> set[str]:
     return {key for key in (_tool_server_key(tool) for tool in tools) if key}
 
@@ -516,16 +552,23 @@ def _hydrate_missing_servers_from_disk(
     cache_key: _CytMcpCacheKey,
     tools: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    disk_tools = _disk_catalog_tools(cache_key)
-    if not disk_tools:
+    merged_disk_tools = _disk_catalog_tools(cache_key)
+    ws_disk_tools = _workspace_scope_disk_tools(cache_key)
+    disk_sources: list[list[dict[str, Any]]] = []
+    if merged_disk_tools:
+        disk_sources.append(merged_disk_tools)
+    if ws_disk_tools:
+        disk_sources.append(ws_disk_tools)
+    if not disk_sources:
         return tools
-    missing_servers = _server_keys_for_tools(disk_tools) - _server_keys_for_tools(tools)
+    all_disk_tools = [tool for source in disk_sources for tool in source]
+    missing_servers = _server_keys_for_tools(all_disk_tools) - _server_keys_for_tools(tools)
     configured_servers = _configured_server_keys_for_hydration(cache_key)
     if configured_servers:
         missing_servers = missing_servers & configured_servers
     if not missing_servers:
         return tools
-    merged = _preserve_tools_for_servers(tools, [disk_tools], missing_servers)
+    merged = _preserve_tools_for_servers(tools, disk_sources, missing_servers)
     if len(merged) > len(tools):
         logger.info(
             "cyt-mcp catalog hydrated %d tools from disk for backends: %s",

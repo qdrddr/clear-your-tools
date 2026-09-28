@@ -56,8 +56,9 @@ def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
     config = _stdio_config()
     refresh_calls: list[str] = []
 
-    def _hydrate_warm(cache: RuntimeToolCache, _config: object) -> None:
+    def _hydrate_warm(cache: RuntimeToolCache, _config: object) -> bool:
         cache.replace([{"name": "tool-a"}])
+        return True
 
     async def _refresh(*_args: object, **_kwargs: object) -> None:
         refresh_calls.append("refresh")
@@ -72,6 +73,7 @@ def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
         patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=_refresh),
         patch("cyt_mcp.hook_daemon_push.register_push_context"),
         patch("cyt_mcp.hook_daemon_push.deregister_catalog_push"),
+        patch("cyt_mcp.hook_daemon_push.schedule_catalog_push") as schedule_push,
     ):
         server = AsyncMock()
         build.return_value = (server, None, _mock_coordinator())
@@ -79,6 +81,7 @@ def test_run_server_stdio_skips_background_refresh_when_cache_warmed() -> None:
         result = asyncio.run(_run_server(config))
     assert result == 0
     assert refresh_calls == []
+    schedule_push.assert_called_once()
 
 
 def test_run_search_wires_refresh_and_lookup(

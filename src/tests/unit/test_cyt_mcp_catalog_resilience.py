@@ -345,3 +345,73 @@ def test_disk_snapshot_hydrate_restores_ws_tools_after_registry_clear(
     assert loaded == 1
     merged = catalog_for_hook("cursor", workspace, allow_stale=True)
     assert {tool["name"] for tool in merged} == {tool["name"] for tool in tools}
+
+
+def test_hook_catalog_hydrates_ws_disk_when_merged_disk_is_usr_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: stale merged hook disk must not hide ws-layer disk tools."""
+    from cyt.cyt_mcp.catalog import (
+        _cache_key_for_config,
+        _write_catalog_disk,
+        get_cyt_mcp_catalog,
+    )
+    from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash, write_disk_catalog
+    from cyt_mcp.catalog_build import disk_catalog_slug_for_config
+    from cyt_mcp.config import load_aggregator_config
+    from tests.support.cyt_mcp_catalog_resilience_fixtures import (
+        RESILIENCE_MCP_SERVER_KEYS,
+        clear_cyt_mcp_memory_catalog_state,
+    )
+
+    workspace = materialize_workspace(tmp_path)
+    cyt_config_dir = workspace / ".agents" / "cyt" / "config"
+    (cyt_config_dir / "mcp-config.yaml").write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "agents:",
+                "  cursor: mcp/cursor.json",
+                "catalog_scope: workspace",
+                "transport: stdio",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    (cyt_config_dir / "mcp" / "cursor.json").write_text(
+        json.dumps({"mcpServers": {key: {"command": key} for key in RESILIENCE_MCP_SERVER_KEYS}}),
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / "cyt-mcp-catalog"
+    monkeypatch.setattr("cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir", lambda: cache_dir)
+
+    ws_tools = load_ws_tools_catalog()
+    usr_tools = load_usr_tools_catalog()
+    config = load_aggregator_config(
+        agent="cursor",
+        aggregator_path=cyt_config_dir / "mcp-config.yaml",
+        workspace_folder=workspace,
+    )
+    ws_slug = disk_catalog_slug_for_config(config)
+    assert ws_slug is not None
+    write_disk_catalog(
+        ws_slug,
+        agent="cursor",
+        tools=ws_tools,
+        content_hash=raw_catalog_content_hash(ws_tools),
+    )
+
+    hook_config = cyt_mcp_hook_config(workspace, db_path=tmp_path / "tiers.db")
+    merged_key = _cache_key_for_config(hook_config)
+    _write_catalog_disk(merged_key, usr_tools)
+
+    clear_catalog_registry(purge_disk_snapshot=False)
+    clear_cyt_mcp_memory_catalog_state()
+    patch_daemon_catalog_status(monkeypatch, [])
+
+    catalog = get_cyt_mcp_catalog(hook_config, blocking=True, force=True)
+    assert catalog is not None
+    names = {tool["name"] for tool in catalog}
+    assert {tool["name"] for tool in ws_tools if tool.get("server_key")}.issubset(names)
+    assert {tool["name"] for tool in usr_tools}.issubset(names)

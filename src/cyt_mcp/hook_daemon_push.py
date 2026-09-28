@@ -27,7 +27,9 @@ CatalogScope = Literal["workspace"]
 
 REGISTER_PATH = "/hook/catalog/register"
 DEREGISTER_PATH = "/hook/catalog/deregister"
-PUSH_TIMEOUT_SECONDS = 2.0
+# Full ws catalogs (100+ tools) can exceed 2s because the hook daemon rebuilds
+# master caches synchronously during /hook/catalog/register.
+PUSH_TIMEOUT_SECONDS = 30.0
 
 _RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0, 10.0)
 

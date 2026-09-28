@@ -480,6 +480,24 @@ def _hydrate_hook_caches_from_registration(
         logger.warning("hook cache hydration after catalog register failed: %s", exc)
 
 
+def _schedule_hydrate_hook_caches_from_registration(
+    tools: list[dict[str, Any]],
+    *,
+    agent: str,
+    workspace_root: str,
+) -> None:
+    """Run hook cache hydration off the catalog register HTTP request thread."""
+    if not tools:
+        return
+    thread = threading.Thread(
+        target=_hydrate_hook_caches_from_registration,
+        kwargs={"tools": tools, "agent": agent, "workspace_root": workspace_root},
+        name="cyt-catalog-register-hydrate",
+        daemon=True,
+    )
+    thread.start()
+
+
 def _register_full_tools(
     existing: _CatalogRegistration | None,
     *,
@@ -577,7 +595,7 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
         from cyt.hook.active_workspace import touch_active_workspace
 
         touch_active_workspace(agent, workspace_root)
-        _hydrate_hook_caches_from_registration(
+        _schedule_hydrate_hook_caches_from_registration(
             tools,
             agent=agent,
             workspace_root=workspace_root,
