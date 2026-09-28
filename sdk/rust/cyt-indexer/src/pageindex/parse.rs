@@ -12,7 +12,7 @@ pub struct ContentNode {
     pub text: String,
 }
 
-/// Parse a markdown heading line (`#`–`######` + title).
+/// Parse a markdown heading line (`#`-`######` + title).
 #[must_use]
 fn parse_header(stripped: &str) -> Option<(usize, &str)> {
     let bytes = stripped.as_bytes();
