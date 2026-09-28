@@ -12,7 +12,10 @@ from cyt.injection.session_log import SessionLogIndex
 from cyt.injection.tool_catalog_emit import emit_tool_catalog_session_log
 from cyt.tools.injection_schema import ensure_tool_injection_schema
 from cyt.tools.schema_propagation_contract import assert_backend_identity_preserved
-from cyt_client.session_capture import merge_tool_into_cyt_mcp_catalog, persist_cyt_mcp_search_result
+from cyt_client.session_capture import (
+    merge_tool_into_cyt_mcp_catalog,
+    persist_cyt_mcp_search_result,
+)
 from cyt_client.session_pre_tool_exposure import build_type1_tool_entry_from_catalog_record
 from cyt_client.sessions import read_session_log_file
 from cyt_client.tool_gate import extract_post_tool_example_capture
@@ -94,12 +97,16 @@ def test_client_pre_tool_deny_type1_matches_type2_identity(
 ) -> None:
     ref = load_propagation_reference_tool("semble_search")
     tool = resolve_reference_tool_from_catalogs(ref.id)
-    type2_record = merge_tool_into_cyt_mcp_catalog(Path("unused"), ref.id, {
-        "name": ref.id,
-        "inputSchema": tool["input_schema"],
-        "server_key": ref.server_key,
-        "tool_name": ref.tool_name,
-    })
+    type2_record = merge_tool_into_cyt_mcp_catalog(
+        Path("unused"),
+        ref.id,
+        {
+            "name": ref.id,
+            "inputSchema": tool["input_schema"],
+            "server_key": ref.server_key,
+            "tool_name": ref.tool_name,
+        },
+    )
     catalog_tool = next(t for t in type2_record["tools"] if t["name"] == ref.id)
     type1 = build_type1_tool_entry_from_catalog_record(
         catalog_tool,

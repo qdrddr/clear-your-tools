@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -259,7 +260,7 @@ def parse_session_jsonl(path: Path) -> dict[str, Any]:
     return {"type2_by_catalog": type2_by_catalog, "type1_by_name": type1_by_name}
 
 
-def parse_session_log_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
+def parse_session_log_entries(entries: Sequence[Any]) -> dict[str, Any]:
     """Parse in-memory session log entry list (hook details session_log)."""
     type2_by_catalog: dict[str, list[dict[str, Any]]] = {}
     type1_by_name: dict[str, dict[str, Any]] = {}

@@ -41,6 +41,10 @@ def _write_type2_session(
     if server_key and backend_tool_name:
         tool_record["server_key"] = server_key
         tool_record["tool_name"] = backend_tool_name
+    elif "_" in tool_name:
+        derived_server, derived_tool = tool_name.split("_", 1)
+        tool_record["server_key"] = derived_server
+        tool_record["tool_name"] = derived_tool
     path.write_text(
         json.dumps(
             {

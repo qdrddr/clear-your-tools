@@ -14,8 +14,11 @@ from cyt.injection.session_gate import gate_tools_for_session
 from cyt.injection.session_log import SessionLogIndex
 from cyt.injection.tool_catalog_emit import emit_tool_catalog_session_log
 from cyt.pruners.tools_filter import filter_tools_for_query
-from cyt.pruners.tools_filter import filter_tools_for_query
-from cyt.tiers.adapters.tools import apply_tool_tiers, prepare_tool_for_tier_pipeline, tool_entity_id
+from cyt.tiers.adapters.tools import (
+    apply_tool_tiers,
+    prepare_tool_for_tier_pipeline,
+    tool_entity_id,
+)
 from cyt.tiers.manager import TierManager, _managers
 from cyt.tiers.models import Tier
 from cyt.tools.inject import format_tool_item
@@ -24,6 +27,7 @@ from cyt.tools.schema_propagation_contract import (
     IdentityStage,
     PropagationStage,
     assert_backend_identity_preserved,
+    assert_explicit_identity_preferred,
     assert_frontend_stub_wire_name,
     assert_identity_matches_reference,
     assert_injection_fragment_properties,
@@ -31,7 +35,6 @@ from cyt.tools.schema_propagation_contract import (
     assert_required_equal,
     assert_tier_identity_preserved,
     assert_tier_injected_schema,
-    assert_explicit_identity_preferred,
     assert_type1_wire_name,
     assert_type2_record_shape,
     backend_identity_from_tool,
@@ -49,6 +52,7 @@ from tests.support.dual_schema_injection_fixtures import (
 )
 from tests.support.tool_schema_completeness_fixtures import (
     FULL_WS_DISK_CATALOG_PATH,
+    PropagationReferenceTool,
     cyt_mcp_hook_config,
     load_bm25_catalog_tools,
     load_identity_pipeline_modules,
@@ -58,15 +62,15 @@ from tests.support.tool_schema_completeness_fixtures import (
     load_propagation_reference_tool,
     load_propagation_reference_tools,
     load_tier_identity_expectations,
+    load_tool_list,
     load_type2_expectations,
     master_catalog_for_pipeline_source,
     materialize_workspace,
     partial_schema_from_backend,
     register_ws_catalog,
-    resolve_reference_tool_from_catalogs,
     reset_catalog_state,
+    resolve_reference_tool_from_catalogs,
     tool_record_from_type2,
-    load_tool_list,
 )
 
 
@@ -115,20 +119,31 @@ def test_propagation_contract_fixture_is_well_formed() -> None:
     assert isinstance(identity_modules, list) and identity_modules
     for ref in refs:
         resolve_reference_tool_from_catalogs(ref.id)
-        assert ref.id == backend_identity_from_tool(
-            resolve_reference_tool_from_catalogs(ref.id),
-        ).wire_name
-    assert load_pipeline_scenario("backend_identity_preserved_in_type2").id == "backend_identity_preserved_in_type2"
-    assert load_pipeline_scenario("backend_identity_preserved_in_type1").id == "backend_identity_preserved_in_type1"
+        assert (
+            ref.id
+            == backend_identity_from_tool(
+                resolve_reference_tool_from_catalogs(ref.id),
+            ).wire_name
+        )
+    assert (
+        load_pipeline_scenario("backend_identity_preserved_in_type2").id
+        == "backend_identity_preserved_in_type2"
+    )
+    assert (
+        load_pipeline_scenario("backend_identity_preserved_in_type1").id
+        == "backend_identity_preserved_in_type1"
+    )
     session_log_identity = payload.get("session_log_identity")
     assert isinstance(session_log_identity, dict)
     writer_rows = session_log_identity.get("writer_scenarios")
     assert isinstance(writer_rows, list) and writer_rows
-    assert len({str(item["id"]) for item in writer_rows if isinstance(item, dict)}) == len(writer_rows)
+    assert len({str(item["id"]) for item in writer_rows if isinstance(item, dict)}) == len(
+        writer_rows,
+    )
 
 
 @pytest.mark.parametrize("ref", load_propagation_reference_tools(), ids=lambda r: r.id)
-def test_reference_tool_backend_schema_matches_contract(ref) -> None:
+def test_reference_tool_backend_schema_matches_contract(ref: PropagationReferenceTool) -> None:
     tool = resolve_reference_tool_from_catalogs(ref.id)
     backend = _backend_schema(tool)
     assert sorted(required_names(backend)) == sorted(ref.required)
@@ -136,7 +151,9 @@ def test_reference_tool_backend_schema_matches_contract(ref) -> None:
 
 
 def test_type2_from_unpruned_master_includes_all_tools_not_pruned_subset() -> None:
-    scenario = load_propagation_pipeline_scenario("unpruned_type2_contains_tool_not_in_pruned_output")
+    scenario = load_propagation_pipeline_scenario(
+        "unpruned_type2_contains_tool_not_in_pruned_output",
+    )
     master = master_catalog_for_pipeline_source(str(scenario.raw["master_catalog_source"]))
     # Pruned injection uses a strict subset; Type-2 always emits the full master catalog.
     pruned_subset = [_tool_by_name(master, str(scenario.raw["pruned_must_include"][0]))]
@@ -375,7 +392,12 @@ def test_tier_prep_preserves_backend_identity_t0_through_t4(row: dict) -> None:
     ref = load_propagation_reference_tool(str(row["tool_ref"]))
     tool = resolve_reference_tool_from_catalogs(ref.id)
     tiered = prepare_tool_for_tier_pipeline(copy.deepcopy(tool), _tier_enum(str(row["tier"])))
-    assert_tier_identity_preserved(tool, tiered, tier=str(row["tier"]), stage=IdentityStage.TIER_PREP)
+    assert_tier_identity_preserved(
+        tool,
+        tiered,
+        tier=str(row["tier"]),
+        stage=IdentityStage.TIER_PREP,
+    )
     assert_identity_matches_reference(
         tiered,
         wire_name=ref.id,
@@ -460,16 +482,21 @@ def _run_identity_pipeline_transform(
                 )
         finally:
             manager.close()
-        return _tool_by_name(result.tools, wire_name)
+        pruned_tools = result.tools
+        assert pruned_tools is not None
+        return _tool_by_name(pruned_tools, wire_name)
 
     if module_id == "frontend_stub_export":
         from cyt_mcp.catalog_export import stub_dict_from_hook_tool
         from cyt_mcp.config import sample_aggregator_config
 
-        config = sample_aggregator_config(
+        aggregator_config = sample_aggregator_config(
             stub_retain={"tool": ["name"], "required_properties": ["name"]},
         )
-        stub = stub_dict_from_hook_tool(copy.deepcopy(tool), retain=config.stub_retain)
+        stub = stub_dict_from_hook_tool(
+            copy.deepcopy(tool),
+            retain=aggregator_config.stub_retain,
+        )
         assert_frontend_stub_wire_name(stub, tool)
         return tool
 

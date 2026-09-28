@@ -28,11 +28,11 @@ from cyt.tools.schema_propagation_contract import (
     required_names,
     schema_from_tool,
 )
+from cyt_client.tool_gate import validate_pre_tool_call
 from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.catalog_export import frontend_payload_from_hook_tools
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_client.tool_gate import validate_pre_tool_call
 from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     capture_registry_registrations,
     patch_daemon_catalog_status,
@@ -219,7 +219,9 @@ def test_hook_inject_writes_type2_master_and_type1_survivors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Contract: Type-2 from unpruned master; Type-1 + injection only for pruned survivors."""
-    scenario = load_propagation_pipeline_scenario("survived_t2_type1_and_injection_have_all_required")
+    scenario = load_propagation_pipeline_scenario(
+        "survived_t2_type1_and_injection_have_all_required",
+    )
     ref = load_propagation_reference_tool(str(scenario.raw["tool_ref"]))
     backend_tool = resolve_reference_tool_from_catalogs(ref.id)
     backend_schema = schema_from_tool(backend_tool)
@@ -319,7 +321,11 @@ def test_frontend_stub_after_catalog_enrichment() -> None:
     backend_schema = schema_from_tool(backend)
     cache = RuntimeToolCache()
     partial = copy.deepcopy(backend)
-    partial["input_schema"] = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+    partial["input_schema"] = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+        "required": ["query"],
+    }
     cache.replace(
         [partial],
         search_index={
@@ -406,7 +412,9 @@ def test_pre_tool_gate_contract_scenario_denies_missing_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Links propagation contract to preToolUse gate (Type-2 authority catalog)."""
-    scenario = load_propagation_pipeline_scenario("survived_t2_type1_and_injection_have_all_required")
+    scenario = load_propagation_pipeline_scenario(
+        "survived_t2_type1_and_injection_have_all_required",
+    )
     ref = load_propagation_reference_tool(str(scenario.raw["tool_ref"]))
     workspace = materialize_workspace(tmp_path)
     master = load_tool_list(FULL_WS_DISK_CATALOG_PATH)

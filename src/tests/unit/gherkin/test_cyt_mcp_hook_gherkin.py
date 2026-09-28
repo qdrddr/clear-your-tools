@@ -37,6 +37,8 @@ def _reset_cyt_mcp_catalog() -> Iterator[None]:
 def _filesystem_tool() -> dict:
     return {
         "name": "filesystem_read_file",
+        "server_key": "filesystem",
+        "tool_name": "read_file",
         "description": "Read a file",
         "input_schema": {
             "type": "object",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -37,11 +38,13 @@ from tests.support.tool_schema_completeness_fixtures import (
     load_propagation_reference_tool,
     load_tool_list,
     materialize_workspace,
-    partial_schema_from_backend as partial_schema_fixture,
     register_ws_catalog,
     reset_catalog_state,
     resolve_reference_tool_from_catalogs,
     tool_record_from_type2,
+)
+from tests.support.tool_schema_completeness_fixtures import (
+    partial_schema_from_backend as partial_schema_fixture,
 )
 from tests.unit.gherkin.conftest import GherkinContext
 from tests.unit.gherkin.test_tool_catalog_gate_gherkin import (
@@ -57,7 +60,7 @@ pytestmark = pytest.mark.gherkin
 
 
 @pytest.fixture(autouse=True)
-def _reset_catalog() -> None:
+def _reset_catalog() -> Iterator[None]:
     reset_catalog_state()
     yield
     reset_catalog_state()
@@ -232,7 +235,10 @@ def when_runtime_cache_payload(gherkin_context: GherkinContext) -> None:
         agent="cursor",
         server_keys=[str(tool.get("server_key") or "")],
     )
-    gherkin_context.payload["transformed_tool"] = _tool_by_name(payload["tools"], str(tool.get("name") or ""))
+    gherkin_context.payload["transformed_tool"] = _tool_by_name(
+        payload["tools"],
+        str(tool.get("name") or ""),
+    )
     gherkin_context.payload["identity_stage"] = IdentityStage.RUNTIME_CACHE
 
 
@@ -329,11 +335,7 @@ def then_type2_required(tool_name: str, properties: str, gherkin_context: Gherki
 @then(parsers.parse("Type-1 catalog should not include {tool_name}"))
 def then_type1_excludes(tool_name: str, gherkin_context: GherkinContext) -> None:
     entries = gherkin_context.payload.get("type1_entries") or []
-    type1_names = {
-        str(entry.get("name") or "")
-        for entry in entries
-        if entry.get("kind") == "tool"
-    }
+    type1_names = {str(entry.get("name") or "") for entry in entries if entry.get("kind") == "tool"}
     assert tool_name not in type1_names
 
 

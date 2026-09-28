@@ -28,7 +28,6 @@ from cyt.tiers.models import Tier
 from cyt.tools.injection_schema import ensure_tool_injection_schema, schema_required_property_names
 from cyt_mcp.catalog import catalog_payload, merge_catalog_payloads
 from cyt_mcp.catalog_export import stub_dict_from_hook_tool
-from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.config import sample_aggregator_config
 from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache

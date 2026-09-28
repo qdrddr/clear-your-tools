@@ -14,7 +14,6 @@ from cyt.tools.schema_propagation_contract import (
     assert_identity_matches_reference,
 )
 from cyt_client.session_capture import _tool_record_for_catalog
-from cyt_client.session_pre_tool_exposure import build_type1_tool_entry_from_catalog_record
 from cyt_client.tool_gate import _resolve_mcp_server_and_tool_name
 from tests.support.tool_schema_completeness_fixtures import (
     load_propagation_reference_tool,
@@ -183,6 +182,10 @@ def then_type2_capture_identity(
         "resolved identity should be server_key {server_key} and tool_name {bare_name}",
     ),
 )
-def then_resolved_identity(server_key: str, bare_name: str, gherkin_context: GherkinContext) -> None:
+def then_resolved_identity(
+    server_key: str,
+    bare_name: str,
+    gherkin_context: GherkinContext,
+) -> None:
     resolved = gherkin_context.payload["resolved_identity"]
     assert resolved == (server_key, bare_name)

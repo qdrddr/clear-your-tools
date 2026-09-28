@@ -38,6 +38,8 @@ _PROMPT = "Locate primary code implementing BM25, use MCP: codebase-memory, semb
 def _demo_tool() -> dict[str, Any]:
     return {
         "name": "fff_grep",
+        "server_key": "fff",
+        "tool_name": "grep",
         "description": "grep files",
         "input_schema": {
             "type": "object",
