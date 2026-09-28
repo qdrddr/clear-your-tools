@@ -41,7 +41,11 @@ def given_dev_mode(gherkin_context: GherkinContext) -> None:
 @when("cursor hook entries are built with shell wrappers")
 def when_build_wrapper_hook_entries(gherkin_context: GherkinContext) -> None:
     invocation = gherkin_context.payload["invocation"]
-    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=True,
+    )
     gherkin_context.payload["client_command"] = entries["before_submit"]["command"]
     gherkin_context.payload["client_wrapper"] = Path(entries["before_submit"]["command"])
 
