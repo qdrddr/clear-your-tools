@@ -64,7 +64,7 @@ def filter_tools_for_tier_tracking(
         if not isinstance(tool, dict):
             continue
         catalog_name = str(tool.get("name") or "").strip()
-        if catalog_name and is_meta_tool(catalog_name):
+        if not catalog_name or is_meta_tool(catalog_name):
             continue
         stamped = stamp_tool_catalog_source(tool)
         if resolve_tool_catalog_source(stamped) not in allowed:
@@ -91,10 +91,14 @@ def resolve_tracked_catalog_entity_ids(
     # Empty list means SWR miss / rebuild in flight — not "zero tracked tools".
     if catalog is None or not catalog:
         return None
+    from cyt_mcp.search import is_meta_tool
+
     ids = {
         entity_id
         for tool in catalog
-        if isinstance(tool, dict) and (entity_id := tool_entity_id(tool))
+        if isinstance(tool, dict)
+        and not is_meta_tool(str(tool.get("name") or ""))
+        and (entity_id := tool_entity_id(tool))
     }
     return frozenset(ids)
 

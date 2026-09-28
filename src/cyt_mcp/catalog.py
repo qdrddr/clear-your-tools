@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
+from cyt_mcp.search import is_meta_tool
 from cyt_mcp.tool_identity import enrich_tool_identity
 
 
@@ -50,7 +50,7 @@ def catalog_payload(  # noqa: C901
     normalized: list[dict[str, Any]] = []
     for tool in tools:
         name = str(tool.get("name") or "").strip()
-        if not name or name in {SEARCH_TOOL_NAME, MCP_WIRE_SEARCH_TOOL_NAME}:
+        if not name or is_meta_tool(name):
             continue
         schema = tool.get("inputSchema")
         if not isinstance(schema, dict):

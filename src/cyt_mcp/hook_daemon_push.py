@@ -112,7 +112,13 @@ def _build_register_payload(
         "content_hash": content_hash,
     }
     if include_tools:
-        body["tools"] = tools
+        from cyt_mcp.search import is_meta_tool
+
+        body["tools"] = [
+            tool
+            for tool in tools
+            if isinstance(tool, dict) and not is_meta_tool(str(tool.get("name") or ""))
+        ]
     return body
 
 

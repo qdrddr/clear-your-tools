@@ -497,6 +497,21 @@ def _merge_missing_user_scope_catalog_tools(
     return merged
 
 
+def _configured_server_keys_for_hydration(cache_key: _CytMcpCacheKey) -> set[str]:
+    """MCP backends still declared in aggregator/server-def configs for this workspace."""
+    from cyt_mcp.config import load_known_mcp_server_keys
+
+    project_root = str(cache_key.workspace or "").strip() or None
+    return {
+        str(key).strip()
+        for key in load_known_mcp_server_keys(
+            agent=cache_key.agent,
+            project_root=project_root,
+        )
+        if str(key).strip()
+    }
+
+
 def _hydrate_missing_servers_from_disk(
     cache_key: _CytMcpCacheKey,
     tools: list[dict[str, Any]],
@@ -505,6 +520,9 @@ def _hydrate_missing_servers_from_disk(
     if not disk_tools:
         return tools
     missing_servers = _server_keys_for_tools(disk_tools) - _server_keys_for_tools(tools)
+    configured_servers = _configured_server_keys_for_hydration(cache_key)
+    if configured_servers:
+        missing_servers = missing_servers & configured_servers
     if not missing_servers:
         return tools
     merged = _preserve_tools_for_servers(tools, [disk_tools], missing_servers)

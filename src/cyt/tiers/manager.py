@@ -898,6 +898,7 @@ class TierManager:
         filter_by_permissions: bool = True,
     ) -> dict[str, Any]:
         if config is not None and tiers_active(config, kind="tool"):
+            self.purge_inactive_tool_sources(config)
             with self._state_lock:
                 self._advance_epoch_if_age_expired(config)
 
