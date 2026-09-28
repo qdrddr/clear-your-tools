@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from cyt.tools.injection_schema import (
     ensure_required_properties_in_schema,
+    ensure_tool_injection_schema,
     entangle_examples_with_schema,
+    pick_fullest_input_schema,
     project_example_to_schema,
+    resolve_backend_schema_for_injection,
 )
 
 
@@ -97,3 +100,63 @@ def test_ensure_required_properties_in_schema_merges_missing_required() -> None:
     merged = ensure_required_properties_in_schema(pruned, full)
     assert "question" in merged["properties"]
     assert merged["required"] == ["question"]
+
+
+def test_pick_fullest_input_schema_prefers_more_required_properties() -> None:
+    partial = {
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    }
+    full = {
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "repo": {"type": "string"},
+            },
+            "required": ["query", "repo"],
+        },
+    }
+    schema = pick_fullest_input_schema(partial, full)
+    assert schema["required"] == ["query", "repo"]
+
+
+def test_ensure_tool_injection_schema_uses_fullest_catalog_namesake() -> None:
+    pruned = {
+        "name": "semble_search",
+        "cyt_injection_tier": "t2",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    }
+    catalog_tools = [
+        pruned,
+        {
+            "name": "semble_search",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "repo": {"type": "string"},
+                },
+                "required": ["query", "repo"],
+            },
+        },
+    ]
+    backend = resolve_backend_schema_for_injection(
+        pruned,
+        full_tool=pruned,
+        catalog_tools=catalog_tools,
+    )
+    assert backend["required"] == ["query", "repo"]
+    merged = ensure_tool_injection_schema(
+        pruned,
+        full_tool=pruned,
+        catalog_tools=catalog_tools,
+    )
+    assert merged["input_schema"]["required"] == ["query", "repo"]

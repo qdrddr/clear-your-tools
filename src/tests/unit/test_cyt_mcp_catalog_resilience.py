@@ -212,6 +212,11 @@ def test_hook_inject_includes_cyt_mcp_tools_when_registry_populated(
     }
     for name in scenario.raw["expected_tool_names_in_stdout"]:
         assert name in result.stdout_text
+    if "semble_search" in scenario.raw["expected_tool_names_in_stdout"]:
+        semble_start = result.stdout_text.index("name='semble_search'")
+        semble_block = result.stdout_text[semble_start : semble_start + 500]
+        assert "'repo'" in semble_block
+        assert "'query'" in semble_block
 
 
 def test_catalog_for_hook_unions_usr_and_ws_layers(tmp_path: Path) -> None:

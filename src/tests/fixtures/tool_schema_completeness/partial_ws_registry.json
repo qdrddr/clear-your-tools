@@ -6,10 +6,9 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "query": {"type": "string"},
-          "repo": {"type": "string"}
+          "query": {"type": "string"}
         },
-        "required": ["query", "repo"]
+        "required": ["query"]
       },
       "cyt_catalog_source": "cyt_mcp",
       "cyt_catalog_scope": "workspace",
@@ -27,20 +26,9 @@
         "required": ["query"]
       },
       "cyt_catalog_source": "cyt_mcp",
-      "cyt_catalog_scope": "workspace"
-    },
-    {
-      "name": "code-review-graph_query_graph_tool",
-      "description": "Query the code review graph for architecture and flow context",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "query": {"type": "string"}
-        },
-        "required": ["query"]
-      },
-      "cyt_catalog_source": "cyt_mcp",
-      "cyt_catalog_scope": "workspace"
+      "cyt_catalog_scope": "workspace",
+      "server_key": "gitnexus",
+      "tool_name": "cypher"
     }
   ]
 }

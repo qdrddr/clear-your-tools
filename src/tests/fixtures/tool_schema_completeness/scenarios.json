@@ -1,0 +1,32 @@
+{
+  "scenarios": [
+    {
+      "id": "semble_partial_registry_full_disk",
+      "description": "Registry holds query-only semble_search; disk by-hash holds query+repo",
+      "partial_tool_name": "semble_search",
+      "expected_required": ["query", "repo"]
+    },
+    {
+      "id": "hook_inject_bm25_semble_schema",
+      "description": "Hook inject for BM25 prompt exposes semble_search with query and repo in pruned schema",
+      "prompt": "Locate primary code implementing BM25, use MCP: semble_search gitnexus_cypher code-review-graph_query_graph_tool",
+      "expected_tool_names_in_stdout": ["gitnexus_cypher", "semble_search"],
+      "expected_injection_markers": ["name='semble_search'", "'repo'", "'query'"]
+    },
+    {
+      "id": "prune_preserves_single_required_tools",
+      "description": "Tools that legitimately require only query must not gain spurious required fields",
+      "query": "grep BM25 in repo",
+      "tool_name": "fff_grep",
+      "expected_required": ["query"],
+      "forbidden_properties": ["repo"]
+    },
+    {
+      "id": "prune_preserves_dual_required_jcodemunch",
+      "description": "Other dual-required repo tools keep both required fields after prune",
+      "query": "find BM25 symbol definitions",
+      "tool_name": "jcodemunch_search_symbols",
+      "expected_required": ["repo", "query"]
+    }
+  ]
+}
