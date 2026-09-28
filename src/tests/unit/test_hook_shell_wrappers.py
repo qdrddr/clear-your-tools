@@ -76,6 +76,52 @@ def test_prefix_agent_hook_command_adds_fish_breaking_inline_prefix() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix fish/bash wrapper semantics")
+def test_ensure_hook_wrapper_scripts_repairs_missing_production_wrappers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook.cli_invocation import (
+        ensure_hook_wrapper_scripts_for_hooks_file,
+        hook_shell_wrapper_paths,
+        install_hook_shell_wrappers,
+    )
+
+    hooks_dir = tmp_path / "hooks"
+    hooks_path = tmp_path / "hooks.json"
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_json_path", lambda: hooks_path)
+
+    prod_paths = hook_shell_wrapper_paths(
+        invocation=HookCliInvocation(mode="installed", repo_root=None),
+    )
+    install_hook_shell_wrappers(invocation=HookCliInvocation(mode="dev", repo_root=dev_repo_root()))
+    hooks_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "beforeSubmitPrompt": [
+                        {
+                            "type": "command",
+                            "command": str(prod_paths["client"]),
+                            "timeout": 60,
+                        },
+                    ],
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert not prod_paths["client"].is_file()
+
+    repaired = ensure_hook_wrapper_scripts_for_hooks_file(hooks_path)
+
+    assert prod_paths["client"].is_file()
+    assert prod_paths["daemon_start"].is_file()
+    assert repaired
+
+
 def test_cursor_hook_entries_avoid_fish_breaking_inline_prefix(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -84,7 +130,11 @@ def test_cursor_hook_entries_avoid_fish_breaking_inline_prefix(
     monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
     repo_root = dev_repo_root()
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
-    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=True,
+    )
 
     for key in ("before_submit", "session_end", "pre_tool", "pre_compact"):
         command = entries[key]["command"]
@@ -112,7 +162,11 @@ def test_upsert_cursor_hooks_upgrades_legacy_fish_breaking_inline_commands(
 
     repo_root = dev_repo_root()
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
-    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=True,
+    )
     changed = hook_setup.upsert_cursor_hooks_into_file(
         hooks_path,
         **hook_setup.cursor_upsert_hook_kwargs(entries, config={}),

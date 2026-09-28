@@ -34,10 +34,13 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     load_ws_tools_catalog,
     materialize_workspace,
     patch_daemon_catalog_status,
+    patch_resilience_mcp_server_keys,
     patch_tiers_stats_config,
     register_dual_layer_catalog,
     register_ws_catalog,
     reset_catalog_state,
+    write_polluted_usr_scope_disk_catalog,
+    write_restart_polluted_usr_scope_disk_catalog,
     write_usr_scope_disk_catalog,
 )
 from tests.unit.gherkin.conftest import GherkinContext
@@ -54,6 +57,7 @@ def _isolate_catalog_state(
 ) -> Iterator[None]:
     monkeypatch.setattr("cyt.hook.active_workspace.touch_active_workspace", lambda *_a, **_k: None)
     monkeypatch.setenv("CYT_HOOK_QUIET", "1")
+    patch_resilience_mcp_server_keys(monkeypatch)
     reset_catalog_state()
     yield
     reset_catalog_state()
@@ -155,9 +159,10 @@ def given_registry_cleared(
 def given_hook_config(gherkin_context: GherkinContext, tmp_path: Path) -> None:
     workspace = gherkin_context.payload["workspace"]
     gherkin_context.config = cyt_mcp_hook_config(workspace, db_path=tmp_path / "tiers.db")
-    gherkin_context.payload["inject_scenario"] = load_resilience_scenario(
-        "hook_inject_bm25_prompt",
-    )
+    if "inject_scenario" not in gherkin_context.payload:
+        gherkin_context.payload["inject_scenario"] = load_resilience_scenario(
+            "hook_inject_bm25_prompt",
+        )
 
 
 @given("dual-layer usr and ws cyt-mcp catalogs registered for the workspace")
@@ -199,6 +204,39 @@ def given_usr_disk_catalog(
     )
     gherkin_context.payload["disk_merge_scenario"] = load_resilience_scenario(
         "usr_disk_merge_ws_registry",
+    )
+
+
+@given("user-scoped cyt-mcp tools with restart_tool cached on disk")
+def given_restart_tool_disk_catalog(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gherkin_context.payload["usr_disk_tools"] = write_restart_polluted_usr_scope_disk_catalog(
+        monkeypatch,
+        tmp_path / "cyt-mcp-catalog",
+    )
+    gherkin_context.payload["disk_merge_scenario"] = load_resilience_scenario(
+        "disk_merge_excludes_restart_tool",
+    )
+
+
+@given("user-scoped cyt-mcp tools with invalid identity cached on disk")
+def given_polluted_usr_disk_catalog(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gherkin_context.payload["usr_disk_tools"] = write_polluted_usr_scope_disk_catalog(
+        monkeypatch,
+        tmp_path / "cyt-mcp-catalog",
+    )
+    gherkin_context.payload["disk_merge_scenario"] = load_resilience_scenario(
+        "usr_disk_merge_excludes_pollution",
+    )
+    gherkin_context.payload["inject_scenario"] = load_resilience_scenario(
+        "hook_inject_polluted_usr_disk",
     )
 
 
@@ -310,6 +348,11 @@ def when_hook_inject(gherkin_context: GherkinContext) -> None:
     gherkin_context.payload["hook_result"] = run_hook_payload(payload, gherkin_context.config)
 
 
+@when("hook inject runs for the polluted catalog resilience BM25 prompt")
+def when_hook_inject_polluted(gherkin_context: GherkinContext) -> None:
+    when_hook_inject(gherkin_context)
+
+
 @then("tools/list should fall back to registered MCP tools")
 def then_tools_list_fallback(gherkin_context: GherkinContext) -> None:
     scenario = gherkin_context.payload["scenario"]
@@ -392,6 +435,48 @@ def then_master_catalog_includes_disk_merged_usr(gherkin_context: GherkinContext
     assert catalog is not None
     names = {tool["name"] for tool in catalog}
     assert names == set(scenario.raw["expected_merged_tool_names"])
+
+
+@then("master catalog should exclude restart_tool false identity")
+def then_master_catalog_excludes_restart_tool(gherkin_context: GherkinContext) -> None:
+    scenario = gherkin_context.payload["disk_merge_scenario"]
+    catalog = gherkin_context.payload["master_catalog"]
+    assert catalog is not None
+    names = {tool["name"] for tool in catalog}
+    for invalid_name in scenario.raw["invalid_identity_tool_names"]:
+        assert invalid_name not in names
+
+
+@then("master catalog should exclude invalid identity tool names")
+def then_master_catalog_excludes_pollution(gherkin_context: GherkinContext) -> None:
+    scenario = gherkin_context.payload["disk_merge_scenario"]
+    catalog = gherkin_context.payload["master_catalog"]
+    assert catalog is not None
+    names = {tool["name"] for tool in catalog}
+    for invalid_name in scenario.raw["invalid_identity_tool_names"]:
+        assert invalid_name not in names
+
+
+@then("hook stdout should include expected polluted-resilience tool names")
+def then_hook_stdout_polluted_tools(gherkin_context: GherkinContext) -> None:
+    scenario = gherkin_context.payload["inject_scenario"]
+    result = gherkin_context.payload["hook_result"]
+    stdout = result.stdout_text
+    for name in scenario.raw["expected_tool_names_in_stdout"]:
+        assert name in stdout
+
+
+@then("hook inject should not fail from catalog identity pollution")
+def then_hook_inject_not_pollution_failure(gherkin_context: GherkinContext) -> None:
+    result = gherkin_context.payload["hook_result"]
+    assert result.outcome not in {
+        "skipped_cyt_mcp_unavailable",
+        "skipped_missing_tools_catalog",
+        "user_prompt_no_tool_matches",
+    }
+    session_log = result.details.get("session_log")
+    assert isinstance(session_log, list)
+    assert any(entry.get("kind") == "tool_catalog" for entry in session_log)
 
 
 @then("troubleshooting should show user and workspace catalog counts")

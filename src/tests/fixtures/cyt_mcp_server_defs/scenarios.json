@@ -1,0 +1,32 @@
+{
+  "scenarios": [
+    {
+      "id": "workspace_cursor_json_contract",
+      "description": ".agents/cyt/config/mcp/cursor.json must be JSON with an mcpServers object (never YAML)",
+      "backend_defs_relpath": ".agents/cyt/config/mcp/cursor.json",
+      "expected_server_keys": ["semble", "gitnexus"]
+    },
+    {
+      "id": "yaml_cursor_defs_recovery",
+      "description": "Legacy YAML bodies in cursor.json paths still load via defensive fallback so cyt-mcp-ws can start",
+      "backend_defs_relpath": ".agents/cyt/config/mcp/cursor.json",
+      "fixture": "yaml_cursor.json.fixture",
+      "expected_server_keys": ["semble", "gitnexus"]
+    },
+    {
+      "id": "disk_merge_excludes_restart_tool",
+      "description": "False identity restart_tool must not enter master catalog or inflate usr tier counts",
+      "invalid_identity_tool_names": ["restart_tool"],
+      "expected_merged_tool_names": [
+        "semble_search",
+        "gitnexus_cypher",
+        "code-review-graph_query_graph_tool",
+        "context7_resolve-library-id",
+        "context7_query-docs"
+      ],
+      "expected_user_tool_count": 2,
+      "expected_workspace_tool_count": 3,
+      "expected_total_tools": 5
+    }
+  ]
+}

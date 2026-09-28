@@ -112,6 +112,15 @@ def test_load_mcp_servers_enabled_false_filtered_when_in_deny(tmp_path: Path) ->
     assert set(servers) == {"active"}
 
 
+def test_load_mcp_servers_accepts_yaml_body_in_json_path(tmp_path: Path) -> None:
+    from tests.support.cyt_mcp_server_defs_fixtures import load_yaml_cursor_defs_fixture
+
+    path = tmp_path / "cursor.json"
+    path.write_text(load_yaml_cursor_defs_fixture(), encoding="utf-8")
+    servers = load_mcp_servers(path)
+    assert set(servers) == {"semble", "gitnexus"}
+
+
 def test_listed_mcp_server_names_includes_disabled_entries(tmp_path: Path) -> None:
     path = tmp_path / "mcp.json"
     path.write_text(

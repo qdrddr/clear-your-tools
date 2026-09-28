@@ -47,3 +47,32 @@ Feature: cyt-mcp catalog resilience
     Given dual-layer usr and ws cyt-mcp catalogs registered for the workspace
     When cyt tiers stats runs with verbose text output
     Then troubleshooting should show user and workspace catalog counts
+
+  Scenario: Polluted user disk catalog is excluded from master catalog merge
+    Given a workspace cyt-mcp catalog registered in the hook daemon
+    And user-scoped cyt-mcp tools with invalid identity cached on disk
+    When master catalog is loaded blocking for the workspace
+    Then master catalog should exclude invalid identity tool names
+    And master catalog should include both workspace and user tool names
+
+  Scenario: Polluted user disk catalog does not break hook inject
+    Given a workspace cyt-mcp catalog registered in the hook daemon
+    And user-scoped cyt-mcp tools with invalid identity cached on disk
+    And a cyt-mcp hook config with BM25 pruning enabled
+    When hook inject runs for the polluted catalog resilience BM25 prompt
+    Then hook stdout should include expected polluted-resilience tool names
+    And hook inject should not fail from catalog identity pollution
+
+  Scenario: Master catalog excludes restart_tool from user disk merge
+    Given a workspace cyt-mcp catalog registered in the hook daemon
+    And user-scoped cyt-mcp tools with restart_tool cached on disk
+    When master catalog is loaded blocking for the workspace
+    Then master catalog should exclude restart_tool false identity
+    And master catalog should include both workspace and user tool names
+
+  Scenario: Dual-layer tiers stats excludes restart_tool from user count
+    Given dual-layer usr and ws cyt-mcp catalogs registered for the workspace
+    And user-scoped cyt-mcp tools with restart_tool cached on disk
+    And a cyt-mcp hook config with tier tracking enabled
+    When cyt tiers stats runs with JSON output for the workspace
+    Then tiers stats catalog count should equal usr plus ws tool totals

@@ -18,6 +18,7 @@ from tests.support.cyt_injection_rules_lifecycle_fixtures import (
     load_lifecycle_scenario,
     materialize_lifecycle_workspace,
     patch_hook_environment,
+    patch_polluted_usr_disk_catalog,
     read_rules_text,
     reset_catalog_state,
     run_local_hook_inject,
@@ -103,6 +104,25 @@ def given_workspace_with_hook_catalog(
     config = build_hook_config(workspace, db_path=tmp_path / "tiers-gherkin.db")
     patch_hook_environment(monkeypatch, workspace, config)
     gherkin_context.payload = {"workspace": workspace, "hook_config": config}
+
+
+@given("user-scoped cyt-mcp tools with invalid identity cached on disk")
+def given_polluted_usr_disk_for_lifecycle(
+    tmp_path: Path,
+    gherkin_context: GherkinContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = gherkin_context.payload.get("workspace")
+    hook_config = gherkin_context.payload.get("hook_config")
+    assert isinstance(workspace, Path)
+    assert isinstance(hook_config, dict)
+    patch_polluted_usr_disk_catalog(monkeypatch, tmp_path / "cyt-mcp-catalog")
+    from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
+    from cyt.tools.master_catalog import clear_master_catalog_cache, rebuild_master_catalog
+
+    clear_cyt_mcp_catalog_cache()
+    clear_master_catalog_cache()
+    rebuild_master_catalog(hook_config, blocking=True, cold_start=True)
 
 
 @when("cyt-client handles sessionStart for that workspace")

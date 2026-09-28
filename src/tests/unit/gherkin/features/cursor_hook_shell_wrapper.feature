@@ -9,6 +9,12 @@ Feature: Cursor hook shell wrappers for fish and bash compatibility
     Then cursor hook commands should use shell wrapper scripts
     And cursor hook commands should not use fish-breaking inline env prefixes
 
+  Scenario: Building hook entries without install wrappers does not write wrapper scripts
+    Given cyt hook development mode for the current repo
+    And an empty cursor hooks directory
+    When cursor hook entries are built without installing wrappers
+    Then cursor hooks directory should contain no wrapper scripts
+
   Scenario: Legacy fish-breaking inline hooks are upgraded to shell wrappers
     Given cyt hook development mode for the current repo
     And cursor hooks.json contains legacy fish-breaking inline commands

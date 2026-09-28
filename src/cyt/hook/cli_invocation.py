@@ -81,7 +81,9 @@ __all__ = [
     "cyt_mcp_mcp_server_entry",
     "detect_cyt_mcp_cli_invocation",
     "detect_hook_cli_invocation",
+    "ensure_hook_wrapper_scripts_for_hooks_file",
     "hook_shell_wrapper_paths",
+    "infer_hook_wrapper_mode_from_command",
     "install_hook_shell_wrappers",
     "invoked_via_cyt_cli_script",
     "is_hook_shell_wrapper_command",
@@ -122,6 +124,10 @@ def use_windows_hook_wrappers(*, invocation: HookCliInvocation | None = None) ->
 
 def cursor_hooks_dir() -> Path:
     return Path("~/.cursor/hooks").expanduser()
+
+
+def cursor_hooks_json_path() -> Path:
+    return Path("~/.cursor/hooks.json").expanduser()
 
 
 def cyt_cli_script_path() -> Path:
@@ -445,9 +451,12 @@ def install_hook_shell_wrappers(
     hook_env: dict[str, str] | None = None,
 ) -> dict[str, Path]:
     """Write platform-specific Cursor hook wrapper scripts."""
+    invocation = invocation or detect_hook_cli_invocation()
     if is_windows():
-        return install_windows_hook_wrappers(invocation=invocation, hook_env=hook_env)
-    return install_unix_hook_wrappers(invocation=invocation, hook_env=hook_env)
+        result = install_windows_hook_wrappers(invocation=invocation, hook_env=hook_env)
+    else:
+        result = install_unix_hook_wrappers(invocation=invocation, hook_env=hook_env)
+    return result
 
 
 def install_windows_hook_wrappers(
@@ -539,6 +548,97 @@ def is_unix_hook_wrapper_command(command: str) -> bool:
 
 def is_hook_shell_wrapper_command(command: str) -> bool:
     return is_windows_hook_wrapper_command(command) or is_unix_hook_wrapper_command(command)
+
+
+def infer_hook_wrapper_mode_from_command(command: str) -> Literal["dev", "installed"] | None:
+    """Return wrapper mode inferred from a hook shell wrapper command path."""
+    name = Path(command.strip().strip('"')).name.casefold()
+    dev_names = {
+        UNIX_CLIENT_DEV_WRAPPER.casefold(),
+        UNIX_DAEMON_START_DEV_WRAPPER.casefold(),
+        WINDOWS_CLIENT_DEV_WRAPPER.casefold(),
+        WINDOWS_DAEMON_START_DEV_WRAPPER.casefold(),
+    }
+    prod_names = {
+        UNIX_CLIENT_WRAPPER.casefold(),
+        UNIX_DAEMON_START_WRAPPER.casefold(),
+        WINDOWS_CLIENT_WRAPPER.casefold(),
+        WINDOWS_DAEMON_START_WRAPPER.casefold(),
+    }
+    if name in dev_names:
+        return "dev"
+    if name in prod_names:
+        return "installed"
+    return None
+
+
+def _collect_hook_wrapper_commands_from_hooks_json(hooks_path: Path) -> list[str]:
+    import json as json_mod
+
+    if not hooks_path.is_file():
+        return []
+    try:
+        payload = json_mod.loads(hooks_path.read_text(encoding="utf-8"))
+    except (OSError, json_mod.JSONDecodeError):
+        return []
+    hooks = payload.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    commands: list[str] = []
+    for event_entries in hooks.values():
+        if not isinstance(event_entries, list):
+            continue
+        for entry in event_entries:
+            if not isinstance(entry, dict):
+                continue
+            command = entry.get("command")
+            if isinstance(command, str) and is_hook_shell_wrapper_command(command):
+                commands.append(command)
+    return list(dict.fromkeys(commands))
+
+
+def ensure_hook_wrapper_scripts_for_hooks_file(
+    hooks_path: Path | None = None,
+    *,
+    dev_repo_root: Path | None = None,
+) -> list[Path]:
+    """Recreate missing hook wrapper scripts referenced by ``hooks.json``."""
+    resolved_hooks_path = (hooks_path or cursor_hooks_json_path()).expanduser()
+    wrapper_commands = _collect_hook_wrapper_commands_from_hooks_json(resolved_hooks_path)
+    missing = [
+        command
+        for command in wrapper_commands
+        if not Path(command.strip()).expanduser().is_file()
+    ]
+    if not missing:
+        return []
+
+    modes = {
+        mode
+        for command in missing
+        if (mode := infer_hook_wrapper_mode_from_command(command)) is not None
+    }
+    if len(modes) != 1:
+        return []
+
+    mode = next(iter(modes))
+    repo_root = dev_repo_root or repo_root_from_cyt_cli_script()
+    if mode == "dev" and repo_root is None:
+        return []
+
+    invocation = HookCliInvocation(
+        mode=mode,
+        repo_root=repo_root if mode == "dev" else None,
+    )
+    installed = install_hook_shell_wrappers(invocation=invocation)
+    repaired = [
+        path
+        for command in missing
+        if (path := Path(command.strip()).expanduser()).is_file()
+    ]
+    if not repaired:
+        repaired = [installed["client"], installed["daemon_start"]]
+    return repaired
 
 
 def cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:

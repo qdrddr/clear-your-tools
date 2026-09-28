@@ -367,7 +367,7 @@ def cursor_hook_entries(
     invocation: HookCliInvocation | None = None,
     include_post_tool_use: bool = True,
     config: dict[str, Any] | None = None,
-    install_wrappers: bool = True,
+    install_wrappers: bool = False,
 ) -> CursorHookEntries:
     client_entry = cyt_client_entry(
         agent=agent,

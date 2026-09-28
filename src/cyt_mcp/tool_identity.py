@@ -43,15 +43,43 @@ def collect_server_keys_from_tools(tools: Sequence[Any]) -> list[str]:
     return sorted(keys, key=len, reverse=True)
 
 
-def server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
-    """Server keys for ``enrich_tool_identity`` (configured keys + wire-name hints)."""
-    keys = set(collect_server_keys_from_tools(tools))
+def _configured_mcp_server_keys() -> set[str]:
     try:
         from cyt_mcp.config import load_known_mcp_server_keys
 
-        keys.update(load_known_mcp_server_keys())
+        return {
+            str(key).strip()
+            for key in load_known_mcp_server_keys()
+            if str(key).strip()
+        }
     except Exception:
-        pass
+        return set()
+
+
+def server_keys_for_enrichment(tools: Sequence[Any]) -> list[str]:
+    """Server keys for ``enrich_tool_identity`` (configured keys + wire-name hints)."""
+    keys: set[str] = set()
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        server_key = item.get("server_key")
+        if isinstance(server_key, str) and server_key.strip():
+            keys.add(server_key.strip())
+
+    configured = _configured_mcp_server_keys()
+    keys.update(configured)
+
+    if configured:
+        for item in tools:
+            if not isinstance(item, dict):
+                continue
+            wire = str(item.get("name") or "").strip()
+            for candidate in server_key_candidates_from_wire_name(wire):
+                if candidate in configured:
+                    keys.add(candidate)
+    else:
+        keys.update(collect_server_keys_from_tools(tools))
+
     return sorted(keys, key=len, reverse=True)
 
 
@@ -93,6 +121,10 @@ def enrich_tool_identity(tool: dict[str, Any], server_keys: list[str]) -> dict[s
 
     identity = split_wire_name(wire, server_keys)
     if identity is None:
+        return enriched
+
+    configured = _configured_mcp_server_keys()
+    if configured and identity.server_key not in configured:
         return enriched
 
     enriched["name"] = identity.wire_name

@@ -263,15 +263,19 @@ def _cursor_hook_client_command(
     use_dev: bool,
     dev_repo_root: Path | None,
     hook_env: dict[str, str] | None = None,
+    install_wrappers: bool = False,
 ) -> str:
     if use_hook_shell_wrappers(use_dev=use_dev):
-        from cyt.hook.cli_invocation import install_hook_shell_wrappers
+        from cyt.hook.cli_invocation import hook_shell_wrapper_paths, install_hook_shell_wrappers
 
-        wrappers = install_hook_shell_wrappers(
-            invocation=_hook_cli_invocation(use_dev=use_dev, dev_repo_root=dev_repo_root),
-            hook_env=hook_env,
-        )
-        return str(wrappers["client"])
+        invocation = _hook_cli_invocation(use_dev=use_dev, dev_repo_root=dev_repo_root)
+        if install_wrappers:
+            wrappers = install_hook_shell_wrappers(
+                invocation=invocation,
+                hook_env=hook_env,
+            )
+            return str(wrappers["client"])
+        return str(hook_shell_wrapper_paths(invocation=invocation)["client"])
     return _inline_cyt_client_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
 
 
@@ -280,15 +284,19 @@ def _cursor_hook_daemon_start_command(
     use_dev: bool,
     dev_repo_root: Path | None,
     hook_env: dict[str, str] | None = None,
+    install_wrappers: bool = False,
 ) -> str:
     if use_hook_shell_wrappers(use_dev=use_dev):
-        from cyt.hook.cli_invocation import install_hook_shell_wrappers
+        from cyt.hook.cli_invocation import hook_shell_wrapper_paths, install_hook_shell_wrappers
 
-        wrappers = install_hook_shell_wrappers(
-            invocation=_hook_cli_invocation(use_dev=use_dev, dev_repo_root=dev_repo_root),
-            hook_env=hook_env,
-        )
-        return str(wrappers["daemon_start"])
+        invocation = _hook_cli_invocation(use_dev=use_dev, dev_repo_root=dev_repo_root)
+        if install_wrappers:
+            wrappers = install_hook_shell_wrappers(
+                invocation=invocation,
+                hook_env=hook_env,
+            )
+            return str(wrappers["daemon_start"])
+        return str(hook_shell_wrapper_paths(invocation=invocation)["daemon_start"])
     return _inline_cyt_daemon_start_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
 
 

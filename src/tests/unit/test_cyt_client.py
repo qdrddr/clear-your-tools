@@ -927,10 +927,17 @@ def test_cli_before_submit_keeps_placeholder_on_empty_injection(
                 "cyt_client.cli.post_hook_inject",
                 return_value=(200, inject_response),
             ):
-                from cyt_client.cli import main
+                with patch(
+                    "cyt_client.cli._recover_hook_inject_on_empty_context",
+                    return_value=None,
+                ):
+                    from cyt_client.cli import main
 
-                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
-                    main(["--verbose"])
+                    with patch(
+                        "sys.stdin.buffer.read",
+                        return_value=json.dumps(payload).encode(),
+                    ):
+                        main(["--verbose"])
 
         captured = capsys.readouterr()
         assert rules_path.is_file()

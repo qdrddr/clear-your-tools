@@ -230,6 +230,57 @@ def _post_hook_inject_resilient(
     return status, body, hook_url
 
 
+def _hook_url_port(hook_url: str) -> int | None:
+    if match := re.search(r":(\d+)/", hook_url):
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def _recover_hook_inject_on_empty_context(
+    hook_url: str,
+    payload_bytes: bytes,
+    *,
+    force_rules_refresh: bool,
+) -> tuple[int, bytes, str] | None:
+    """Retry on another hook port or restart daemon when injection is unexpectedly empty."""
+    if not force_rules_refresh:
+        return None
+
+    excluded_port = _hook_url_port(hook_url)
+    clear_hook_url_cache()
+    fallback_port = find_hook_server_port_excluding(excluded_port)
+    if fallback_port is not None:
+        fallback_url = hook_url_for_port(fallback_port)
+        if fallback_url != hook_url:
+            _verbose_log(
+                f"cyt-client: empty hook injection; retrying alternate hook server {fallback_url}",
+            )
+            retry = _post_hook_inject_resilient(fallback_url, payload_bytes)
+            if retry is not None and extract_additional_context(retry[1]).strip():
+                return retry
+
+    _verbose_log("cyt-client: empty hook injection; restarting hook daemon and retrying")
+    try:
+        from cyt.hook.daemon import daemon_restart
+
+        daemon_restart(verbose=_verbose, unattended=True)
+    except Exception as exc:
+        _verbose_exception("hook daemon restart after empty injection failed")
+        return None
+
+    clear_hook_url_cache()
+    recovered_url = _resolve_hook_url_for_submit()
+    if recovered_url is None:
+        return None
+    retry = _post_hook_inject_resilient(recovered_url, payload_bytes)
+    if retry is not None and extract_additional_context(retry[1]).strip():
+        return retry
+    return None
+
+
 def _persist_session_log_response(payload: dict, body: bytes) -> None:
     entries = extract_session_log_entries(body)
     if not entries:
@@ -520,7 +571,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
             reset_cursor_rules_file_to_placeholder(workspace)
         _emit_cursor_continue()
         return
-    status, body, _hook_url = result
+    status, body, active_hook_url = result
 
     if status >= 400:
         _verbose_log(f"cyt-client: hook server returned HTTP {status}")
@@ -550,6 +601,17 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
 
     injection = extract_additional_context(body)
     merge_sections = extract_rules_merge_sections(body)
+    if not injection.strip() and force_rules_refresh:
+        recovered = _recover_hook_inject_on_empty_context(
+            active_hook_url,
+            payload_bytes,
+            force_rules_refresh=force_rules_refresh,
+        )
+        if recovered is not None:
+            status, body, active_hook_url = recovered
+            _persist_session_log_response(payload, body)
+            injection = extract_additional_context(body)
+            merge_sections = extract_rules_merge_sections(body)
     if not injection.strip():
         if is_substantive_rules_injection(prior_rules_injection):
             _verbose_log(
@@ -703,6 +765,13 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 def main(argv: list[str] | None = None) -> None:
     global _verbose, _debug, _fresh_hook
     _verbose, _debug, _fresh_hook, rule_path = _parse_client_flags(argv)
+
+    try:
+        from cyt.hook.cli_invocation import ensure_hook_wrapper_scripts_for_hooks_file
+
+        ensure_hook_wrapper_scripts_for_hooks_file()
+    except Exception:
+        _verbose_exception("hook wrapper repair failed")
 
     cursor_output = False
     payload: dict[str, Any] | None = None

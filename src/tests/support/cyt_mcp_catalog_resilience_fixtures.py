@@ -14,8 +14,25 @@ from cyt.hook.catalog_registry import RegisterStatus, clear_catalog_registry, re
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "cyt_mcp_catalog_resilience"
+
+RESILIENCE_MCP_SERVER_KEYS = (
+    "semble",
+    "gitnexus",
+    "code-review-graph",
+    "context7",
+    "context-mode",
+    "codebase-memory",
+    "codegraph",
+    "graphify",
+    "jcodemunch",
+    "fff",
+)
 WS_TOOLS_CATALOG_PATH = FIXTURES_DIR / "ws_tools_catalog.json"
 USR_TOOLS_CATALOG_PATH = FIXTURES_DIR / "usr_tools_catalog.json"
+POLLUTED_USR_TOOLS_CATALOG_PATH = FIXTURES_DIR / "polluted_usr_tools_catalog.json"
+POLLUTED_USR_TOOLS_WITH_RESTART_PATH = (
+    FIXTURES_DIR / "polluted_usr_tools_with_restart_catalog.json"
+)
 SCENARIOS_PATH = FIXTURES_DIR / "scenarios.json"
 
 
@@ -35,6 +52,26 @@ def load_ws_tools_catalog(path: Path = WS_TOOLS_CATALOG_PATH) -> list[dict[str, 
 
 
 def load_usr_tools_catalog(path: Path = USR_TOOLS_CATALOG_PATH) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tools = payload.get("tools")
+    if not isinstance(tools, list):
+        raise ValueError(f"{path}: expected tools array")
+    return [dict(tool) for tool in tools if isinstance(tool, dict)]
+
+
+def load_polluted_usr_tools_catalog(
+    path: Path = POLLUTED_USR_TOOLS_CATALOG_PATH,
+) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tools = payload.get("tools")
+    if not isinstance(tools, list):
+        raise ValueError(f"{path}: expected tools array")
+    return [dict(tool) for tool in tools if isinstance(tool, dict)]
+
+
+def load_polluted_usr_tools_with_restart_catalog(
+    path: Path = POLLUTED_USR_TOOLS_WITH_RESTART_PATH,
+) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     tools = payload.get("tools")
     if not isinstance(tools, list):
@@ -220,6 +257,16 @@ def write_registry_disk_snapshot(
     )
 
 
+def patch_resilience_mcp_server_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin configured MCP server keys so false splits like restart_tool are rejected."""
+    keys = list(RESILIENCE_MCP_SERVER_KEYS)
+
+    def _load_known(*_args: object, **_kwargs: object) -> list[str]:
+        return keys
+
+    monkeypatch.setattr("cyt_mcp.config.load_known_mcp_server_keys", _load_known)
+
+
 def reset_catalog_state(*, purge_disk_snapshot: bool = True) -> None:
     from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
     from cyt.tools.master_catalog import clear_master_catalog_cache
@@ -233,6 +280,28 @@ def capture_registry_registrations() -> list[dict[str, Any]]:
     from cyt.hook.catalog_registry import list_catalog_registrations
 
     return list_catalog_registrations()
+
+
+def write_polluted_usr_scope_disk_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    cache_dir: Path,
+) -> list[dict[str, Any]]:
+    return write_usr_scope_disk_catalog(
+        monkeypatch,
+        cache_dir,
+        usr_tools=load_polluted_usr_tools_catalog(),
+    )
+
+
+def write_restart_polluted_usr_scope_disk_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    cache_dir: Path,
+) -> list[dict[str, Any]]:
+    return write_usr_scope_disk_catalog(
+        monkeypatch,
+        cache_dir,
+        usr_tools=load_polluted_usr_tools_with_restart_catalog(),
+    )
 
 
 def register_dual_layer_catalog(

@@ -170,6 +170,7 @@ def _apply_catalog_to_state(
     content_hash: str,
     config: dict[str, Any] | None = None,
 ) -> None:
+    tools = _drop_cyt_mcp_tools_missing_identity(tools)
     with _catalog_lock:
         state.tools = tools
         state.updated_at = time.monotonic()
@@ -223,6 +224,31 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
     return normalized
 
 
+def _cyt_mcp_tool_has_required_identity(tool: dict[str, Any]) -> bool:
+    server_key = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+    tool_name = str(tool.get("tool_name") or "").strip()
+    return bool(server_key and tool_name)
+
+
+def _drop_cyt_mcp_tools_missing_identity(tools: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for tool in tools:
+        if _cyt_mcp_tool_has_required_identity(tool):
+            kept.append(tool)
+            continue
+        name = str(tool.get("name") or "").strip()
+        if name:
+            dropped.append(name)
+    if dropped:
+        logger.warning(
+            "cyt-mcp catalog dropped %d tools missing server_key/tool_name: %s",
+            len(dropped),
+            ", ".join(sorted(set(dropped))[:10]),
+        )
+    return kept
+
+
 def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
     from cyt_mcp.tool_identity import enrich_tool_identity, server_keys_for_enrichment
 
@@ -236,7 +262,8 @@ def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
     if not normalized:
         return []
     server_keys = server_keys_for_enrichment(normalized)
-    return [enrich_tool_identity(tool, server_keys) for tool in normalized]
+    enriched = [enrich_tool_identity(tool, server_keys) for tool in normalized]
+    return _drop_cyt_mcp_tools_missing_identity(enriched)
 
 
 def _filter_tools_by_permissions(
@@ -247,6 +274,61 @@ def _filter_tools_by_permissions(
 
     effective = resolve_effective_permissions(config=config)
     return filter_catalog_tool_dicts(tools, effective.mcp.deny)
+
+
+def _configured_server_keys_for_hook(config: dict[str, Any]) -> set[str]:
+    try:
+        from cyt_mcp.config import load_known_mcp_server_keys
+
+        workspace = hook_workspace_from_config(config)
+        if workspace is not None:
+            return {
+                str(key).strip()
+                for key in load_known_mcp_server_keys(
+                    agent=tools_hook_cyt_mcp_agent(config),
+                    project_root=workspace,
+                )
+                if str(key).strip()
+            }
+        return {
+            str(key).strip()
+            for key in load_known_mcp_server_keys(agent=tools_hook_cyt_mcp_agent(config))
+            if str(key).strip()
+        }
+    except Exception:
+        return set()
+
+
+def _drop_tools_with_unconfigured_server_keys(
+    tools: Sequence[dict[str, Any]],
+    configured_keys: set[str],
+) -> list[dict[str, Any]]:
+    if not configured_keys:
+        return list(tools)
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for tool in tools:
+        server_key = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+        if server_key and server_key not in configured_keys:
+            name = str(tool.get("name") or "").strip()
+            if name:
+                dropped.append(name)
+            continue
+        kept.append(tool)
+    if dropped:
+        logger.warning(
+            "cyt-mcp catalog dropped %d tools with unconfigured server_key: %s",
+            len(dropped),
+            ", ".join(sorted(set(dropped))[:10]),
+        )
+    return kept
+
+
+def _ready_catalog_tools(config: dict[str, Any], tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    configured_keys = _configured_server_keys_for_hook(config)
+    filtered = _drop_cyt_mcp_tools_missing_identity(tools)
+    filtered = _drop_tools_with_unconfigured_server_keys(filtered, configured_keys)
+    return _filter_tools_by_permissions(config, filtered)
 
 
 def _normalize_catalog_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -545,17 +627,17 @@ def _refresh_from_registry(
     if not tools:
         snapshot = _snapshot_tools(state)
         if snapshot:
-            return _filter_tools_by_permissions(cfg, snapshot)
+            return _ready_catalog_tools(cfg, snapshot)
         disk_tools = _disk_catalog_tools(cache_key)
         if disk_tools:
-            filtered = _filter_tools_by_permissions(cfg, disk_tools)
+            filtered = _ready_catalog_tools(cfg, disk_tools)
             content_hash = raw_catalog_content_hash(filtered)
             _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=cfg)
             return copy.deepcopy(filtered)
         return []
 
     hydrated = _hydrate_missing_servers_from_disk(cache_key, tools)
-    filtered = _filter_tools_by_permissions(cfg, hydrated)
+    filtered = _ready_catalog_tools(cfg, hydrated)
     content_hash = raw_catalog_content_hash(filtered)
     _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=cfg)
     _write_catalog_disk(cache_key, filtered)
@@ -589,9 +671,9 @@ def _get_cyt_mcp_catalog_impl(
             cold_start=cold_start,
         )
         if tools:
-            return _filter_tools_by_permissions(cfg, tools)
+            return _ready_catalog_tools(cfg, tools)
         if has_memory:
-            return _filter_tools_by_permissions(cfg, _snapshot_tools(state))
+            return _ready_catalog_tools(cfg, _snapshot_tools(state))
         if not blocking:
             _ensure_scheduler_started(cfg)
             from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
@@ -607,10 +689,10 @@ def _get_cyt_mcp_catalog_impl(
     hydrated = _hydrate_missing_servers_from_disk(cache_key, snapshot)
     if len(hydrated) != len(snapshot):
         content_hash = raw_catalog_content_hash(hydrated)
-        filtered = _filter_tools_by_permissions(cfg, hydrated)
+        filtered = _ready_catalog_tools(cfg, hydrated)
         _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=cfg)
         return copy.deepcopy(filtered)
-    return _filter_tools_by_permissions(cfg, snapshot)
+    return _ready_catalog_tools(cfg, snapshot)
 
 
 def get_cyt_mcp_catalog(
@@ -664,7 +746,7 @@ def apply_fetched_catalog(
         disk_tools=disk_tools,
     )
     hydrated = _hydrate_missing_servers_from_disk(cache_key, merged)
-    filtered = _filter_tools_by_permissions(config, hydrated)
+    filtered = _ready_catalog_tools(config, hydrated)
     content_hash = raw_catalog_content_hash(filtered)
     _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=config)
     _write_catalog_disk(cache_key, filtered)

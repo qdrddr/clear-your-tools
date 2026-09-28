@@ -28,6 +28,7 @@ from tests.support.cyt_mcp_catalog_resilience_fixtures import (
     patch_daemon_catalog_status,
     register_ws_catalog,
     reset_catalog_state,
+    write_polluted_usr_scope_disk_catalog,
 )
 from tests.support.skills_helpers import isolated_skills_agents_block
 from tests.support.tier_behavior_fixtures import SKILLS_SOURCE_ROOT
@@ -194,6 +195,13 @@ def before_submit_payload(workspace: Path, prompt: str) -> dict[str, Any]:
     return payload
 
 
+def patch_polluted_usr_disk_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    cache_dir: Path,
+) -> list[dict[str, Any]]:
+    return write_polluted_usr_scope_disk_catalog(monkeypatch, cache_dir)
+
+
 def patch_hook_environment(
     monkeypatch: pytest.MonkeyPatch,
     workspace: Path,
@@ -225,6 +233,7 @@ __all__ = [
     "load_lifecycle_scenarios",
     "materialize_lifecycle_workspace",
     "patch_hook_environment",
+    "patch_polluted_usr_disk_catalog",
     "read_rules_body",
     "read_rules_text",
     "register_tools_catalog",

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "semble": {
+      "command": "echo",
+      "args": ["semble-backend"]
+    },
+    "gitnexus": {
+      "command": "echo",
+      "args": ["gitnexus-backend"]
+    }
+  }
+}

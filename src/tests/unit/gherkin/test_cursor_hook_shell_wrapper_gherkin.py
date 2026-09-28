@@ -58,8 +58,45 @@ def given_dev_mode(gherkin_context: GherkinContext) -> None:
 @when("cursor hook entries are built with shell wrappers")
 def when_build_wrapper_entries(gherkin_context: GherkinContext) -> None:
     invocation = gherkin_context.payload["invocation"]
-    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=False,
+    )
     gherkin_context.payload["entries"] = entries
+
+
+@given("an empty cursor hooks directory")
+def given_empty_hooks_dir(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
+    gherkin_context.payload["hooks_dir"] = hooks_dir
+
+
+@when("cursor hook entries are built without installing wrappers")
+def when_build_entries_without_install(gherkin_context: GherkinContext) -> None:
+    invocation = gherkin_context.payload["invocation"]
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=False,
+    )
+    gherkin_context.payload["entries"] = entries
+
+
+@then("cursor hooks directory should contain no wrapper scripts")
+def then_hooks_dir_has_no_wrappers(gherkin_context: GherkinContext) -> None:
+    hooks_dir = gherkin_context.payload["hooks_dir"]
+    assert hooks_dir.is_dir()
+    wrapper_files = list(hooks_dir.glob("cyt-client*.sh")) + list(
+        hooks_dir.glob("cyt-hook-daemon-start*.sh"),
+    )
+    assert wrapper_files == []
 
 
 @then("cursor hook commands should use shell wrapper scripts")
@@ -109,7 +146,11 @@ def when_upsert_hooks(
     hooks_dir = tmp_path / "cursor" / "hooks"
     monkeypatch.setattr("cyt.hook.cli_invocation.cursor_hooks_dir", lambda: hooks_dir)
     invocation = gherkin_context.payload["invocation"]
-    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    entries = hook_setup.cursor_hook_entries(
+        agent="cursor",
+        invocation=invocation,
+        install_wrappers=True,
+    )
     hooks_path = gherkin_context.payload["hooks_path"]
     changed = hook_setup.upsert_cursor_hooks_into_file(
         hooks_path,

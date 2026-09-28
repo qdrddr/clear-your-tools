@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from cyt_mcp.tool_identity import (
     CytMcpToolIdentity,
     canonical_backend_identity,
@@ -106,14 +108,26 @@ def test_is_canonical_schema_identity_rejects_partial_split() -> None:
     assert is_canonical_schema_identity("codebase-memory", "search_graph", server_keys)
 
 
-def test_server_keys_for_enrichment_derives_prefix_from_wire_names() -> None:
+def test_server_keys_for_enrichment_derives_prefix_from_wire_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda *args, **kwargs: [],
+    )
     tools = [{"name": "hedl_batch"}, {"name": "context-mode_ctx_search"}]
     keys = server_keys_for_enrichment(tools)
     assert "hedl" in keys
     assert "context-mode" in keys
 
 
-def test_enrich_hedl_batch_without_configured_server_keys() -> None:
+def test_enrich_hedl_batch_without_configured_server_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda *args, **kwargs: [],
+    )
     tool = {
         "name": "hedl_batch",
         "description": "HEDL batch tool (single-underscore catalog name; backend tool is batch)",
@@ -123,3 +137,16 @@ def test_enrich_hedl_batch_without_configured_server_keys() -> None:
     assert enriched["server_key"] == "hedl"
     assert enriched["tool_name"] == "batch"
     assert enriched["name"] == "hedl_batch"
+
+
+def test_enrich_rejects_restart_tool_when_restart_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda *args, **kwargs: ["semble", "context7"],
+    )
+    tool = {"name": "restart_tool", "input_schema": {}}
+    enriched = enrich_tool_identity(tool, server_keys_for_enrichment([tool]))
+    assert "server_key" not in enriched
+    assert enriched["name"] == "restart_tool"

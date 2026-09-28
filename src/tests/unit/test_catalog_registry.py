@@ -285,7 +285,14 @@ def test_daemon_restart_stale_snapshot_repushed_clears_stale(
     snapshot_dir = tmp_path / "catalog-registry"
     snapshot_dir.mkdir()
     snapshot_file = snapshot_dir / "registrations.json"
-    tools = [{"name": "restart_tool", "input_schema": {}}]
+    tools = [
+        {
+            "name": "semble_search",
+            "server_key": "semble",
+            "tool_name": "search",
+            "input_schema": {},
+        },
+    ]
     content_hash = raw_catalog_content_hash(tools)
     snapshot_file.write_text(
         json.dumps(
@@ -312,7 +319,7 @@ def test_daemon_restart_stale_snapshot_repushed_clears_stale(
     loaded = load_catalog_registry_from_disk(mark_stale=True)
     assert loaded == 1
     merged = catalog_for_hook("cursor", ws_root, allow_stale=True)
-    assert {tool["name"] for tool in merged} == {"restart_tool"}
+    assert {tool["name"] for tool in merged} == {"semble_search"}
 
     result = register_catalog(
         {

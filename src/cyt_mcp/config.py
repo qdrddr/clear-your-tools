@@ -188,8 +188,8 @@ def listed_mcp_server_names(path: Path) -> frozenset[str]:
     if not path.is_file():
         return frozenset()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
+        payload = _load_mcp_server_defs_payload(path)
+    except (OSError, yaml.YAMLError, ValueError, json.JSONDecodeError):
         return frozenset()
     if not isinstance(payload, dict):
         return frozenset()
@@ -306,6 +306,18 @@ def frontend_server_name_for_scope(catalog_scope: CatalogScope) -> str:
     return "cyt-mcp-ws" if catalog_scope == "workspace" else "cyt-mcp-usr"
 
 
+def _load_mcp_server_defs_payload(path: Path) -> dict[str, Any]:
+    """Load MCP server defs JSON; accept YAML bodies stored in ``*.json`` paths."""
+    text = path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = yaml.safe_load(text)
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
 def load_mcp_servers(
     path: Path,
     *,
@@ -314,7 +326,10 @@ def load_mcp_servers(
 ) -> dict[str, Any]:
     if not path.is_file():
         return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = _load_mcp_server_defs_payload(path)
+    except (OSError, yaml.YAMLError, ValueError, json.JSONDecodeError):
+        return {}
     if not isinstance(payload, dict):
         return {}
     servers = payload.get("mcpServers")

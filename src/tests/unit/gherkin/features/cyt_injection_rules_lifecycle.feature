@@ -26,3 +26,10 @@ Feature: cyt-injection.mdc session lifecycle
     Then the cyt-injection rules file should contain pruned agent-tools
     When cyt-client handles sessionEnd for that workspace
     Then the cyt-injection rules file should be a session lifecycle placeholder
+
+  Scenario: User prompt populates rules despite polluted user disk catalog
+    Given a workspace cyt-mcp catalog registered for hook injection
+    And user-scoped cyt-mcp tools with invalid identity cached on disk
+    When cyt-client handles beforeSubmitPrompt with the lifecycle BM25 prompt
+    Then the cyt-injection rules file should contain pruned agent-tools
+    And the cyt-injection rules file should include expected lifecycle tool names

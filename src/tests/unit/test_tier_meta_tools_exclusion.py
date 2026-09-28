@@ -66,6 +66,45 @@ def test_normalize_tools_list_excludes_meta_tools(tool_name: str) -> None:
     assert names == {"semble_search"}
 
 
+def test_normalize_tools_list_excludes_restart_tool_false_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cyt_mcp.config.load_known_mcp_server_keys",
+        lambda *args, **kwargs: ["graphify", "semble"],
+    )
+    normalized = _normalize_tools_list(
+        [
+            {"name": "restart_tool", "input_schema": {}},
+            {
+                "name": "graphify_query_graph",
+                "server_key": "graphify",
+                "tool_name": "query_graph",
+                "input_schema": {"type": "object"},
+            },
+        ],
+    )
+    names = {str(tool.get("name") or "") for tool in normalized}
+    assert names == {"graphify_query_graph"}
+
+
+def test_normalize_tools_list_excludes_tools_missing_identity() -> None:
+    normalized = _normalize_tools_list(
+        [
+            {"name": "alpha", "input_schema": {}},
+            {"name": "beta", "input_schema": {}},
+            {
+                "name": "graphify_query_graph",
+                "server_key": "graphify",
+                "tool_name": "query_graph",
+                "input_schema": {"type": "object"},
+            },
+        ],
+    )
+    names = {str(tool.get("name") or "") for tool in normalized}
+    assert names == {"graphify_query_graph"}
+
+
 @pytest.mark.parametrize("tool_name", load_meta_tools_not_reported())
 def test_filter_tools_for_tier_tracking_excludes_meta_tools(
     capture_pack: TierCaptureFixturePack,
