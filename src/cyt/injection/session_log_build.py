@@ -443,7 +443,18 @@ def build_tool_log_entry(
         if server:
             entry["server"] = {k: v for k, v in server.items() if v}
     elif catalog == "cyt_mcp":
-        schema = tool.get("input_schema") or tool.get("parameters") or {}
+        schema = _tool_input_schema_for_catalog(tool, catalog=catalog)
+        if catalog_tools:
+            from cyt.tools.injection_schema import pick_fullest_input_schema
+
+            wire_name = str(tool.get("name") or "").strip()
+            namesakes = [
+                item
+                for item in catalog_tools
+                if isinstance(item, dict) and str(item.get("name") or "").strip() == wire_name
+            ]
+            if namesakes:
+                schema = pick_fullest_input_schema(tool, *namesakes)
         entry["input_schema"] = normalize_json_value(
             deepcopy(schema if isinstance(schema, dict) else {}),
         )
